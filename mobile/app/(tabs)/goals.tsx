@@ -103,7 +103,7 @@ export default function GoalsScreen() {
 
   if (isLoading && !goals) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.tint} />
         </View>
@@ -112,7 +112,7 @@ export default function GoalsScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: Spacing.xl,
-    paddingBottom: 40,
+    paddingBottom: 100,
   },
   header: {
     gap: Spacing.sm,

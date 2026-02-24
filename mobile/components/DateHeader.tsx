@@ -47,7 +47,6 @@ export default function DateHeader() {
     if (Platform.OS === 'android') setShowPicker(false);
     if (date) {
       setDate(toDateString(date));
-      if (Platform.OS === 'ios') setShowPicker(false);
     }
   };
 
@@ -150,7 +149,8 @@ const styles = StyleSheet.create({
   pickerCard: {
     borderRadius: 16,
     padding: Spacing.lg,
-    width: 340,
+    width: '90%',
+    maxWidth: 360,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,

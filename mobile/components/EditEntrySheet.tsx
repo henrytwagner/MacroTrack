@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -34,7 +34,7 @@ export default function EditEntrySheet({
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const sheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ['40%'], []);
+  const snapPoints = useMemo(() => ['55%'], []);
 
   const [quantity, setQuantity] = useState('');
   const [unit, setUnit] = useState<string>('g');
@@ -47,6 +47,19 @@ export default function EditEntrySheet({
       setUnit(entry.unit);
     }
   }, [entry]);
+
+  const scaledMacros = useMemo(() => {
+    if (!entry) return null;
+    const newQty = Number(quantity) || 0;
+    const origQty = entry.quantity || 1;
+    const ratio = origQty > 0 ? newQty / origQty : 1;
+    return {
+      calories: Math.round(entry.calories * ratio),
+      proteinG: Math.round(entry.proteinG * ratio * 10) / 10,
+      carbsG: Math.round(entry.carbsG * ratio * 10) / 10,
+      fatG: Math.round(entry.fatG * ratio * 10) / 10,
+    };
+  }, [entry, quantity]);
 
   const renderBackdrop = useCallback(
     (props: any) => (
@@ -61,12 +74,13 @@ export default function EditEntrySheet({
   );
 
   const handleSave = async () => {
-    if (!entry) return;
+    if (!entry || !scaledMacros) return;
     setIsSaving(true);
     try {
       await api.updateEntry(entry.id, {
         quantity: Number(quantity) || 1,
         unit,
+        ...scaledMacros,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onSaved?.();
@@ -115,6 +129,35 @@ export default function EditEntrySheet({
             {entry.source === 'CUSTOM' ? 'Custom Food' : 'USDA Database'}
           </ThemedText>
         </View>
+
+        {scaledMacros && (
+          <View style={[styles.macroSummary, { backgroundColor: colors.surfaceSecondary }]}>
+            <View style={styles.macroItem}>
+              <ThemedText style={[Typography.headline, { color: colors.caloriesAccent }]}>
+                {scaledMacros.calories}
+              </ThemedText>
+              <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>cal</ThemedText>
+            </View>
+            <View style={styles.macroItem}>
+              <ThemedText style={[Typography.headline, { color: colors.proteinAccent }]}>
+                {scaledMacros.proteinG}g
+              </ThemedText>
+              <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>protein</ThemedText>
+            </View>
+            <View style={styles.macroItem}>
+              <ThemedText style={[Typography.headline, { color: colors.carbsAccent }]}>
+                {scaledMacros.carbsG}g
+              </ThemedText>
+              <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>carbs</ThemedText>
+            </View>
+            <View style={styles.macroItem}>
+              <ThemedText style={[Typography.headline, { color: colors.fatAccent }]}>
+                {scaledMacros.fatG}g
+              </ThemedText>
+              <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>fat</ThemedText>
+            </View>
+          </View>
+        )}
 
         <View style={styles.quantityRow}>
           <TextInput
@@ -207,6 +250,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.full,
+  },
+  macroSummary: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.sm,
+  },
+  macroItem: {
+    alignItems: 'center',
+    gap: 2,
   },
   quantityRow: {
     gap: Spacing.md,

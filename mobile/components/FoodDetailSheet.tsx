@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -6,8 +6,9 @@ import {
   Pressable,
   ScrollView,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
-import BottomSheet, { BottomSheetBackdrop } from '@gorhom/bottom-sheet';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
@@ -54,8 +55,6 @@ export default function FoodDetailSheet({
 }: FoodDetailSheetProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const sheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ['92%'], []);
 
   const [quantity, setQuantity] = useState('1');
   const [unit, setUnit] = useState<string>('servings');
@@ -75,24 +74,33 @@ export default function FoodDetailSheet({
     }
   }, [food, existingEntry]);
 
-  const renderBackdrop = useCallback(
-    (props: any) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.4}
-      />
-    ),
-    [],
-  );
-
-  const macros = useMemo(() => {
+  const baseMacros = useMemo(() => {
     if (!food) return null;
     return isCustomFood(food)
       ? { calories: food.calories, proteinG: food.proteinG, carbsG: food.carbsG, fatG: food.fatG }
       : food.macros;
   }, [food]);
+
+  const baseServingSize = useMemo(() => {
+    if (!food) return 1;
+    if (isCustomFood(food)) return food.servingSize || 1;
+    return food.servingSize || 100;
+  }, [food]);
+
+  const scaleFactor = useMemo(() => {
+    const qty = Number(quantity) || 0;
+    return baseServingSize > 0 ? qty / baseServingSize : 1;
+  }, [quantity, baseServingSize]);
+
+  const scaledMacros = useMemo(() => {
+    if (!baseMacros) return null;
+    return {
+      calories: Math.round(baseMacros.calories * scaleFactor),
+      proteinG: Math.round(baseMacros.proteinG * scaleFactor * 10) / 10,
+      carbsG: Math.round(baseMacros.carbsG * scaleFactor * 10) / 10,
+      fatG: Math.round(baseMacros.fatG * scaleFactor * 10) / 10,
+    };
+  }, [baseMacros, scaleFactor]);
 
   const extendedNutrition = useMemo(() => {
     if (!food || !isCustomFood(food)) return null;
@@ -108,7 +116,7 @@ export default function FoodDetailSheet({
   }, [food]);
 
   const handleAdd = async () => {
-    if (!food || !macros) return;
+    if (!food || !scaledMacros) return;
     setIsSaving(true);
 
     const custom = isCustomFood(food);
@@ -118,10 +126,10 @@ export default function FoodDetailSheet({
       await api.createEntry({
         date,
         name: custom ? food.name : food.description,
-        calories: macros.calories,
-        proteinG: macros.proteinG,
-        carbsG: macros.carbsG,
-        fatG: macros.fatG,
+        calories: scaledMacros.calories,
+        proteinG: scaledMacros.proteinG,
+        carbsG: scaledMacros.carbsG,
+        fatG: scaledMacros.fatG,
         quantity: Number(quantity) || 1,
         unit,
         source: custom ? 'CUSTOM' : 'DATABASE',
@@ -131,7 +139,6 @@ export default function FoodDetailSheet({
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onSaved?.();
-      sheetRef.current?.close();
     } catch {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
@@ -149,7 +156,6 @@ export default function FoodDetailSheet({
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onSaved?.();
-      sheetRef.current?.close();
     } catch {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
@@ -164,7 +170,6 @@ export default function FoodDetailSheet({
       await api.deleteEntry(existingEntry.id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onDeleted?.();
-      sheetRef.current?.close();
     } catch {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
@@ -172,155 +177,175 @@ export default function FoodDetailSheet({
     }
   };
 
-  if (!food) return null;
-
-  const foodName = isCustomFood(food) ? food.name : food.description;
-  const sourceLabel = isCustomFood(food) ? 'Custom Food' : 'USDA Database';
+  const foodName = food ? (isCustomFood(food) ? food.name : food.description) : '';
+  const sourceLabel = food ? (isCustomFood(food) ? 'Custom Food' : 'USDA Database') : '';
+  const baseServingLabel = food
+    ? isCustomFood(food)
+      ? `${food.servingSize} ${food.servingUnit}`
+      : `${food.servingSize ?? 100}${food.servingSizeUnit ?? 'g'}`
+    : '';
 
   return (
-    <BottomSheet
-      ref={sheetRef}
-      index={0}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      onClose={onDismiss}
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: colors.surface }}
-      handleIndicatorStyle={{ backgroundColor: colors.sheetHandle }}
+    <Modal
+      visible={!!food}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onDismiss}
     >
-      <ScrollView
-        style={styles.sheetContent}
-        contentContainerStyle={styles.sheetScrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.foodHeader}>
-          <ThemedText style={[Typography.title2, { color: colors.text }]}>
-            {foodName}
-          </ThemedText>
-          <View style={[styles.sourceBadge, { backgroundColor: colors.surfaceSecondary }]}>
-            <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>
-              {sourceLabel}
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top']}>
+        <View style={[styles.header, { borderBottomColor: colors.borderLight }]}>
+          <Pressable onPress={onDismiss} hitSlop={8}>
+            <ThemedText style={[Typography.body, { color: colors.tint }]}>
+              Cancel
             </ThemedText>
-          </View>
-        </View>
-
-        {macros && (
-          <View style={[styles.nutritionCard, { backgroundColor: colors.surfaceSecondary }]}>
-            <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
-              Nutrition per serving
-            </ThemedText>
-            <NutrientRow label="Calories" value={macros.calories} unit="kcal" color={colors.caloriesAccent} textColor={colors.text} />
-            <NutrientRow label="Protein" value={macros.proteinG} unit="g" color={colors.proteinAccent} textColor={colors.text} />
-            <NutrientRow label="Carbs" value={macros.carbsG} unit="g" color={colors.carbsAccent} textColor={colors.text} />
-            <NutrientRow label="Fat" value={macros.fatG} unit="g" color={colors.fatAccent} textColor={colors.text} />
-
-            {extendedNutrition && (
-              <View style={styles.extendedSection}>
-                {extendedNutrition.map((n) => (
-                  <NutrientRow
-                    key={n.label}
-                    label={n.label}
-                    value={n.value!}
-                    unit={n.unit}
-                    color={colors.textSecondary}
-                    textColor={colors.text}
-                    compact
-                  />
-                ))}
-              </View>
-            )}
-          </View>
-        )}
-
-        <View style={styles.quantitySection}>
-          <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
-            Quantity
-          </ThemedText>
-          <TextInput
-            style={[
-              styles.quantityInput,
-              { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface },
-            ]}
-            value={quantity}
-            onChangeText={setQuantity}
-            keyboardType="numeric"
-            placeholder="1"
-            placeholderTextColor={colors.textTertiary}
-            returnKeyType="done"
-          />
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.unitPills}
-            style={styles.unitScroll}
-          >
-            {UNITS.map((u) => (
-              <Pressable
-                key={u}
-                style={[
-                  styles.unitPill,
-                  {
-                    backgroundColor: unit === u ? colors.tint : colors.surfaceSecondary,
-                    borderColor: unit === u ? colors.tint : colors.border,
-                  },
-                ]}
-                onPress={() => setUnit(u)}
-              >
-                <ThemedText
-                  style={[
-                    Typography.subhead,
-                    { color: unit === u ? '#FFFFFF' : colors.text },
-                  ]}
-                >
-                  {u}
-                </ThemedText>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
-
-        <View style={styles.actions}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.primaryButton,
-              { backgroundColor: colors.tint, opacity: pressed ? 0.8 : 1 },
-              isSaving && styles.buttonDisabled,
-            ]}
-            onPress={mode === 'add' ? handleAdd : handleSave}
-            disabled={isSaving}
-          >
-            {isSaving ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <ThemedText style={styles.primaryButtonText}>
-                {mode === 'add' ? 'Add' : 'Save'}
-              </ThemedText>
-            )}
           </Pressable>
+          <ThemedText style={[Typography.headline, { color: colors.text }]}>
+            {mode === 'add' ? 'Add Food' : 'Edit Entry'}
+          </ThemedText>
+          <View style={{ width: 50 }} />
+        </View>
 
-          {mode === 'edit' && (
+        <ScrollView
+          style={styles.sheetContent}
+          contentContainerStyle={styles.sheetScrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.foodHeader}>
+            <ThemedText style={[Typography.title2, { color: colors.text }]}>
+              {foodName}
+            </ThemedText>
+            <View style={[styles.sourceBadge, { backgroundColor: colors.surfaceSecondary }]}>
+              <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>
+                {sourceLabel}
+              </ThemedText>
+            </View>
+          </View>
+
+          {scaledMacros && (
+            <View style={[styles.nutritionCard, { backgroundColor: colors.surfaceSecondary }]}>
+              <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
+                Nutrition{scaleFactor !== 1 ? ` (${quantity} ${unit})` : ' per serving'}
+              </ThemedText>
+              <NutrientRow label="Calories" value={scaledMacros.calories} unit=" kcal" color={colors.caloriesAccent} textColor={colors.text} />
+              <NutrientRow label="Protein" value={scaledMacros.proteinG} unit="g" color={colors.proteinAccent} textColor={colors.text} />
+              <NutrientRow label="Carbs" value={scaledMacros.carbsG} unit="g" color={colors.carbsAccent} textColor={colors.text} />
+              <NutrientRow label="Fat" value={scaledMacros.fatG} unit="g" color={colors.fatAccent} textColor={colors.text} />
+
+              {scaleFactor !== 1 && baseMacros && (
+                <ThemedText
+                  style={[Typography.caption1, { color: colors.textSecondary, marginTop: Spacing.xs }]}
+                >
+                  Per {baseServingLabel}: {baseMacros.calories} cal · {baseMacros.proteinG}g P · {baseMacros.carbsG}g C · {baseMacros.fatG}g F
+                </ThemedText>
+              )}
+
+              {extendedNutrition && (
+                <View style={styles.extendedSection}>
+                  {extendedNutrition.map((n) => (
+                    <NutrientRow
+                      key={n.label}
+                      label={n.label}
+                      value={n.value!}
+                      unit={n.unit}
+                      color={colors.textSecondary}
+                      textColor={colors.text}
+                      compact
+                    />
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+
+          <View style={styles.quantitySection}>
+            <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
+              Quantity
+            </ThemedText>
+            <TextInput
+              style={[
+                styles.quantityInput,
+                { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface },
+              ]}
+              value={quantity}
+              onChangeText={setQuantity}
+              keyboardType="numeric"
+              placeholder="1"
+              placeholderTextColor={colors.textTertiary}
+              returnKeyType="done"
+            />
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.unitPills}
+            >
+              {UNITS.map((u) => (
+                <Pressable
+                  key={u}
+                  style={[
+                    styles.unitPill,
+                    {
+                      backgroundColor: unit === u ? colors.tint : colors.surfaceSecondary,
+                      borderColor: unit === u ? colors.tint : colors.border,
+                    },
+                  ]}
+                  onPress={() => setUnit(u)}
+                >
+                  <ThemedText
+                    style={[
+                      Typography.subhead,
+                      { color: unit === u ? '#FFFFFF' : colors.text },
+                    ]}
+                  >
+                    {u}
+                  </ThemedText>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+
+          <View style={styles.actions}>
             <Pressable
               style={({ pressed }) => [
-                styles.deleteButton,
-                { borderColor: colors.destructive, opacity: pressed ? 0.8 : 1 },
-                isDeleting && styles.buttonDisabled,
+                styles.primaryButton,
+                { backgroundColor: colors.tint, opacity: pressed ? 0.8 : 1 },
+                isSaving && styles.buttonDisabled,
               ]}
-              onPress={handleDelete}
-              disabled={isDeleting}
+              onPress={mode === 'add' ? handleAdd : handleSave}
+              disabled={isSaving}
             >
-              {isDeleting ? (
-                <ActivityIndicator color={colors.destructive} size="small" />
+              {isSaving ? (
+                <ActivityIndicator color="#fff" size="small" />
               ) : (
-                <ThemedText style={[styles.deleteButtonText, { color: colors.destructive }]}>
-                  Delete
+                <ThemedText style={styles.primaryButtonText}>
+                  {mode === 'add' ? 'Add' : 'Save'}
                 </ThemedText>
               )}
             </Pressable>
-          )}
-        </View>
-      </ScrollView>
-    </BottomSheet>
+
+            {mode === 'edit' && (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.deleteButton,
+                  { borderColor: colors.destructive, opacity: pressed ? 0.8 : 1 },
+                  isDeleting && styles.buttonDisabled,
+                ]}
+                onPress={handleDelete}
+                disabled={isDeleting}
+              >
+                {isDeleting ? (
+                  <ActivityIndicator color={colors.destructive} size="small" />
+                ) : (
+                  <ThemedText style={[styles.deleteButtonText, { color: colors.destructive }]}>
+                    Delete
+                  </ThemedText>
+                )}
+              </Pressable>
+            )}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
   );
 }
 
@@ -355,12 +380,23 @@ function NutrientRow({
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
   sheetContent: {
     flex: 1,
   },
   sheetScrollContent: {
     padding: Spacing.xl,
-    paddingBottom: 40,
+    paddingBottom: 100,
   },
   foodHeader: {
     gap: Spacing.sm,
@@ -412,10 +448,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.md,
     marginBottom: Spacing.md,
-  },
-  unitScroll: {
-    marginHorizontal: -Spacing.xl,
-    paddingHorizontal: Spacing.xl,
   },
   unitPills: {
     flexDirection: 'row',

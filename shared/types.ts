@@ -128,6 +128,10 @@ export interface CreateFoodEntryRequest {
 export interface UpdateFoodEntryRequest {
   quantity?: number;
   unit?: string;
+  calories?: number;
+  proteinG?: number;
+  carbsG?: number;
+  fatG?: number;
 }
 
 export interface CreateCustomFoodRequest {

@@ -251,6 +251,10 @@ export async function foodRoutes(app: FastifyInstance) {
         data: {
           ...(body.quantity !== undefined && { quantity: body.quantity }),
           ...(body.unit !== undefined && { unit: body.unit }),
+          ...(body.calories !== undefined && { calories: body.calories }),
+          ...(body.proteinG !== undefined && { proteinG: body.proteinG }),
+          ...(body.carbsG !== undefined && { carbsG: body.carbsG }),
+          ...(body.fatG !== undefined && { fatG: body.fatG }),
         },
       });
 

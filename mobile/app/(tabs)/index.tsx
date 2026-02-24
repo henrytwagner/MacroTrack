@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
@@ -50,9 +51,11 @@ export default function DashboardScreen() {
     fetchGoals();
   }, []);
 
-  useEffect(() => {
-    fetchEntries(selectedDate);
-  }, [selectedDate]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchEntries(selectedDate);
+    }, [selectedDate, fetchEntries]),
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

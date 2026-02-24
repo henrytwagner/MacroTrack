@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -6,8 +6,12 @@ import {
   Pressable,
   ScrollView,
   ActivityIndicator,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
-import BottomSheet, { BottomSheetBackdrop } from '@gorhom/bottom-sheet';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
@@ -33,7 +37,6 @@ interface FieldInputProps {
   unit?: string;
   required?: boolean;
   placeholder?: string;
-  keyboardType?: 'default' | 'numeric';
   colors: (typeof Colors)['light'];
 }
 
@@ -44,7 +47,6 @@ function FieldInput({
   unit,
   required,
   placeholder = '0',
-  keyboardType = 'numeric',
   colors,
 }: FieldInputProps) {
   return (
@@ -62,7 +64,7 @@ function FieldInput({
           style={[styles.fieldInput, { color: colors.text, borderColor: colors.border }]}
           value={value}
           onChangeText={onChangeText}
-          keyboardType={keyboardType}
+          keyboardType="numeric"
           placeholder={placeholder}
           placeholderTextColor={colors.textTertiary}
           returnKeyType="done"
@@ -86,8 +88,6 @@ export default function CreateFoodSheet({
 }: CreateFoodSheetProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const sheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ['92%'], []);
 
   const [name, setName] = useState('');
   const [servingSize, setServingSize] = useState('');
@@ -97,7 +97,6 @@ export default function CreateFoodSheet({
   const [carbs, setCarbs] = useState('');
   const [fat, setFat] = useState('');
 
-  // Optional fields
   const [showOptional, setShowOptional] = useState(false);
   const [sodium, setSodium] = useState('');
   const [cholesterol, setCholesterol] = useState('');
@@ -109,6 +108,7 @@ export default function CreateFoodSheet({
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
+    if (!visible) return;
     if (editingFood) {
       setName(editingFood.name);
       setServingSize(String(editingFood.servingSize));
@@ -149,18 +149,6 @@ export default function CreateFoodSheet({
     }
   }, [editingFood, prefillName, visible]);
 
-  const renderBackdrop = useCallback(
-    (props: any) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.4}
-      />
-    ),
-    [],
-  );
-
   const isValid =
     name.trim().length > 0 &&
     Number(servingSize) > 0 &&
@@ -195,7 +183,6 @@ export default function CreateFoodSheet({
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onSaved?.(result);
-      sheetRef.current?.close();
     } catch {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
@@ -203,153 +190,182 @@ export default function CreateFoodSheet({
     }
   };
 
-  if (!visible) return null;
-
   const isEditing = !!editingFood;
 
   return (
-    <BottomSheet
-      ref={sheetRef}
-      index={0}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      onClose={onDismiss}
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: colors.surface }}
-      handleIndicatorStyle={{ backgroundColor: colors.sheetHandle }}
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onDismiss}
     >
-      <ScrollView
-        style={styles.sheetContent}
-        contentContainerStyle={styles.sheetScrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        <ThemedText style={[Typography.title2, { color: colors.text, marginBottom: Spacing.xxl }]}>
-          {isEditing ? 'Edit Custom Food' : 'Create Custom Food'}
-        </ThemedText>
-
-        {/* Name */}
-        <View style={[styles.section, { borderBottomColor: colors.borderLight }]}>
-          <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
-            Name
-          </ThemedText>
-          <TextInput
-            style={[styles.nameInput, { color: colors.text, borderColor: colors.border }]}
-            value={name}
-            onChangeText={setName}
-            placeholder="e.g. Mom's Chili"
-            placeholderTextColor={colors.textTertiary}
-            autoFocus={!isEditing}
-            returnKeyType="next"
-          />
-        </View>
-
-        {/* Serving Size */}
-        <View style={[styles.section, { borderBottomColor: colors.borderLight }]}>
-          <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
-            Serving Size
-          </ThemedText>
-          <View style={styles.servingSizeRow}>
-            <TextInput
-              style={[styles.servingSizeInput, { color: colors.text, borderColor: colors.border }]}
-              value={servingSize}
-              onChangeText={setServingSize}
-              keyboardType="numeric"
-              placeholder="1"
-              placeholderTextColor={colors.textTertiary}
-              returnKeyType="done"
-            />
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.unitPills}
-            >
-              {SERVING_UNITS.map((u) => (
-                <Pressable
-                  key={u}
-                  style={[
-                    styles.unitPill,
-                    {
-                      backgroundColor: servingUnit === u ? colors.tint : colors.surfaceSecondary,
-                      borderColor: servingUnit === u ? colors.tint : colors.border,
-                    },
-                  ]}
-                  onPress={() => setServingUnit(u)}
-                >
-                  <ThemedText
-                    style={[
-                      Typography.caption1,
-                      { color: servingUnit === u ? '#FFFFFF' : colors.text },
-                    ]}
-                  >
-                    {u}
-                  </ThemedText>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-
-        {/* Required Macros */}
-        <View style={[styles.section, { borderBottomColor: colors.borderLight }]}>
-          <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
-            Nutrition per Serving
-          </ThemedText>
-          <FieldInput label="Calories" value={calories} onChangeText={setCalories} unit="kcal" required colors={colors} />
-          <FieldInput label="Protein" value={protein} onChangeText={setProtein} unit="g" required colors={colors} />
-          <FieldInput label="Carbs" value={carbs} onChangeText={setCarbs} unit="g" required colors={colors} />
-          <FieldInput label="Fat" value={fat} onChangeText={setFat} unit="g" required colors={colors} />
-        </View>
-
-        {/* Optional Fields */}
-        <Pressable
-          style={styles.moreDetailsToggle}
-          onPress={() => setShowOptional(!showOptional)}
-        >
-          <ThemedText style={[Typography.subhead, { color: colors.tint }]}>
-            {showOptional ? 'Hide details' : 'More details'}
-          </ThemedText>
-        </Pressable>
-
-        {showOptional && (
-          <View style={styles.optionalSection}>
-            <FieldInput label="Sodium" value={sodium} onChangeText={setSodium} unit="mg" colors={colors} />
-            <FieldInput label="Cholesterol" value={cholesterol} onChangeText={setCholesterol} unit="mg" colors={colors} />
-            <FieldInput label="Fiber" value={fiber} onChangeText={setFiber} unit="g" colors={colors} />
-            <FieldInput label="Sugar" value={sugar} onChangeText={setSugar} unit="g" colors={colors} />
-            <FieldInput label="Saturated Fat" value={saturatedFat} onChangeText={setSaturatedFat} unit="g" colors={colors} />
-            <FieldInput label="Trans Fat" value={transFat} onChangeText={setTransFat} unit="g" colors={colors} />
-          </View>
-        )}
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.saveButton,
-            { backgroundColor: colors.tint, opacity: pressed ? 0.8 : 1 },
-            (!isValid || isSaving) && styles.buttonDisabled,
-          ]}
-          onPress={handleSave}
-          disabled={!isValid || isSaving}
-        >
-          {isSaving ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <ThemedText style={styles.saveButtonText}>
-              {isEditing ? 'Save Changes' : 'Create Food'}
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={onDismiss} hitSlop={8}>
+            <ThemedText style={[Typography.body, { color: colors.tint }]}>
+              Cancel
             </ThemedText>
-          )}
-        </Pressable>
-      </ScrollView>
-    </BottomSheet>
+          </Pressable>
+          <ThemedText style={[Typography.headline, { color: colors.text }]}>
+            {isEditing ? 'Edit Custom Food' : 'Create Custom Food'}
+          </ThemedText>
+          <View style={{ width: 50 }} />
+        </View>
+
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <ScrollView
+            style={styles.sheetContent}
+            contentContainerStyle={styles.sheetScrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Name */}
+            <View style={[styles.section, { borderBottomColor: colors.borderLight }]}>
+              <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
+                Name
+              </ThemedText>
+              <TextInput
+                style={[styles.nameInput, { color: colors.text, borderColor: colors.border }]}
+                value={name}
+                onChangeText={setName}
+                placeholder="e.g. Mom's Chili"
+                placeholderTextColor={colors.textTertiary}
+                autoFocus={!isEditing}
+                returnKeyType="next"
+              />
+            </View>
+
+            {/* Serving Size */}
+            <View style={[styles.section, { borderBottomColor: colors.borderLight }]}>
+              <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
+                Serving Size
+              </ThemedText>
+              <View style={styles.servingSizeRow}>
+                <TextInput
+                  style={[styles.servingSizeInput, { color: colors.text, borderColor: colors.border }]}
+                  value={servingSize}
+                  onChangeText={setServingSize}
+                  keyboardType="numeric"
+                  placeholder="1"
+                  placeholderTextColor={colors.textTertiary}
+                  returnKeyType="done"
+                />
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.unitPills}
+                >
+                  {SERVING_UNITS.map((u) => (
+                    <Pressable
+                      key={u}
+                      style={[
+                        styles.unitPill,
+                        {
+                          backgroundColor: servingUnit === u ? colors.tint : colors.surfaceSecondary,
+                          borderColor: servingUnit === u ? colors.tint : colors.border,
+                        },
+                      ]}
+                      onPress={() => setServingUnit(u)}
+                    >
+                      <ThemedText
+                        style={[
+                          Typography.caption1,
+                          { color: servingUnit === u ? '#FFFFFF' : colors.text },
+                        ]}
+                      >
+                        {u}
+                      </ThemedText>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+
+            {/* Required Macros */}
+            <View style={[styles.section, { borderBottomColor: colors.borderLight }]}>
+              <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
+                Nutrition per Serving
+              </ThemedText>
+              <FieldInput label="Calories" value={calories} onChangeText={setCalories} unit="kcal" required colors={colors} />
+              <FieldInput label="Protein" value={protein} onChangeText={setProtein} unit="g" required colors={colors} />
+              <FieldInput label="Carbs" value={carbs} onChangeText={setCarbs} unit="g" required colors={colors} />
+              <FieldInput label="Fat" value={fat} onChangeText={setFat} unit="g" required colors={colors} />
+            </View>
+
+            {/* Optional Fields */}
+            <Pressable
+              style={styles.moreDetailsToggle}
+              onPress={() => setShowOptional(!showOptional)}
+            >
+              <Ionicons
+                name={showOptional ? 'chevron-up' : 'chevron-down'}
+                size={16}
+                color={colors.tint}
+              />
+              <ThemedText style={[Typography.subhead, { color: colors.tint }]}>
+                {showOptional ? 'Hide details' : 'More details'}
+              </ThemedText>
+            </Pressable>
+
+            {showOptional && (
+              <View style={styles.optionalSection}>
+                <FieldInput label="Sodium" value={sodium} onChangeText={setSodium} unit="mg" colors={colors} />
+                <FieldInput label="Cholesterol" value={cholesterol} onChangeText={setCholesterol} unit="mg" colors={colors} />
+                <FieldInput label="Fiber" value={fiber} onChangeText={setFiber} unit="g" colors={colors} />
+                <FieldInput label="Sugar" value={sugar} onChangeText={setSugar} unit="g" colors={colors} />
+                <FieldInput label="Saturated Fat" value={saturatedFat} onChangeText={setSaturatedFat} unit="g" colors={colors} />
+                <FieldInput label="Trans Fat" value={transFat} onChangeText={setTransFat} unit="g" colors={colors} />
+              </View>
+            )}
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.saveButton,
+                { backgroundColor: colors.tint, opacity: pressed ? 0.8 : 1 },
+                (!isValid || isSaving) && styles.buttonDisabled,
+              ]}
+              onPress={handleSave}
+              disabled={!isValid || isSaving}
+            >
+              {isSaving ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <ThemedText style={styles.saveButtonText}>
+                  {isEditing ? 'Save Changes' : 'Create Food'}
+                </ThemedText>
+              )}
+            </Pressable>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  flex: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(128,128,128,0.2)',
+  },
   sheetContent: {
     flex: 1,
   },
   sheetScrollContent: {
     padding: Spacing.xl,
-    paddingBottom: 40,
+    paddingBottom: 100,
   },
   section: {
     paddingBottom: Spacing.lg,
@@ -411,6 +427,9 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   moreDetailsToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
     paddingVertical: Spacing.md,
     marginBottom: Spacing.md,
   },
