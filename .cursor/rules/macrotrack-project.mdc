@@ -1,0 +1,36 @@
+---
+description: MacroTrack project context, architecture, and constraints
+alwaysApply: true
+---
+
+# MacroTrack Project
+
+Voice-first macronutrient tracking app. Full spec in `SPEC.md` at the project root — always consult it for detailed requirements.
+
+## Tech Stack
+
+- **Mobile**: React Native (Expo), Expo Router, Zustand, Expo Speech (TTS)
+- **Backend**: Node.js, Fastify, TypeScript, Prisma, PostgreSQL
+- **AI**: Google Gemini API (parsing only), on-device STT
+- **Food Data**: USDA FoodData Central API + user-created custom foods
+
+## Architecture
+
+- `mobile/` — Expo app (3 bottom tabs: Dashboard, Log, Goals + Kitchen Mode modal)
+- `server/` — Fastify backend (REST API + WebSocket for voice sessions)
+
+## Critical Constraint
+
+The AI (Gemini) is a parser and assistant. It NEVER generates, estimates, or fabricates nutritional data. All nutrition info comes from USDA FoodData Central or user-created custom foods. When no match is found, the system guides the user through creating a custom food — it does not fill in values.
+
+## Food Entry Sources
+
+Only two valid sources for `FoodEntry.source`: `DATABASE` (USDA) or `CUSTOM` (user-created). There is no AI estimate source.
+
+## Date Navigation
+
+The Dashboard has a selected date (defaults to today on launch) with prev/next arrows and a date picker. All screens respect this date: the Log tab and Kitchen Mode log entries to the selected date. Past days are fully editable and support retroactive entry creation.
+
+## Session State
+
+Voice sessions have three outcomes: Save (explicit), Navigate Away (auto-save, same as Save), Cancel (discard all draft entries AND custom foods created during that session).

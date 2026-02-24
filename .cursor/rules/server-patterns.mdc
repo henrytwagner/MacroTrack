@@ -1,0 +1,29 @@
+---
+description: Node.js / Fastify backend conventions for MacroTrack
+globs: server/**/*.ts
+alwaysApply: false
+---
+
+# Server Patterns
+
+## Framework
+
+Fastify with TypeScript. Register routes as plugins in `routes/`. Use Fastify's schema validation for request/response typing.
+
+## Database
+
+Prisma ORM with PostgreSQL. Schema in `db/prisma/schema.prisma`. Four models: User, DailyGoal, FoodEntry, CustomFood, VoiceSession.
+
+## Services Layer
+
+- `gemini.ts` — Gemini API client. Sends transcript + draft context + time of day. Returns structured intents (ADD_ITEMS, EDIT_ITEM, REMOVE_ITEM, CLARIFY, CREATE_FOOD_RESPONSE, SESSION_END). Never ask Gemini to generate nutrition values.
+- `usda.ts` — USDA FoodData Central client. Search by query, parse nutrient response into `{ calories, proteinG, carbsG, fatG }`.
+- `foodParser.ts` — Orchestrator. Lookup priority: custom foods → USDA → no match (trigger voice-guided creation). Never fall back to AI-generated data.
+
+## WebSocket
+
+Voice sessions use WebSocket at `/ws/voice-session`. The handler maintains session state (normal mode vs mid-custom-food-creation). Messages are JSON with a `type` field. See SPEC.md Section 9.2 for the full protocol.
+
+## Search
+
+`GET /api/food/search` returns a unified response: custom food matches grouped under "My Foods", USDA matches grouped under "Database". Custom foods are always listed first.

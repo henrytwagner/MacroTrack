@@ -1,0 +1,39 @@
+---
+description: Kitchen Mode voice session interaction rules
+globs: mobile/**/kitchen-mode.tsx, mobile/**/draftStore.ts, mobile/**/voiceSession.ts, server/**/voiceSession.ts
+alwaysApply: false
+---
+
+# Kitchen Mode Interaction Rules
+
+## Screen Layout (top to bottom)
+
+1. Macro summary bar — live projected totals (saved + draft items)
+2. Draft meal cards — scrollable, pop in as items are recognized
+3. Listening indicator — waveform/pulse showing mic is active
+4. Save + Cancel buttons
+
+## Voice Flow
+
+On-device STT listens continuously, auto-segments on pauses. Transcript segments are sent via WebSocket. Backend parses via Gemini, looks up food (custom → USDA → voice-guided creation), streams results back.
+
+## Card States
+
+- **Normal**: name, quantity, macros, source icon. Tappable for manual edit.
+- **Clarifying**: card highlights/pulses, question text appears on card. TTS speaks question.
+- **Creating**: fields fill in one-by-one as user speaks nutrition info during custom food creation.
+
+## No-Match Flow
+
+When no match in custom foods or USDA: TTS asks "Would you like to create it?" If yes, walk through serving size → calories → protein → carbs → fat via TTS. Card updates per field. User can tap card to finish manually. If no, item is dropped.
+
+## Session Exit
+
+- Save/Done: persist all draft entries + keep custom foods
+- Navigate away: auto-save (same as done)
+- Cancel: discard draft entries AND custom foods from this session. Show confirmation first.
+
+## Defaults
+
+- Missing quantity: default to 1 serving, add card, user corrects if needed
+- Multiple USDA results: auto-pick most generic/common match silently

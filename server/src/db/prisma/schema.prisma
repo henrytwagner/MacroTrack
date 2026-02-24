@@ -1,0 +1,105 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String         @id @default(uuid())
+  name         String         @default("Default User")
+  createdAt    DateTime       @default(now())
+  dailyGoal    DailyGoal?
+  foodEntries  FoodEntry[]
+  customFoods  CustomFood[]
+  voiceSessions VoiceSession[]
+}
+
+model DailyGoal {
+  id        String @id @default(uuid())
+  userId    String @unique
+  calories  Int
+  proteinG  Float
+  carbsG    Float
+  fatG      Float
+  user      User   @relation(fields: [userId], references: [id])
+}
+
+model FoodEntry {
+  id           String   @id @default(uuid())
+  userId       String
+  date         DateTime @db.Date
+  mealLabel    MealLabel
+  name         String
+  calories     Float
+  proteinG     Float
+  carbsG       Float
+  fatG         Float
+  quantity     Float
+  unit         String
+  source       FoodSource
+  usdaFdcId    Int?
+  customFoodId String?
+  createdAt    DateTime @default(now())
+
+  user       User        @relation(fields: [userId], references: [id])
+  customFood CustomFood? @relation(fields: [customFoodId], references: [id])
+
+  @@index([userId, date])
+  @@index([userId, name])
+}
+
+model CustomFood {
+  id             String   @id @default(uuid())
+  userId         String
+  name           String
+  servingSize    Float
+  servingUnit    String
+  calories       Float
+  proteinG       Float
+  carbsG         Float
+  fatG           Float
+  sodiumMg       Float?
+  cholesterolMg  Float?
+  fiberG         Float?
+  sugarG         Float?
+  saturatedFatG  Float?
+  transFatG      Float?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id])
+  foodEntries FoodEntry[]
+
+  @@index([userId, name])
+}
+
+model VoiceSession {
+  id        String        @id @default(uuid())
+  userId    String
+  startedAt DateTime      @default(now())
+  endedAt   DateTime?
+  status    SessionStatus @default(active)
+  user      User          @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+enum MealLabel {
+  breakfast
+  lunch
+  dinner
+  snack
+}
+
+enum FoodSource {
+  DATABASE
+  CUSTOM
+}
+
+enum SessionStatus {
+  active
+  completed
+  cancelled
+}

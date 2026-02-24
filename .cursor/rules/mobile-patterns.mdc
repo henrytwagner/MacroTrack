@@ -1,0 +1,35 @@
+---
+description: React Native / Expo conventions for the MacroTrack mobile app
+globs: mobile/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Mobile App Patterns
+
+## Routing
+
+Use Expo Router (file-based). Tabs live in `app/(tabs)/`. Kitchen Mode is a full-screen modal at `app/kitchen-mode.tsx`.
+
+## State Management
+
+Use Zustand stores in `stores/`. Four stores:
+- `dateStore` — Selected date, shared across Dashboard/Log/Kitchen Mode. Defaults to today on app launch. All entry creation and queries use this date.
+- `draftStore` — Kitchen Mode draft cards and session state
+- `dailyLogStore` — Dashboard entries, frequent/recent foods (filtered by selected date)
+- `goalStore` — Daily macro targets
+
+## Components
+
+- Bottom sheets use a consistent full-height pattern (FoodDetailSheet, CreateFoodSheet) or lightweight pattern (EditEntrySheet).
+- Draft cards in Kitchen Mode have three visual states: normal, clarifying (highlight/pulse), creating (fields fill in progressively).
+- Every food entry row shows a source indicator icon (database or custom).
+
+## Styling
+
+Minimal, clean, Apple Health aesthetic. Generous white space. Define all colors, typography, and spacing in `constants/theme.ts` — never use inline magic values.
+
+## Services
+
+- `api.ts` — REST client wrapping fetch, typed request/response
+- `voiceSession.ts` — WebSocket client for Kitchen Mode
+- `speech.ts` — On-device STT via `expo-speech-recognition`, TTS via Expo Speech

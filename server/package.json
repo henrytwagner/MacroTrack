@@ -1,0 +1,31 @@
+{
+  "name": "macrotrack-server",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "db:generate": "prisma generate --schema=src/db/prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema=src/db/prisma/schema.prisma",
+    "db:push": "prisma db push --schema=src/db/prisma/schema.prisma",
+    "db:studio": "prisma studio --schema=src/db/prisma/schema.prisma"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "@fastify/websocket": "^11.2.0",
+    "@google/generative-ai": "^0.24.1",
+    "@prisma/adapter-pg": "^7.4.1",
+    "@prisma/client": "^7.4.1",
+    "dotenv": "^17.3.1",
+    "fastify": "^5.7.4",
+    "pg": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "@types/pg": "^8.16.0",
+    "prisma": "^7.4.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

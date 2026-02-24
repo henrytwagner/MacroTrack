@@ -1,0 +1,32 @@
+---
+description: Constraints for Gemini AI integration and prompt engineering
+globs: server/src/services/gemini.ts
+alwaysApply: false
+---
+
+# Gemini Prompt Rules
+
+## System Prompt Must Include
+
+1. "You are a food logging assistant. Parse natural language into structured food items."
+2. "Never generate, estimate, or approximate nutritional data."
+3. "Return structured JSON with an action type and payload."
+4. Role is limited to: parsing food names/quantities, detecting edit/remove intents, asking clarification questions, guiding custom food creation, assigning meal labels.
+
+## Intent Response Format
+
+Always return JSON with `{ action, payload }`. Valid actions:
+- `ADD_ITEMS` — `[{ name, quantity, unit }]`
+- `EDIT_ITEM` — `{ targetItem, field, newValue }`
+- `REMOVE_ITEM` — `{ targetItem }`
+- `CLARIFY` — `{ targetItem, question }`
+- `CREATE_FOOD_RESPONSE` — `{ field, value }`
+- `SESSION_END` — no payload
+
+## Context Passed to Gemini
+
+Every request includes: current transcript, current draft items array, current time of day (for meal assignment), session state (normal or creating-food for specific item).
+
+## Meal Labels
+
+Assign based on time: Breakfast (5-10:59 AM), Lunch (11 AM-1:59 PM), Snack (2-4:59 PM), Dinner (5-9:59 PM), Snack (10 PM-4:59 AM). May override by food context (e.g., "breakfast burrito" at 1 PM = Breakfast).
