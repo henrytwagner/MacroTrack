@@ -1,6 +1,17 @@
 import { useRef, useCallback } from "react";
 import { useState } from "react";
-import { StyleSheet, View, TouchableOpacity, ActivityIndicator, Platform } from "react-native";
+import {
+  StyleSheet,
+  View,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  ActivityIndicator,
+  Platform,
+  TextInput,
+  Keyboard,
+  InputAccessoryView,
+  KeyboardAvoidingView,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -8,9 +19,8 @@ import * as ImagePicker from "expo-image-picker";
 import { ThemedText } from "@/components/themed-text";
 import { Colors, Typography, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import { normalizeToGTIN } from "@/features/barcode/gtin";
+import { validateGTINInput, inferFormatFromLength } from "@/features/barcode/gtin";
 import { scanWithCamera, scanFromImage, getSupportedFeatures } from "@/features/barcode/scanner";
-import { normalizeImageForScan } from "@/features/barcode/cropImage";
 import { BarcodeCameraScreen } from "@/features/barcode/BarcodeCameraScreen";
 import { BarcodeCropView } from "@/features/barcode/BarcodeCropView";
 import { BarcodeResultCard } from "@/features/barcode/BarcodeResultCard";
@@ -24,9 +34,10 @@ export default function BarcodeDemoScreen() {
   const router = useRouter();
   const [scanResult, setScanResult] = useState<BarcodeScanResult | null>(null);
   const [scanMessage, setScanMessage] = useState<ScanMessage>(null);
-  const [gtinTestResult, setGtinTestResult] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [showFallbackCamera, setShowFallbackCamera] = useState(false);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualInput, setManualInput] = useState("");
   const [cropPayload, setCropPayload] = useState<{
     uri: string;
     width?: number;
@@ -38,25 +49,6 @@ export default function BarcodeDemoScreen() {
     setScanResult(null);
     setScanMessage(null);
   }, []);
-
-  const runGtinTest = () => {
-    try {
-      const r12 = normalizeToGTIN("012345678901");
-      const r13 = normalizeToGTIN("0123456789012");
-      const empty = normalizeToGTIN("abc");
-      let threw = false;
-      try {
-        normalizeToGTIN("123");
-      } catch {
-        threw = true;
-      }
-      setGtinTestResult(
-        `12→ ${r12}\n13→ ${r13}\nempty→ "${empty}"\ninvalid throws→ ${threw}`
-      );
-    } catch (e) {
-      setGtinTestResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  };
 
   const handleScanWithCamera = useCallback(async () => {
     if (Platform.OS === "web") return;
@@ -96,40 +88,20 @@ export default function BarcodeDemoScreen() {
   const handleUploadImage = useCallback(async () => {
     clearResult();
     try {
-      const isNative = Platform.OS !== "web";
       const { assets, canceled } = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
-        allowsEditing: isNative,
-        aspect: isNative ? [4, 1] : undefined,
+        allowsEditing: false,
       });
       if (canceled || !assets?.[0]?.uri) {
         setScanMessage("cancelled");
         return;
       }
       const asset = assets[0];
-      if (isNative) {
-        setScanning(true);
-        await new Promise((r) => setTimeout(r, 100));
-        try {
-          const uriToScan = await normalizeImageForScan(asset.uri);
-          const result = await scanFromImage(uriToScan, {
-            type: "image/jpeg",
-            name: asset.fileName ?? "image.jpg",
-          });
-          setScanResult(result ?? null);
-          setScanMessage(result ? null : "no_barcode");
-        } catch {
-          setScanMessage("no_barcode");
-        } finally {
-          setScanning(false);
-        }
-      } else {
-        setCropPayload({
-          uri: asset.uri,
-          width: asset.width,
-          height: asset.height,
-        });
-      }
+      setCropPayload({
+        uri: asset.uri,
+        width: asset.width,
+        height: asset.height,
+      });
     } catch {
       setScanMessage("no_barcode");
     }
@@ -158,6 +130,33 @@ export default function BarcodeDemoScreen() {
   const handleCropCancel = useCallback(() => {
     setCropPayload(null);
   }, []);
+
+  const handleEnterBarcodePress = useCallback(() => {
+    clearResult();
+    setManualInput("");
+    setShowManualEntry(true);
+  }, [clearResult]);
+
+  const handleManualCancel = useCallback(() => {
+    Keyboard.dismiss();
+    setShowManualEntry(false);
+    setManualInput("");
+  }, []);
+
+  const handleManualSubmit = useCallback(() => {
+    Keyboard.dismiss();
+    const validation = validateGTINInput(manualInput);
+    if (!validation.valid) return;
+    const digits = manualInput.replace(/\D/g, "");
+    const format = inferFormatFromLength(digits.length);
+    setScanResult({
+      gtin: validation.gtin,
+      raw: validation.gtin,
+      format,
+    });
+    setShowManualEntry(false);
+    setManualInput("");
+  }, [manualInput]);
 
   if (showFallbackCamera) {
     return (
@@ -188,29 +187,162 @@ export default function BarcodeDemoScreen() {
       style={[styles.container, { backgroundColor: colors.background }]}
       edges={["top", "bottom"]}
     >
-      <View style={styles.content}>
+      <TouchableWithoutFeedback
+        onPress={() => {
+          if (!showManualEntry) Keyboard.dismiss();
+        }}
+        accessible={false}
+      >
+        {(() => {
+          const ContentWrapper =
+            showManualEntry && Platform.OS !== "web" ? KeyboardAvoidingView : View;
+          const wrapperProps =
+            showManualEntry && Platform.OS !== "web"
+              ? {
+                  behavior: "padding" as const,
+                  keyboardVerticalOffset: Platform.OS === "ios" ? 44 : 0,
+                }
+              : {};
+          return (
+            <ContentWrapper style={styles.content} {...wrapperProps}>
         <ThemedText type="title" style={styles.title}>
           Barcode demo
         </ThemedText>
         <ThemedText
           style={[Typography.body, { color: colors.textSecondary, textAlign: "center" }]}
         >
-          Scan with camera or upload an image to get a GTIN.
+          Scan with camera, upload an image, or enter a barcode number to look up a product.
         </ThemedText>
 
-        <TouchableOpacity
-          style={[styles.button, { backgroundColor: colors.tint }]}
-          onPress={runGtinTest}
-        >
-          <ThemedText style={styles.buttonText}>Test normalizeToGTIN</ThemedText>
-        </TouchableOpacity>
-        {gtinTestResult != null && (
-          <ThemedText style={[Typography.footnote, { color: colors.text, fontFamily: "monospace" }]}>
-            {gtinTestResult}
-          </ThemedText>
-        )}
+        {showManualEntry && Platform.OS === "ios" && (() => {
+          const accessoryValidation = validateGTINInput(manualInput);
+          return (
+            <InputAccessoryView nativeID="manualBarcodeAccessory">
+              <View
+                style={[
+                  styles.inputAccessoryBar,
+                  { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
+                ]}
+              >
+                <TouchableOpacity
+                  style={[styles.inputAccessoryButton, { backgroundColor: colors.surfaceSecondary }]}
+                  onPress={handleManualCancel}
+                >
+                  <ThemedText style={[styles.buttonText, { color: colors.text }]}>Cancel</ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.inputAccessoryButton,
+                    {
+                      backgroundColor: accessoryValidation.valid ? colors.tint : colors.surfaceSecondary,
+                    },
+                  ]}
+                  onPress={handleManualSubmit}
+                  disabled={!accessoryValidation.valid}
+                >
+                  <ThemedText
+                    style={[
+                      styles.buttonText,
+                      { color: accessoryValidation.valid ? "#fff" : colors.textTertiary },
+                    ]}
+                  >
+                    Submit
+                  </ThemedText>
+                </TouchableOpacity>
+              </View>
+            </InputAccessoryView>
+          );
+        })()}
 
-        {Platform.OS !== "web" && (
+        {showManualEntry ? (() => {
+          const manualValidation = validateGTINInput(manualInput);
+          const isInvalid = manualInput.length > 0 && !manualValidation.valid;
+          const manualEntryContent = (
+            <>
+              <TextInput
+                style={[
+                  styles.manualInput,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: isInvalid ? colors.destructive : colors.border,
+                    color: colors.text,
+                  },
+                ]}
+                value={manualInput}
+                onChangeText={(text) => setManualInput(text.replace(/\D/g, ""))}
+                placeholder="8, 12, or 13 digits"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="number-pad"
+                returnKeyType="done"
+                blurOnSubmit={true}
+                onSubmitEditing={handleManualSubmit}
+                inputAccessoryViewID={Platform.OS === "ios" ? "manualBarcodeAccessory" : undefined}
+                maxLength={20}
+                autoFocus
+              />
+              <ThemedText
+                style={[
+                  Typography.caption1,
+                  { color: isInvalid ? colors.destructive : colors.textTertiary },
+                ]}
+              >
+                {manualInput.length === 0
+                  ? "8, 12, or 13 digits"
+                  : manualValidation.valid
+                    ? "Valid"
+                    : manualValidation.error}
+              </ThemedText>
+              {Platform.OS !== "ios" && (
+                <View style={styles.manualEntryActions}>
+                  <TouchableOpacity
+                    style={[styles.button, { backgroundColor: colors.surfaceSecondary }]}
+                    onPress={handleManualCancel}
+                  >
+                    <ThemedText style={[styles.buttonText, { color: colors.text }]}>Cancel</ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.button,
+                      {
+                        backgroundColor: manualValidation.valid
+                          ? colors.tint
+                          : colors.surfaceSecondary,
+                      },
+                    ]}
+                    onPress={handleManualSubmit}
+                    disabled={!manualValidation.valid}
+                  >
+                    <ThemedText
+                      style={[
+                        styles.buttonText,
+                        { color: manualValidation.valid ? "#fff" : colors.textTertiary },
+                      ]}
+                    >
+                      Submit
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          );
+          return (
+            <View style={styles.manualEntryBlock}>
+              {Platform.OS === "android" ? (
+                <KeyboardAvoidingView
+                  behavior="padding"
+                  style={styles.keyboardAvoiding}
+                  keyboardVerticalOffset={0}
+                >
+                  {manualEntryContent}
+                </KeyboardAvoidingView>
+              ) : (
+                manualEntryContent
+              )}
+            </View>
+          );
+        })() : (
+          <>
+            {Platform.OS !== "web" && (
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.tint }]}
             onPress={handleScanWithCamera}
@@ -236,6 +368,16 @@ export default function BarcodeDemoScreen() {
           )}
         </TouchableOpacity>
 
+            <TouchableOpacity
+              style={[styles.button, { backgroundColor: colors.tint }]}
+              onPress={handleEnterBarcodePress}
+              disabled={scanning}
+            >
+              <ThemedText style={styles.buttonText}>Enter barcode number</ThemedText>
+            </TouchableOpacity>
+          </>
+        )}
+
         {scanResult != null && <BarcodeResultCard result={scanResult} />}
         {scanMessage === "no_barcode" && (
           <ThemedText style={[Typography.footnote, { color: colors.textSecondary }]}>
@@ -254,7 +396,10 @@ export default function BarcodeDemoScreen() {
         >
           Tap here or use system back to close.
         </ThemedText>
-      </View>
+            </ContentWrapper>
+          );
+        })()}
+      </TouchableWithoutFeedback>
     </SafeAreaView>
   );
 }
@@ -282,5 +427,39 @@ const styles = StyleSheet.create({
   buttonText: {
     color: "#fff",
     fontWeight: "600",
+  },
+  manualEntryBlock: {
+    width: "100%",
+    maxWidth: 360,
+    marginTop: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  keyboardAvoiding: {
+    width: "100%",
+  },
+  manualInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    fontSize: 16,
+  },
+  manualEntryActions: {
+    flexDirection: "row",
+    gap: Spacing.md,
+    marginTop: Spacing.xs,
+  },
+  inputAccessoryBar: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderTopWidth: 1,
+  },
+  inputAccessoryButton: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: 8,
   },
 });
