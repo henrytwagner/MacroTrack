@@ -6,7 +6,7 @@ import { normalizeToGTIN } from "./gtin";
 import { scanFromImageWeb } from "./scanFromImageWeb";
 import { uploadImageForBarcodeScan } from "@/services/api";
 
-const BARCODE_TYPES = ["ean13", "upc_a", "ean8"] as const;
+const BARCODE_TYPES = ["ean13", "upc_a", "ean8", "upc_e"] as const;
 
 /**
  * Returns whether the native modern barcode scanner (launchScanner) is available.

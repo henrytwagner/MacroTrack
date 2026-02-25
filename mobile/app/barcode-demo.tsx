@@ -19,7 +19,7 @@ import * as ImagePicker from "expo-image-picker";
 import { ThemedText } from "@/components/themed-text";
 import { Colors, Typography, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import { validateGTINInput, inferFormatFromLength } from "@/features/barcode/gtin";
+import { validateGTINInput, inferFormatForManualEntry } from "@/features/barcode/gtin";
 import { scanWithCamera, scanFromImage, getSupportedFeatures } from "@/features/barcode/scanner";
 import { BarcodeCameraScreen } from "@/features/barcode/BarcodeCameraScreen";
 import { BarcodeCropView } from "@/features/barcode/BarcodeCropView";
@@ -148,7 +148,7 @@ export default function BarcodeDemoScreen() {
     const validation = validateGTINInput(manualInput);
     if (!validation.valid) return;
     const digits = manualInput.replace(/\D/g, "");
-    const format = inferFormatFromLength(digits.length);
+    const format = inferFormatForManualEntry(digits);
     setScanResult({
       gtin: validation.gtin,
       raw: validation.gtin,
@@ -277,7 +277,7 @@ export default function BarcodeDemoScreen() {
                 blurOnSubmit={true}
                 onSubmitEditing={handleManualSubmit}
                 inputAccessoryViewID={Platform.OS === "ios" ? "manualBarcodeAccessory" : undefined}
-                maxLength={20}
+                maxLength={13}
                 autoFocus
               />
               <ThemedText
@@ -292,6 +292,18 @@ export default function BarcodeDemoScreen() {
                     ? "Valid"
                     : manualValidation.error}
               </ThemedText>
+              {manualValidation.valid &&
+                manualInput.replace(/\D/g, "").length === 8 && (
+                  <ThemedText
+                    style={[
+                      Typography.caption1,
+                      { color: colors.textTertiary, fontStyle: "italic" },
+                    ]}
+                  >
+                    Many US/Canada products use UPC-A (12 digits). Small items like cans often use
+                    UPC-E (8 digits)—the scanner supports both; you can scan the can directly.
+                  </ThemedText>
+                )}
               {Platform.OS !== "ios" && (
                 <View style={styles.manualEntryActions}>
                   <TouchableOpacity

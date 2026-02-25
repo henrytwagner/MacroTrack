@@ -6,7 +6,7 @@ import type { BarcodeScanningResult } from "expo-camera";
 import type { BarcodeScanResult } from "./types";
 import { normalizeToGTIN } from "./gtin";
 
-const BARCODE_TYPES = ["ean13", "upc_a", "ean8"] as const;
+const BARCODE_TYPES = ["ean13", "upc_a", "ean8", "upc_e"] as const;
 const THROTTLE_MS = 1500;
 
 export type BarcodeCameraScreenProps = {

@@ -18,6 +18,7 @@ HINTS.set(DecodeHintType.POSSIBLE_FORMATS, [
   BarcodeFormat.EAN_13,
   BarcodeFormat.UPC_A,
   BarcodeFormat.EAN_8,
+  BarcodeFormat.UPC_E,
 ]);
 
 function rgbaToLuminance(data: Uint8ClampedArray, width: number, height: number): Uint8ClampedArray {
@@ -40,6 +41,8 @@ function zxingFormatToOurs(format: BarcodeFormat): string {
       return "upc_a";
     case BarcodeFormat.EAN_8:
       return "ean8";
+    case BarcodeFormat.UPC_E:
+      return "upc_e";
     default:
       return String(format).toLowerCase().replace(/_/g, "_");
   }
