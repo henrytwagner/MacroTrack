@@ -1,0 +1,36 @@
+---
+description: Standalone barcode scanner feature — scope, API, and platform rules
+globs: mobile/features/barcode/**/*, mobile/app/barcode-demo.tsx
+alwaysApply: false
+---
+
+# Barcode Scanner (Standalone)
+
+This module is developed **independently** of the main MacroTrack app. Do not wire it into the Log tab, Kitchen Mode, server, or `shared/types` until the integration phase.
+
+## Public API
+
+- **`scanWithCamera()`** — iOS/Android only. Opens camera scanner. Returns `Promise<BarcodeScanResult | null>`.
+- **`scanFromImage(uri: string, options?: { type?: string; name?: string })`** — All platforms. Scans barcode from image URI. Returns `Promise<BarcodeScanResult | null>`. On iOS, pass `type`/`name` when available for server upload.
+
+Result type: `BarcodeScanResult { gtin: string; raw: string; format: string }`. GTIN is normalized to 13-digit (e.g. UPC-A zero-padded).
+
+## Platform
+
+- **Camera scanner**: iOS and Android only. Use native `launchScanner()` when available (fastest); fallback to in-app `CameraView` with target overlay. On web, do not show or call camera — hide the option.
+- **Image upload**: Available on all platforms. **Web**: client-side decode (canvas + @zxing/library). **Android**: expo-camera `scanFromURLAsync(uri, barcodeTypes)`. **iOS**: upload image to `POST /api/barcode/scan` (server decodes with sharp + @zxing/library). Use `expo-image-picker` then `scanFromImage(uri, { type, name })`.
+
+## Tech
+
+- `expo-camera` (barcode scanning, `launchScanner`, `scanFromURLAsync` on Android)
+- `expo-image-picker` (pick image for upload flow)
+- `@zxing/library` (web: decode from image; server: decode from uploaded image for iOS)
+
+## Testing
+
+- **Maintain tests** when changing the barcode feature: add or update tests for new/updated behavior.
+- **Test location**: `mobile/features/barcode/__tests__/`. Unit tests for `gtin.ts` and `scanner.ts` (with mocked `expo-camera`).
+- **Run tests**: From repo root, `cd mobile && npm test`. Uses Jest in Node for barcode tests (see `mobile/jest.config.js`).
+- **Adding tests**: New logic in `gtin.ts` or result handling in `scanner.ts` should have corresponding tests in `__tests__/*.test.ts`. Keep mocks minimal; prefer testing pure functions (e.g. `normalizeToGTIN`) directly.
+
+For full scope, file layout, and validation steps see **BUILD_GUIDE.md** → "Standalone: Barcode Scanner".
