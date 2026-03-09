@@ -2,30 +2,30 @@ import {
   normalizeToGTIN,
   expandUPCEtoUPCA,
   validateGTINInput,
+  validateGTINCheckDigit,
+  normalizeFormat,
   inferFormatFromLength,
   inferFormatForManualEntry,
 } from "../gtin";
 
 describe("normalizeToGTIN", () => {
-  it("returns 13-digit string unchanged", () => {
+  it("returns 13-digit string unchanged when check digit valid", () => {
     expect(normalizeToGTIN("0123456789012")).toBe("0123456789012");
-    expect(normalizeToGTIN("1234567890123")).toBe("1234567890123");
   });
 
   it("left-pads 12-digit string with one 0", () => {
-    expect(normalizeToGTIN("012345678901")).toBe("0012345678901");
     expect(normalizeToGTIN("123456789012")).toBe("0123456789012");
   });
 
-  it("left-pads 8-digit string with five 0s (EAN-8)", () => {
-    expect(normalizeToGTIN("12345678")).toBe("0000012345678");
-    expect(normalizeToGTIN("01234567")).toBe("0000001234567");
+  it("left-pads 8-digit string with five 0s (EAN-8) when format is ean8", () => {
+    // 22345677 has valid EAN-8 check digit when padded to 13
+    expect(normalizeToGTIN("22345677", "ean8")).toBe("0000022345677");
   });
 
   it("strips non-digits before normalizing", () => {
-    expect(normalizeToGTIN("0 12-345-678-901")).toBe("0012345678901"); // 12 digits → padded
-    expect(normalizeToGTIN("0123456789012 ")).toBe("0123456789012"); // 13 digits → as-is
-    expect(normalizeToGTIN("12-34-56-78")).toBe("0000012345678"); // 8 digits → padded
+    expect(normalizeToGTIN("1 23-456-789-012")).toBe("0123456789012");
+    expect(normalizeToGTIN("0123456789012 ")).toBe("0123456789012");
+    expect(normalizeToGTIN("22-34-56-77", "ean8")).toBe("0000022345677");
   });
 
   it("returns empty string when no digits", () => {
@@ -41,19 +41,66 @@ describe("normalizeToGTIN", () => {
     expect(() => normalizeToGTIN("12345")).toThrow(/expected 8, 12 or 13/);
   });
 
+  it("throws for 11-digit (ambiguous length)", () => {
+    expect(() => normalizeToGTIN("12345678901")).toThrow(/11 digits/);
+  });
+
   it("accepts optional format parameter without affecting result", () => {
     expect(normalizeToGTIN("0123456789012", "ean13")).toBe("0123456789012");
-    expect(normalizeToGTIN("012345678901", "upc_a")).toBe("0012345678901");
-    expect(normalizeToGTIN("12345678", "ean8")).toBe("0000012345678");
+    expect(normalizeToGTIN("123456789012", "upc_a")).toBe("0123456789012");
+    expect(normalizeToGTIN("22345677", "ean8")).toBe("0000022345677");
   });
 
   it("expands UPC-E (8-digit) to 13-digit GTIN when format is upc_e", () => {
-    // Diet Coke–style: UPC-E 04904500 → UPC-A 049000000450 → GTIN 0049000000450
-    expect(normalizeToGTIN("04904500", "upc_e")).toBe("0049000000450");
-    // E[6]=7 (5-9 pattern): E[0..6] + "0000" + E[6..8] → 023456000073
+    // 02345673 expands to 023456000073 (valid UPC-A) → 0023456000073
     expect(normalizeToGTIN("02345673", "upc_e")).toBe("0023456000073");
-    // E[6]=0 (0-2 pattern): E[0..3] + E[6] + "0000" + E[3..6] + E[7] → 078000003239
-    expect(normalizeToGTIN("07832309", "upc_e")).toBe("0078000003239");
+  });
+
+  it("treats 8-digit with unknown/missing format using check-digit disambiguation", () => {
+    // 02345673: only UPC-E interpretation is valid → 0023456000073
+    expect(normalizeToGTIN("02345673")).toBe("0023456000073");
+    expect(normalizeToGTIN("02345673", "unknown")).toBe("0023456000073");
+    // 22345677: EAN-8 format valid
+    expect(normalizeToGTIN("22345677", "ean8")).toBe("0000022345677");
+  });
+
+  it("throws when check digit invalid (13-digit)", () => {
+    expect(() => normalizeToGTIN("0123456789013")).toThrow(/Invalid check digit/);
+  });
+
+  it("throws when 8-digit has no valid interpretation", () => {
+    // 99999999: neither UPC-E nor EAN-8 interpretation has valid check digit
+    expect(() => normalizeToGTIN("99999999")).toThrow(/Invalid check digit|unrecognized 8-digit/);
+  });
+});
+
+describe("validateGTINCheckDigit", () => {
+  it("returns true for valid 13-digit GTIN", () => {
+    expect(validateGTINCheckDigit("0123456789012")).toBe(true);
+    expect(validateGTINCheckDigit("0023456000073")).toBe(true);
+  });
+  it("returns false for invalid check digit", () => {
+    expect(validateGTINCheckDigit("0123456789013")).toBe(false);
+  });
+  it("returns false for wrong length or non-digits", () => {
+    expect(validateGTINCheckDigit("123")).toBe(false);
+    expect(validateGTINCheckDigit("01234567890123")).toBe(false);
+    expect(validateGTINCheckDigit("012345678901a")).toBe(false);
+  });
+});
+
+describe("normalizeFormat", () => {
+  it("returns canonical format for known types", () => {
+    expect(normalizeFormat("upc_e")).toBe("upc_e");
+    expect(normalizeFormat("UPC_E")).toBe("upc_e");
+    expect(normalizeFormat("upc-e")).toBe("upc_e");
+    expect(normalizeFormat("ean8")).toBe("ean8");
+    expect(normalizeFormat("EAN13")).toBe("ean13");
+  });
+  it("returns undefined for unknown or empty", () => {
+    expect(normalizeFormat("unknown")).toBeUndefined();
+    expect(normalizeFormat("")).toBeUndefined();
+    expect(normalizeFormat(undefined)).toBeUndefined();
   });
 });
 
@@ -61,7 +108,8 @@ describe("expandUPCEtoUPCA", () => {
   it("expands 8-digit UPC-E to 12-digit UPC-A by pattern", () => {
     expect(expandUPCEtoUPCA("02345673")).toBe("023456000073"); // E[6]=7 → 5-9
     expect(expandUPCEtoUPCA("02345147")).toBe("023450000017");  // E[6]=4 → case 4
-    expect(expandUPCEtoUPCA("04904500")).toBe("049000000450");  // E[6]=0
+    expect(expandUPCEtoUPCA("04904500")).toBe("049000000450");   // E[6]=0
+    expect(expandUPCEtoUPCA("03424005")).toBe("034000002405");   // E[6]=0 → 0-2 pattern
   });
 });
 
@@ -72,15 +120,18 @@ describe("validateGTINInput", () => {
     expect(validateGTINInput("---")).toEqual({ valid: false });
   });
 
-  it("returns valid: true with gtin for 8, 12, or 13 digits", () => {
-    expect(validateGTINInput("012345678901")).toEqual({ valid: true, gtin: "0012345678901" });
+  it("returns valid: true with gtin for 8, 12, or 13 digits when check digit valid", () => {
+    expect(validateGTINInput("123456789012")).toEqual({ valid: true, gtin: "0123456789012" });
     expect(validateGTINInput("0123456789012")).toEqual({ valid: true, gtin: "0123456789012" });
+    expect(validateGTINInput("02345673")).toEqual({ valid: true, gtin: "0023456000073" });
+    expect(validateGTINInput("22345677")).toEqual({ valid: true, gtin: "0000022345677" });
   });
 
-  it("treats 8-digit starting with 0 or 1 as UPC-E (expanded GTIN), others as EAN-8", () => {
-    expect(validateGTINInput("04904500")).toEqual({ valid: true, gtin: "0049000000450" });
-    expect(validateGTINInput("12345678")).toEqual({ valid: true, gtin: "0123456000078" });
-    expect(validateGTINInput("82345678")).toEqual({ valid: true, gtin: "0000082345678" });
+  it("returns valid: false with error for invalid check digit", () => {
+    expect(validateGTINInput("0123456789013")).toEqual({
+      valid: false,
+      error: "Invalid check digit",
+    });
   });
 
   it("returns valid: false with error for invalid lengths", () => {
@@ -99,8 +150,8 @@ describe("validateGTINInput", () => {
   });
 
   it("strips non-digits before validating", () => {
-    expect(validateGTINInput("04 90 45 00")).toEqual({ valid: true, gtin: "0049000000450" });
-    expect(validateGTINInput("82 34 56 78")).toEqual({ valid: true, gtin: "0000082345678" });
+    expect(validateGTINInput("02 34 56 73")).toEqual({ valid: true, gtin: "0023456000073" });
+    expect(validateGTINInput("22-34-56-77")).toEqual({ valid: true, gtin: "0000022345677" });
   });
 });
 

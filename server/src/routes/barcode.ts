@@ -9,7 +9,37 @@ import {
   RGBLuminanceSource,
 } from "@zxing/library";
 
-/** Expand 8-digit UPC-E to 12-digit UPC-A (zero-suppression rules). */
+const CANONICAL_FORMATS = ["ean13", "upc_a", "ean8", "upc_e"] as const;
+type CanonicalFormat = (typeof CANONICAL_FORMATS)[number];
+
+function normalizeFormat(format: string | undefined): CanonicalFormat | undefined {
+  if (format == null || format === "") return undefined;
+  const normalized = format.toLowerCase().replace(/-/g, "_");
+  if (CANONICAL_FORMATS.includes(normalized as CanonicalFormat)) {
+    return normalized as CanonicalFormat;
+  }
+  return undefined;
+}
+
+function validateGTINCheckDigit(gtin13: string): boolean {
+  if (gtin13.length !== 13 || !/^\d{13}$/.test(gtin13)) return false;
+  let sum = 0;
+  for (let i = 0; i < 12; i++) {
+    sum += parseInt(gtin13[i], 10) * (i % 2 === 0 ? 1 : 3);
+  }
+  return (sum + parseInt(gtin13[12], 10)) % 10 === 0;
+}
+
+function validateUPCACheckDigit(upca12: string): boolean {
+  if (upca12.length !== 12 || !/^\d{12}$/.test(upca12)) return false;
+  let sum = 0;
+  for (let i = 0; i < 11; i++) {
+    sum += parseInt(upca12[i], 10) * (i % 2 === 0 ? 3 : 1);
+  }
+  sum += parseInt(upca12[11], 10);
+  return sum % 10 === 0;
+}
+
 function expandUPCEtoUPCA(upce: string): string {
   if (upce.length !== 8) return upce;
   const e = upce;
@@ -33,20 +63,52 @@ function expandUPCEtoUPCA(upce: string): string {
   }
 }
 
+/**
+ * Normalize barcode to 13-digit GTIN with check-digit validation.
+ * Returns null on invalid length (e.g. 11), invalid check digit, or unresolvable 8-digit.
+ */
 export function normalizeToGTIN(raw: string, format?: string): string | null {
   const digits = raw.replace(/\D/g, "");
   const len = digits.length;
-  if (len === 13) return digits;
-  if (len === 12) return "0" + digits;
-  if (len === 8) {
-    if (format === "upc_e") {
-      const upca = expandUPCEtoUPCA(digits);
-      return upca.length === 12 ? "0" + upca : "00000" + digits;
-    }
-    return "00000" + digits;
-  }
+  const fmt = normalizeFormat(format);
+
   if (len === 0) return "";
-  return null;
+  if (len === 11 || (len !== 8 && len !== 12 && len !== 13)) return null;
+
+  try {
+    let gtin13: string;
+
+    if (len === 13) {
+      gtin13 = digits;
+    } else if (len === 12) {
+      gtin13 = "0" + digits;
+    } else {
+      if (fmt === "upc_e") {
+        const upca = expandUPCEtoUPCA(digits);
+        if (upca.length !== 12 || !validateUPCACheckDigit(upca)) return null;
+        gtin13 = "0" + upca;
+      } else if (fmt === "ean8") {
+        gtin13 = "00000" + digits;
+      } else {
+        const upca = expandUPCEtoUPCA(digits);
+        const asUPCE = upca.length === 12 && validateUPCACheckDigit(upca);
+        const gtinUPCE = asUPCE ? "0" + upca : null;
+        const gtinEAN8 = "00000" + digits;
+        const upceValid = gtinUPCE != null && validateGTINCheckDigit(gtinUPCE);
+        const ean8Valid = validateGTINCheckDigit(gtinEAN8);
+        if (upceValid && !ean8Valid) gtin13 = gtinUPCE!;
+        else if (!upceValid && ean8Valid) gtin13 = gtinEAN8;
+        else if (upceValid && ean8Valid) {
+          gtin13 = digits[0] === "0" || digits[0] === "1" ? gtinUPCE! : gtinEAN8;
+        } else return null;
+      }
+    }
+
+    if (gtin13.length === 13 && !validateGTINCheckDigit(gtin13)) return null;
+    return gtin13;
+  } catch {
+    return null;
+  }
 }
 
 function zxingFormatToStr(format: BarcodeFormat): string {
@@ -60,7 +122,7 @@ function zxingFormatToStr(format: BarcodeFormat): string {
     case BarcodeFormat.UPC_E:
       return "upc_e";
     default:
-      return String(format).toLowerCase();
+      return String(format).toLowerCase().replace(/-/g, "_");
   }
 }
 
@@ -133,8 +195,8 @@ export async function barcodeRoutes(app: FastifyInstance) {
       const raw = result.getText();
       const formatStr = zxingFormatToStr(result.getBarcodeFormat());
       const gtin = normalizeToGTIN(raw, formatStr);
-      if (!gtin) {
-        return reply.code(200).send({ gtin: null });
+      if (gtin == null || gtin === "") {
+        return reply.code(200).send({ gtin: null, error: "invalid_check_digit" });
       }
       return reply.code(200).send({ gtin, raw, format: formatStr });
     } catch {

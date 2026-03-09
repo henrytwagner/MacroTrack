@@ -72,6 +72,7 @@ export default function FoodEntryRow({
               style={[Typography.caption1, { color: colors.textSecondary }]}
             >
               {entry.quantity}
+              {' '}
               {entry.unit}
             </ThemedText>
             <ThemedText

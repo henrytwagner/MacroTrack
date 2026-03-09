@@ -1,9 +1,11 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import { goalsRoutes } from "./routes/goals.js";
 import { foodRoutes } from "./routes/food.js";
 import { customFoodRoutes } from "./routes/customFood.js";
+import { barcodeRoutes } from "./routes/barcode.js";
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
@@ -12,6 +14,7 @@ export async function buildApp() {
     origin: true,
   });
 
+  await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
   await app.register(websocket);
 
   app.get("/health", async () => {
@@ -21,6 +24,7 @@ export async function buildApp() {
   await app.register(goalsRoutes);
   await app.register(foodRoutes);
   await app.register(customFoodRoutes);
+  await app.register(barcodeRoutes);
 
   return app;
 }

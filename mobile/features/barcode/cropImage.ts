@@ -25,18 +25,24 @@ export type CropRegion = {
   height: number;
 };
 
+export type RotationDegrees = 0 | 90 | 180 | 270;
+
 export async function cropImageToRegion(
   uri: string,
-  region: CropRegion
+  region: CropRegion,
+  rotationDegrees?: RotationDegrees
 ): Promise<string> {
-  const result = await ImageManipulator.manipulate(uri)
-    .crop({
-      originX: Math.round(region.originX),
-      originY: Math.round(region.originY),
-      width: Math.round(region.width),
-      height: Math.round(region.height),
-    })
-    .renderAsync();
+  const cropAction = {
+    originX: Math.round(region.originX),
+    originY: Math.round(region.originY),
+    width: Math.round(region.width),
+    height: Math.round(region.height),
+  };
+  let pipeline = ImageManipulator.manipulate(uri);
+  if (rotationDegrees && rotationDegrees !== 0) {
+    pipeline = pipeline.rotate(rotationDegrees);
+  }
+  const result = await pipeline.crop(cropAction).renderAsync();
   const saveResult = await result.saveAsync({
     format: SaveFormat.JPEG,
     compress: 1,

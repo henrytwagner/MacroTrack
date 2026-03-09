@@ -16,16 +16,16 @@ export function BarcodeResultCard({ result }: BarcodeResultCardProps) {
   return (
     <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <ThemedText style={[Typography.caption1, { color: colors.textTertiary, marginBottom: Spacing.xs }]}>
-        GTIN
+        Barcode number
       </ThemedText>
       <ThemedText style={[Typography.title3, { color: colors.text, fontFamily: "monospace", marginBottom: Spacing.md }]}>
         {result.gtin}
       </ThemedText>
       <ThemedText style={[Typography.caption1, { color: colors.textTertiary }]}>
-        raw: {result.raw}
+        Raw value: {result.raw}
       </ThemedText>
       <ThemedText style={[Typography.caption1, { color: colors.textTertiary }]}>
-        format: {result.format}
+        Format: {result.format}
       </ThemedText>
     </View>
   );

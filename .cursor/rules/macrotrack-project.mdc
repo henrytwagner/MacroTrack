@@ -18,6 +18,7 @@ Voice-first macronutrient tracking app. Full spec in `SPEC.md` at the project ro
 
 - `mobile/` — Expo app (3 bottom tabs: Dashboard, Log, Goals + Kitchen Mode modal)
 - `server/` — Fastify backend (REST API + WebSocket for voice sessions)
+- **Standalone features** (e.g. barcode scanner in `mobile/features/barcode/`) are developed in isolation per BUILD_GUIDE; do not integrate into core app flows until the module is ready.
 
 ## Critical Constraint
 

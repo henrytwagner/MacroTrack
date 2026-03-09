@@ -7,7 +7,9 @@ This module is developed **independently** of the main MacroTrack app. It is not
 - **`scanWithCamera()`** — Opens the camera scanner (iOS/Android only). Returns `Promise<BarcodeScanResult | null>`.
 - **`scanFromImage(uri: string)`** — Scans a barcode from an image URI (all platforms). Returns `Promise<BarcodeScanResult | null>`.
 
-Result shape: `{ gtin: string; raw: string; format: string }` (GTIN normalized to 13-digit).
+Result shape: `{ gtin: string; raw: string; format: string }`.
+
+**GTIN contract**: `gtin` is always a **canonical 13-digit** identifier, validated with the standard mod-10 check digit. Use it for storage, lookup, and any external APIs (e.g. product databases, Open Food Facts). Use `raw` when you need to show “what’s on the package” (e.g. 8-digit UPC-E as printed). A successful result implies the GTIN passes check-digit validation.
 
 ## Scope
 

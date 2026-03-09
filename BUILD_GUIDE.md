@@ -254,6 +254,82 @@ Step-by-step implementation guide for building MacroTrack in Cursor. Each sessio
 
 ---
 
+## Standalone: Barcode Scanner (Independent Scope)
+
+**Containment**: This feature is developed **independently** of the main MacroTrack build sessions. It does not modify the core app flow (Log tab, Kitchen Mode, Dashboard, server, or shared types). Work on it in separate conversations or branches. Integration into the main app (e.g. “Scan barcode” on Log, “scan an item” in Kitchen Mode) is deferred until the scanner module is ready.
+
+**Goal**: A self-contained barcode scanning module that outputs a normalized GTIN. It is exercised via a **demo screen** only; the rest of the app does not call it yet.
+
+**Scope**:
+
+- **Camera scanner**: iOS and Android only. Use native `launchScanner()` when available (fastest); fallback to in-app `CameraView` with target overlay. Not required on web.
+- **Image upload**: Available on all platforms (iOS, Android, web). User picks an image; app runs barcode detection and returns GTIN if found.
+- **Demo access**: A temporary dev-only button (e.g. on Dashboard or Goals) navigates to the barcode demo screen. Remove or replace when integrating later.
+- **Output**: Normalized GTIN string (e.g. 13-digit) plus raw value and format, so the main app can later use it for food lookup (USDA/custom/other APIs).
+
+**What gets built** (all under `mobile/`):
+
+- `mobile/features/barcode/` — Types (`BarcodeScanResult`, GTIN), `gtin.ts` (normalize to 13-digit), `scanner.ts` (`scanWithCamera()`, `scanFromImage(uri)`), `BarcodeCameraScreen.tsx` (fallback in-app camera + target), optional `BarcodeResultCard.tsx`
+- `mobile/app/barcode-demo.tsx` — Demo route: “Scan with camera” (native only) and “Upload image” (all platforms); display GTIN result
+- Dev-only entry point (e.g. button on Dashboard or Goals) → navigate to barcode-demo
+- Dependencies: `expo-camera`, `expo-image-picker`; add `expo-camera` plugin to `app.json`
+
+**Platform behavior**:
+
+| Feature           | Web        | iOS / Android |
+|------------------|------------|----------------|
+| Image upload scan | Yes        | Yes            |
+| Camera scanner    | No (hide)  | Yes            |
+
+**Validate**: On device, open demo via dev button → scan with camera and upload image → confirm GTIN is shown. On web, only “Upload image” is available and returns GTIN when a barcode is present in the image.
+
+**When integrating later**: Wire `scanWithCamera()` / `scanFromImage()` into the Log tab and Kitchen Mode (“scan an item”); use returned GTIN for food lookup. No changes to this section required at that time—just use the public scanner API.
+
+### Implementation prompts (by chunk)
+
+Use one prompt per Cursor chat to keep context manageable. Reference this file and `.cursor/rules/barcode-scanner.mdc`; the plan is in `.cursor/plans/standalone_barcode_scanner_e608c709.plan.md` if you need full detail.
+
+---
+
+**Chunk 1 — Types, GTIN normalization, and scanner API**
+
+**Prompt to paste:**
+
+> Build Chunk 1 of the standalone barcode scanner (BUILD_GUIDE.md → Standalone: Barcode Scanner). Add under `mobile/features/barcode/`:
+> 1. **types.ts** — Export `BarcodeScanResult { gtin: string; raw: string; format: string }`.
+> 2. **gtin.ts** — Implement `normalizeToGTIN(raw: string, format?: string): string`. Strip non-digits; if length is 12, left-pad with one `0` to get 13-digit GTIN; if 13, return as-is. Return empty string or throw for invalid lengths. Support common product formats (e.g. ean13, upc_a).
+> 3. **scanner.ts** — Public API: (a) `scanWithCamera(): Promise<BarcodeScanResult | null>` — request camera permission; if `getSupportedFeatures().isModernBarcodeScannerAvailable` use `Camera.launchScanner({ barcodeTypes: ['ean13','upc_a','ean8'] })` and resolve with first scan (normalize via normalizeToGTIN); else resolve with null for now (Chunk 2 will add the fallback screen). On web return null. (b) `scanFromImage(uri: string): Promise<BarcodeScanResult | null>` — call `Camera.scanFromURLAsync(uri, ['ean13','upc_a','ean8'])`, take first result if any, normalize, return; else null. Do not modify barcode-demo.tsx yet.
+
+**What gets built:** `mobile/features/barcode/types.ts`, `gtin.ts`, `scanner.ts`.
+
+**Validate:** From a temporary test (e.g. in barcode-demo or a one-off), call `scanFromImage(uri)` with a local image URI of a barcode and log the result. Optionally unit-test `normalizeToGTIN` with 12- and 13-digit inputs.
+
+---
+
+**Chunk 2 — Fallback camera screen**
+
+**Prompt to paste:**
+
+> Build Chunk 2 of the standalone barcode scanner (BUILD_GUIDE.md → Standalone: Barcode Scanner). Add `mobile/features/barcode/BarcodeCameraScreen.tsx`: full-screen camera scanner for when native launchScanner is not available. Use expo-camera `CameraView` with `barcodeScannerSettings={{ barcodeTypes: ['ean13','upc_a','ean8'] }}` and `onBarcodeScanned`. Show a target overlay (e.g. rounded rectangle in the center) and the text "Point at barcode." Throttle onBarcodeScanned (e.g. 1.5s) so the same barcode does not fire repeatedly. On first successful scan: normalize with normalizeToGTIN, then call `onScan(result: BarcodeScanResult)` and close. Include camera permission state (request if needed) and a Cancel button that calls `onCancel()`. Props: `onScan: (result: BarcodeScanResult) => void`, `onCancel: () => void`. Do not change scanner.ts yet — in Chunk 3 the demo will call scanWithCamera() and, when it needs the fallback (e.g. native scanner unavailable), the demo will render BarcodeCameraScreen and pass onScan/onCancel to complete the same promise.
+
+**What gets built:** `mobile/features/barcode/BarcodeCameraScreen.tsx`; updates to `scanner.ts` to use it when native scanner is unavailable.
+
+**Validate:** On a device where native scanner might be unavailable (or force the fallback path), open the camera screen, point at a barcode, confirm it returns a normalized result and closes; test Cancel.
+
+---
+
+**Chunk 3 — Demo screen wiring**
+
+**Prompt to paste:**
+
+> Build Chunk 3 of the standalone barcode scanner (BUILD_GUIDE.md → Standalone: Barcode Scanner). Update `mobile/app/barcode-demo.tsx`: (1) Two actions: "Scan with camera" (only show when `Platform.OS !== 'web'`) and "Upload image". (2) Scan with camera: if `getSupportedFeatures().isModernBarcodeScannerAvailable`, call `scanWithCamera()` and await; else show `BarcodeCameraScreen` (from features/barcode) and wrap its `onScan`/`onCancel` in a Promise so you get one result flow. Show loading while scanning; on result display gtin, raw, format; on null/cancel show "No barcode" or "Cancelled". (3) Upload image: use expo-image-picker `launchImageLibraryAsync({ mediaTypes: ['images'] })`, then `scanFromImage(uri)`; same result/empty handling. (4) Add `mobile/features/barcode/BarcodeResultCard.tsx` that displays gtin, raw, and format in a card. On web, hide the camera action so only "Upload image" is available.
+
+**What gets built:** Updated `mobile/app/barcode-demo.tsx`; `mobile/features/barcode/BarcodeResultCard.tsx` (optional but useful).
+
+**Validate:** On device: open Barcode demo from Dashboard → Scan with camera → scan a product barcode → see GTIN. Then Upload image → pick image with barcode → see GTIN. On web: only Upload image visible; pick image → see GTIN or "No barcode found".
+
+---
+
 ## Quick Reference
 
 | Session | Phases | Key Files | Est. Complexity |
@@ -267,6 +343,7 @@ Step-by-step implementation guide for building MacroTrack in Cursor. Each sessio
 | 7 | 10 | log.tsx, search, frequent/recent | Medium |
 | 8 | 11-12 | voiceSession.ts, kitchen-mode.tsx | High |
 | 9 | 13 | onboarding.tsx, polish pass | Low-Medium |
+| *Standalone* | — | features/barcode/, barcode-demo.tsx | Medium (independent) |
 
 ## Tips
 

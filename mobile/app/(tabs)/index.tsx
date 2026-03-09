@@ -5,9 +5,10 @@ import {
   ScrollView,
   RefreshControl,
   ActivityIndicator,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
@@ -28,6 +29,7 @@ const MEAL_ORDER: MealLabel[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 export default function DashboardScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const router = useRouter();
 
   const selectedDate = useDateStore((s) => s.selectedDate);
   const {
@@ -222,6 +224,19 @@ export default function DashboardScreen() {
             ))}
           </View>
         )}
+
+        {/* Dev: Barcode demo (standalone feature) */}
+        <Pressable
+          style={({ pressed }) => [
+            styles.barcodeDemoButton,
+            { backgroundColor: colors.surfaceSecondary, opacity: pressed ? 0.8 : 1 },
+          ]}
+          onPress={() => router.push('/barcode-demo')}
+        >
+          <ThemedText style={[Typography.footnote, { color: colors.textTertiary }]}>
+            Barcode demo
+          </ThemedText>
+        </Pressable>
       </ScrollView>
 
       {editEntry && (
@@ -272,5 +287,12 @@ const styles = StyleSheet.create({
   },
   mealGroups: {
     gap: Spacing.xl,
+  },
+  barcodeDemoButton: {
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: 8,
+    alignSelf: 'center',
+    marginTop: Spacing.lg,
   },
 });

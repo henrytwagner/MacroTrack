@@ -11,12 +11,21 @@ import type {
   FrequentFood,
   RecentFood,
 } from '@shared/types';
+import type { BarcodeScanResult } from '@/features/barcode/types';
 import { Platform } from 'react-native';
 
-const DEV_HOST = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
+// For physical device: set EXPO_PUBLIC_API_HOST to your Mac's LAN IP (e.g. 192.168.1.x) so the app can reach the server.
+const DEV_HOST =
+  process.env.EXPO_PUBLIC_API_HOST ||
+  (Platform.OS === 'android' ? '10.0.2.2' : 'localhost');
 const BASE_URL = __DEV__
   ? `http://${DEV_HOST}:3000`
   : 'https://api.macrotrack.app';
+
+/** In dev, use this to show which server URL the app is using (for connection troubleshooting). */
+export function getApiBaseUrl(): string {
+  return BASE_URL;
+}
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -130,4 +139,38 @@ export async function searchFoods(query: string): Promise<UnifiedSearchResponse>
   return request<UnifiedSearchResponse>(
     `/api/food/search?q=${encodeURIComponent(query)}`,
   );
+}
+
+// --- Barcode (image upload for iOS) ---
+
+/**
+ * Upload an image to the server for barcode decoding. Used on iOS for "Upload image"
+ * when expo-camera does not support product barcodes from images.
+ */
+export async function uploadImageForBarcodeScan(
+  uri: string,
+  type?: string,
+  name?: string,
+): Promise<BarcodeScanResult | null> {
+  const formData = new FormData();
+  formData.append('image', {
+    uri,
+    type: type ?? 'image/jpeg',
+    name: name ?? 'image.jpg',
+  } as unknown as Blob);
+  try {
+    const res = await fetch(`${BASE_URL}/api/barcode/scan`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        // Do not set Content-Type; let the runtime set multipart/form-data with boundary.
+      },
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { gtin?: string; raw?: string; format?: string } | null;
+    if (!json?.gtin || !json?.raw || !json?.format) return null;
+    return { gtin: json.gtin, raw: json.raw, format: json.format };
+  } catch {
+    return null;
+  }
 }

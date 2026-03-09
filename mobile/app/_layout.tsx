@@ -32,6 +32,13 @@ export default function RootLayout() {
               headerShown: false,
             }}
           />
+          <Stack.Screen
+            name="barcode-demo"
+            options={{
+              presentation: 'modal',
+              title: 'Barcode demo',
+            }}
+          />
         </Stack>
         <StatusBar style="auto" />
       </ThemeProvider>

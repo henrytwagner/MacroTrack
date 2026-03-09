@@ -16,6 +16,8 @@ export type CropRegion = {
   height: number;
 };
 
+export type RotationDegrees = 0 | 90 | 180 | 270;
+
 function loadImage(uri: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -55,14 +57,65 @@ function scaleRegionToMaxDim(
   };
 }
 
+/**
+ * Rotated image dimensions: 90/270 swap w×h; 180 same.
+ */
+function rotatedSize(
+  iw: number,
+  ih: number,
+  rotationDegrees: RotationDegrees
+): { rw: number; rh: number } {
+  if (rotationDegrees === 90 || rotationDegrees === 270) {
+    return { rw: ih, rh: iw };
+  }
+  return { rw: iw, rh: ih };
+}
+
+/**
+ * Draw the full image rotated onto a canvas of size (rw, rh).
+ * Rotation is clockwise; (rw, rh) is the size of the rotated image.
+ * Destination rect (0,0,rw,rh) so the image fills the canvas.
+ */
+function drawRotated(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  iw: number,
+  ih: number,
+  rotationDegrees: RotationDegrees,
+  rw: number,
+  rh: number
+): void {
+  ctx.save();
+  const rad = (rotationDegrees * Math.PI) / 180;
+  if (rotationDegrees === 90) {
+    ctx.translate(rw, 0);
+    ctx.rotate(rad);
+    ctx.drawImage(img, 0, 0, iw, ih, 0, 0, rw, rh);
+  } else if (rotationDegrees === 180) {
+    ctx.translate(rw, rh);
+    ctx.rotate(rad);
+    ctx.drawImage(img, 0, 0, iw, ih, 0, 0, rw, rh);
+  } else if (rotationDegrees === 270) {
+    ctx.translate(0, rh);
+    ctx.rotate(rad);
+    ctx.drawImage(img, 0, 0, iw, ih, 0, 0, rw, rh);
+  }
+  ctx.restore();
+}
+
 export async function cropImageToRegion(
   uri: string,
-  region: CropRegion
+  region: CropRegion,
+  rotationDegrees?: RotationDegrees
 ): Promise<string> {
   const img = await loadImage(uri);
   const iw = img.naturalWidth;
   const ih = img.naturalHeight;
-  const { scale, region: scaledRegion } = scaleRegionToMaxDim(iw, ih, region);
+
+  const rot = rotationDegrees ?? 0;
+  const { rw, rh } = rotatedSize(iw, ih, rot as RotationDegrees);
+
+  const { scale, region: scaledRegion } = scaleRegionToMaxDim(rw, rh, region);
   const { originX, originY, width, height } = scaledRegion;
   const x = Math.round(originX);
   const y = Math.round(originY);
@@ -74,18 +127,41 @@ export async function cropImageToRegion(
   canvas.height = h;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas 2d context not available");
-  if (scale < 1) {
-    const sw = Math.round(iw * scale);
-    const sh = Math.round(ih * scale);
-    const tempCanvas = document.createElement("canvas");
-    tempCanvas.width = sw;
-    tempCanvas.height = sh;
-    const tempCtx = tempCanvas.getContext("2d");
-    if (!tempCtx) throw new Error("Canvas 2d context not available");
-    tempCtx.drawImage(img, 0, 0, iw, ih, 0, 0, sw, sh);
-    ctx.drawImage(tempCanvas, x, y, w, h, 0, 0, w, h);
+
+  if (rot !== 0) {
+    const rotCanvas = document.createElement("canvas");
+    rotCanvas.width = rw;
+    rotCanvas.height = rh;
+    const rotCtx = rotCanvas.getContext("2d");
+    if (!rotCtx) throw new Error("Canvas 2d context not available");
+    drawRotated(rotCtx, img, iw, ih, rot as RotationDegrees, rw, rh);
+    if (scale < 1) {
+      const sw = Math.round(rw * scale);
+      const sh = Math.round(rh * scale);
+      const tempCanvas = document.createElement("canvas");
+      tempCanvas.width = sw;
+      tempCanvas.height = sh;
+      const tempCtx = tempCanvas.getContext("2d");
+      if (!tempCtx) throw new Error("Canvas 2d context not available");
+      tempCtx.drawImage(rotCanvas, 0, 0, rw, rh, 0, 0, sw, sh);
+      ctx.drawImage(tempCanvas, x, y, w, h, 0, 0, w, h);
+    } else {
+      ctx.drawImage(rotCanvas, x, y, w, h, 0, 0, w, h);
+    }
   } else {
-    ctx.drawImage(img, x, y, w, h, 0, 0, w, h);
+    if (scale < 1) {
+      const sw = Math.round(iw * scale);
+      const sh = Math.round(ih * scale);
+      const tempCanvas = document.createElement("canvas");
+      tempCanvas.width = sw;
+      tempCanvas.height = sh;
+      const tempCtx = tempCanvas.getContext("2d");
+      if (!tempCtx) throw new Error("Canvas 2d context not available");
+      tempCtx.drawImage(img, 0, 0, iw, ih, 0, 0, sw, sh);
+      ctx.drawImage(tempCanvas, x, y, w, h, 0, 0, w, h);
+    } else {
+      ctx.drawImage(img, x, y, w, h, 0, 0, w, h);
+    }
   }
 
   return new Promise((resolve, reject) => {

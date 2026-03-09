@@ -14,15 +14,17 @@ import Animated, {
   useAnimatedStyle,
 } from "react-native-reanimated";
 
-import { cropImageToRegion } from "./cropImage";
-import type { CropRegion } from "./cropImage";
+import { cropImageToRegion, type CropRegion, type RotationDegrees } from "./cropImage";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
-/** Fallback container size so we don't stall on "Loading…" when onLayout is delayed (e.g. web). */
-const FALLBACK_CONTAINER = { width: SCREEN_WIDTH, height: SCREEN_HEIGHT };
+/** Container size is derived from the window so the crop UI can render immediately on all platforms. */
+function getContainerSizeFromWindow() {
+  const { width, height } = Dimensions.get("window");
+  return { width, height };
+}
 
 // Viewfinder as fraction of container: 80% width, 25% height, centered (native)
 const VIEWFINDER_WIDTH_RATIO = 0.8;
@@ -57,6 +59,19 @@ function getViewfinderRect(containerWidth: number, containerHeight: number): { v
 const MIN_SCALE = 1;
 const MAX_SCALE = 4;
 
+const ROTATION_CYCLE: RotationDegrees[] = [0, 90, 180, 270];
+
+function getEffectiveDimensions(
+  iw: number,
+  ih: number,
+  rotation: RotationDegrees
+): { width: number; height: number } {
+  if (rotation === 90 || rotation === 270) {
+    return { width: ih, height: iw };
+  }
+  return { width: iw, height: ih };
+}
+
 export type BarcodeCropViewProps = {
   imageUri: string;
   /** When provided (e.g. from the picker asset), avoids async Image.getSize which can fail on iOS. */
@@ -89,8 +104,17 @@ async function getImageDimensions(uri: string): Promise<{ width: number; height:
   // On iOS, Image.getSize often never resolves for photo-library URIs. Use
   // expo-image-manipulator to load the image and read dimensions (no crop/save).
   const { ImageManipulator } = require("expo-image-manipulator");
-  const imageRef = await ImageManipulator.manipulate(uri).renderAsync();
-  return { width: imageRef.width, height: imageRef.height };
+  const timeoutMs = 15000;
+  const result = await Promise.race([
+    (async () => {
+      const imageRef = await ImageManipulator.manipulate(uri).renderAsync();
+      return { width: imageRef.width, height: imageRef.height };
+    })(),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Image load timed out")), timeoutMs)
+    ),
+  ]);
+  return result;
 }
 
 export function BarcodeCropView({
@@ -109,9 +133,17 @@ export function BarcodeCropView({
   const [containerLayout, setContainerLayout] = useState<{
     width: number;
     height: number;
-  } | null>(() => (Platform.OS === "web" ? FALLBACK_CONTAINER : null));
+  }>(getContainerSizeFromWindow);
+
+  useEffect(() => {
+    const sub = Dimensions.addEventListener("change", () => {
+      setContainerLayout(getContainerSizeFromWindow());
+    });
+    return () => sub.remove();
+  }, []);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isCropping, setIsCropping] = useState(false);
+  const [rotationDegrees, setRotationDegrees] = useState<RotationDegrees>(0);
 
   const scale = useSharedValue(1);
   const translateX = useSharedValue(0);
@@ -162,9 +194,25 @@ export function BarcodeCropView({
   const onContainerLayout = useCallback((e: { nativeEvent: { layout: { width: number; height: number } } }) => {
     const { width, height } = e.nativeEvent.layout;
     if (width > 0 && height > 0) {
-      setContainerLayout({ width, height });
+      setContainerLayout((prev) =>
+        prev.width === width && prev.height === height ? prev : { width, height }
+      );
     }
   }, []);
+
+  const handleRotate = useCallback(() => {
+    setRotationDegrees((prev) => {
+      const idx = ROTATION_CYCLE.indexOf(prev);
+      const next = ROTATION_CYCLE[(idx + 1) % ROTATION_CYCLE.length];
+      scale.value = 1;
+      savedScale.value = 1;
+      translateX.value = 0;
+      translateY.value = 0;
+      savedTranslateX.value = 0;
+      savedTranslateY.value = 0;
+      return next;
+    });
+  }, [scale, savedScale, translateX, translateY, savedTranslateX, savedTranslateY]);
 
   const panGesture = Gesture.Pan()
     .onUpdate((e) => {
@@ -190,25 +238,28 @@ export function BarcodeCropView({
 
   const composed = Gesture.Simultaneous(panGesture, pinchGesture);
 
+  // Apply rotate/scale first (content space), then translate last so pan is in screen space
   const imageAnimatedStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: translateX.value },
       { translateY: translateY.value },
       { scale: scale.value },
+      { rotate: `${rotationDegrees}deg` },
     ],
-  }));
+  }), [rotationDegrees]);
 
   const computeCropRegion = useCallback((): CropRegion | null => {
     if (!imageDimensions || !containerLayout) return null;
     const { width: iw, height: ih } = imageDimensions;
+    const { width: effW, height: effH } = getEffectiveDimensions(iw, ih, rotationDegrees);
     const { width: cw, height: ch } = containerLayout;
-    const sFit = Math.min(cw / iw, ch / ih);
-    const ox = (cw - iw * sFit) / 2;
-    const oy = (ch - ih * sFit) / 2;
+    const sFit = Math.min(cw / effW, ch / effH);
+    const ox = (cw - effW * sFit) / 2;
+    const oy = (ch - effH * sFit) / 2;
 
     const s = sFit * scale.value;
-    const imageLeft = ox + translateX.value + (iw * sFit * (1 - scale.value)) / 2;
-    const imageTop = oy + translateY.value + (ih * sFit * (1 - scale.value)) / 2;
+    const imageLeft = ox + translateX.value + (effW * sFit * (1 - scale.value)) / 2;
+    const imageTop = oy + translateY.value + (effH * sFit * (1 - scale.value)) / 2;
 
     const { vx, vy, vw, vh } = getViewfinderRect(cw, ch);
 
@@ -217,29 +268,29 @@ export function BarcodeCropView({
     let width = vw / s;
     let height = vh / s;
 
-    originX = Math.max(0, Math.min(originX, iw - 1));
-    originY = Math.max(0, Math.min(originY, ih - 1));
-    const maxW = iw - originX;
-    const maxH = ih - originY;
+    originX = Math.max(0, Math.min(originX, effW - 1));
+    originY = Math.max(0, Math.min(originY, effH - 1));
+    const maxW = effW - originX;
+    const maxH = effH - originY;
     width = Math.max(1, Math.min(width, maxW));
     height = Math.max(1, Math.min(height, maxH));
 
     return { originX, originY, width, height };
-  }, [imageDimensions, containerLayout, scale, translateX, translateY]);
+  }, [imageDimensions, containerLayout, rotationDegrees, scale, translateX, translateY]);
 
   const handleScan = useCallback(async () => {
     const region = computeCropRegion();
     if (!region) return;
     setIsCropping(true);
     try {
-      const croppedUri = await cropImageToRegion(imageUri, region);
+      const croppedUri = await cropImageToRegion(imageUri, region, rotationDegrees);
       onConfirm(croppedUri);
     } catch {
       setLoadError("Crop failed");
     } finally {
       setIsCropping(false);
     }
-  }, [imageUri, computeCropRegion, onConfirm]);
+  }, [imageUri, computeCropRegion, onConfirm, rotationDegrees]);
 
   if (loadError) {
     return (
@@ -268,10 +319,11 @@ export function BarcodeCropView({
   }
 
   const { width: iw, height: ih } = imageDimensions;
+  const { width: effW, height: effH } = getEffectiveDimensions(iw, ih, rotationDegrees);
   const { width: cw, height: ch } = containerLayout;
-  const sFit = Math.min(cw / iw, ch / ih);
-  const displayWidth = iw * sFit;
-  const displayHeight = ih * sFit;
+  const sFit = Math.min(cw / effW, ch / effH);
+  const displayWidth = effW * sFit;
+  const displayHeight = effH * sFit;
   const ox = (cw - displayWidth) / 2;
   const oy = (ch - displayHeight) / 2;
 
@@ -385,6 +437,13 @@ export function BarcodeCropView({
           <Text style={styles.buttonText}>Cancel</Text>
         </TouchableOpacity>
         <TouchableOpacity
+          style={[styles.button, styles.rotateButton, { backgroundColor: colors.surface }]}
+          onPress={handleRotate}
+          disabled={isCropping}
+        >
+          <Text style={[styles.buttonText, { color: colors.text }]}>Rotate 90°</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
           style={[styles.button, { backgroundColor: colors.tint }]}
           onPress={handleScan}
           disabled={isCropping}
@@ -437,6 +496,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
+  },
+  rotateButton: {
+    flex: 0,
+    paddingHorizontal: 20,
   },
   buttonText: {
     color: "#fff",
