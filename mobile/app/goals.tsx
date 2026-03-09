@@ -10,6 +10,8 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
@@ -56,6 +58,7 @@ function MacroInput({ label, value, onChangeText, unit, accentColor, colors }: M
 export default function GoalsScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const router = useRouter();
   const { goals, isLoading, fetch, save } = useGoalStore();
 
   const [calories, setCalories] = useState('');
@@ -104,6 +107,13 @@ export default function GoalsScreen() {
   if (isLoading && !goals) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+        <View style={[styles.navHeader, { borderBottomColor: colors.borderLight }]}>
+          <Pressable onPress={() => router.back()} hitSlop={12} style={({ pressed }) => [pressed && { opacity: 0.6 }]}>
+            <Ionicons name="chevron-back" size={26} color={colors.tint} />
+          </Pressable>
+          <ThemedText style={[Typography.headline, { color: colors.text }]}>Daily Goals</ThemedText>
+          <View style={{ width: 26 }} />
+        </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.tint} />
         </View>
@@ -113,6 +123,19 @@ export default function GoalsScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      {/* Navigation header */}
+      <View style={[styles.navHeader, { borderBottomColor: colors.borderLight }]}>
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={12}
+          style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+        >
+          <Ionicons name="chevron-back" size={26} color={colors.tint} />
+        </Pressable>
+        <ThemedText style={[Typography.headline, { color: colors.text }]}>Daily Goals</ThemedText>
+        <View style={{ width: 26 }} />
+      </View>
+
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -122,9 +145,6 @@ export default function GoalsScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.header}>
-            <ThemedText style={[Typography.largeTitle, { color: colors.text }]}>
-              Daily Goals
-            </ThemedText>
             <ThemedText style={[Typography.subhead, { color: colors.textSecondary }]}>
               Set your daily calorie and macro targets.
             </ThemedText>
@@ -187,11 +207,15 @@ export default function GoalsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  flex: {
-    flex: 1,
+  container: { flex: 1 },
+  flex: { flex: 1 },
+  navHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   loadingContainer: {
     flex: 1,
@@ -203,8 +227,7 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   header: {
-    gap: Spacing.sm,
-    marginBottom: Spacing.xxxl,
+    marginBottom: Spacing.xxl,
   },
   inputsContainer: {
     gap: Spacing.md,

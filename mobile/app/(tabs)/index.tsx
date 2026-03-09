@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -9,113 +9,140 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import DateHeader from '@/components/DateHeader';
 import MacroProgressBar from '@/components/MacroProgressBar';
-import MealGroup from '@/components/MealGroup';
-import EditEntrySheet from '@/components/EditEntrySheet';
-import UndoSnackbar from '@/components/UndoSnackbar';
-import { useDateStore, todayString } from '@/stores/dateStore';
+import FrequentFoodRow from '@/components/FrequentFoodRow';
 import { useDailyLogStore } from '@/stores/dailyLogStore';
 import { useGoalStore } from '@/stores/goalStore';
-import type { FoodEntry, MealLabel } from '@shared/types';
+import { todayString } from '@/stores/dateStore';
+import type { FrequentFood, RecentFood, MealLabel } from '@shared/types';
+import * as api from '@/services/api';
 
 const MEAL_ORDER: MealLabel[] = ['breakfast', 'lunch', 'dinner', 'snack'];
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return 'Good morning';
+  if (hour >= 12 && hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+function getMealLabel(): MealLabel {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 11) return 'breakfast';
+  if (hour >= 11 && hour < 14) return 'lunch';
+  if (hour >= 14 && hour < 17) return 'snack';
+  if (hour >= 17 && hour < 22) return 'dinner';
+  return 'snack';
+}
+
+function formatTodayFull(): string {
+  return new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
+}
 
 export default function DashboardScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const router = useRouter();
+  const today = todayString();
 
-  const selectedDate = useDateStore((s) => s.selectedDate);
   const {
     entries,
-    entriesByMeal,
     totals,
     isLoading,
     error,
     fetch: fetchEntries,
-    removeEntry,
-    restoreEntry,
-    commitDelete,
   } = useDailyLogStore();
   const { goals, fetch: fetchGoals } = useGoalStore();
 
-  const [editEntry, setEditEntry] = useState<FoodEntry | null>(null);
-  const [deletedEntry, setDeletedEntry] = useState<FoodEntry | null>(null);
+  const [frequentFoods, setFrequentFoods] = useState<FrequentFood[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+
+  const fetchAll = useCallback(async () => {
+    await Promise.all([fetchEntries(today), fetchGoals()]);
+  }, [today, fetchEntries, fetchGoals]);
+
+  const fetchFrequent = useCallback(async () => {
+    try {
+      const freq = await api.getFrequentFoods();
+      setFrequentFoods(freq.slice(0, 3));
+    } catch {
+      // silent
+    }
+  }, []);
 
   useEffect(() => {
     fetchGoals();
+    fetchFrequent();
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      fetchEntries(selectedDate);
-    }, [selectedDate, fetchEntries]),
+      fetchEntries(today);
+      fetchFrequent();
+    }, [today, fetchEntries, fetchFrequent]),
   );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([fetchEntries(selectedDate), fetchGoals()]);
+    await Promise.all([fetchAll(), fetchFrequent()]);
     setRefreshing(false);
-  }, [selectedDate]);
+  }, [fetchAll, fetchFrequent]);
 
-  const handlePressEntry = (entry: FoodEntry) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setEditEntry(entry);
-  };
+  const handleQuickAdd = useCallback(
+    async (food: FrequentFood | RecentFood) => {
+      const isFrequent = 'logCount' in food;
+      const qty = isFrequent
+        ? (food as FrequentFood).lastQuantity
+        : (food as RecentFood).quantity;
+      const unit = isFrequent
+        ? (food as FrequentFood).lastUnit
+        : (food as RecentFood).unit;
 
-  const handleDeleteEntry = (entry: FoodEntry) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const removed = removeEntry(entry.id);
-    if (removed) {
-      setDeletedEntry(removed);
-    }
-  };
+      try {
+        await api.createEntry({
+          date: today,
+          name: food.name,
+          calories: food.macros.calories,
+          proteinG: food.macros.proteinG,
+          carbsG: food.macros.carbsG,
+          fatG: food.macros.fatG,
+          quantity: qty,
+          unit,
+          source: food.source,
+          mealLabel: getMealLabel(),
+          usdaFdcId: food.usdaFdcId,
+          customFoodId: food.customFoodId,
+        });
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        fetchEntries(today);
+        fetchFrequent();
+      } catch {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+    },
+    [today, fetchEntries, fetchFrequent],
+  );
 
-  const handleUndo = () => {
-    if (deletedEntry) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      restoreEntry(deletedEntry);
-      setDeletedEntry(null);
-    }
-  };
-
-  const handleUndoDismiss = () => {
-    if (deletedEntry) {
-      commitDelete(deletedEntry.id).catch(() => {
-        // Silent fail — user can pull-to-refresh to restore consistency
-      });
-      setDeletedEntry(null);
-    }
-  };
-
-  const handleEditSaved = () => {
-    setEditEntry(null);
-    fetchEntries(selectedDate);
-  };
-
-  const handleEditDeleted = () => {
-    setEditEntry(null);
-    fetchEntries(selectedDate);
-  };
-
-  const isToday = selectedDate === todayString();
-  const hasEntries = entries.length > 0;
   const hasGoals = goals !== null;
+  const recentEntries = [...entries]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 3);
 
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.background }]}
       edges={['top']}
     >
-      <DateHeader />
-
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -128,15 +155,23 @@ export default function DashboardScreen() {
           />
         }
       >
-        {/* Macro Progress Section */}
-        <View
-          style={[
-            styles.macroCard,
-            { backgroundColor: colors.surface },
-          ]}
-        >
+        {/* Greeting */}
+        <View style={styles.greetingSection}>
+          <ThemedText style={[Typography.largeTitle, { color: colors.text }]}>
+            {getGreeting()}
+          </ThemedText>
+          <ThemedText style={[Typography.subhead, { color: colors.textSecondary }]}>
+            {formatTodayFull()}
+          </ThemedText>
+        </View>
+
+        {/* Macro Progress */}
+        <View style={[styles.card, { backgroundColor: colors.surface }]}>
+          <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
+            Today's Progress
+          </ThemedText>
           {hasGoals ? (
-            <>
+            <View style={styles.barsContainer}>
               <MacroProgressBar
                 label="Calories"
                 current={totals.calories}
@@ -165,95 +200,139 @@ export default function DashboardScreen() {
                 accentColor={colors.fatAccent}
                 unit="g"
               />
-            </>
-          ) : (
-            <View style={styles.noGoalsState}>
-              <ThemedText
-                style={[
-                  Typography.subhead,
-                  { color: colors.textSecondary, textAlign: 'center' },
-                ]}
-              >
-                Set your daily goals to track progress.
-              </ThemedText>
             </View>
+          ) : (
+            <Pressable
+              style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+              onPress={() => router.push('/(tabs)/profile')}
+            >
+              <ThemedText
+                style={[Typography.subhead, { color: colors.tint, textAlign: 'center', paddingVertical: Spacing.lg }]}
+              >
+                Set your daily goals to track progress →
+              </ThemedText>
+            </Pressable>
           )}
         </View>
 
-        {/* Food Log Section */}
-        {isLoading && !refreshing ? (
-          <ActivityIndicator
-            style={styles.loader}
-            size="large"
-            color={colors.tint}
-          />
-        ) : error ? (
-          <View style={styles.emptyState}>
-            <ThemedText
-              style={[
-                Typography.body,
-                { color: colors.destructive, textAlign: 'center' },
-              ]}
-            >
-              Unable to connect to server. Check your connection.
-            </ThemedText>
-          </View>
-        ) : !hasEntries ? (
-          <View style={styles.emptyState}>
-            <ThemedText
-              style={[
-                Typography.body,
-                { color: colors.textSecondary, textAlign: 'center' },
-              ]}
-            >
-              {isToday
-                ? 'No entries yet today. Tap the Log tab to get started.'
-                : 'No entries for this day. You can add entries retroactively from the Log tab.'}
-            </ThemedText>
-          </View>
-        ) : (
-          <View style={styles.mealGroups}>
-            {MEAL_ORDER.map((meal) => (
-              <MealGroup
-                key={meal}
-                meal={meal}
-                entries={entriesByMeal[meal]}
-                onPressEntry={handlePressEntry}
-                onDeleteEntry={handleDeleteEntry}
-              />
-            ))}
+        {/* Quick Add */}
+        {frequentFoods.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <ThemedText style={[Typography.headline, { color: colors.text }]}>
+                Quick Add
+              </ThemedText>
+              <Pressable
+                onPress={() => router.push('/add-food')}
+                style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+              >
+                <ThemedText style={[Typography.subhead, { color: colors.tint }]}>
+                  Search foods
+                </ThemedText>
+              </Pressable>
+            </View>
+            <View style={[styles.listCard, { backgroundColor: colors.surface }]}>
+              {frequentFoods.map((food, i) => (
+                <View key={`freq-${food.name}-${i}`}>
+                  {i > 0 && (
+                    <View style={[styles.separator, { backgroundColor: colors.borderLight }]} />
+                  )}
+                  <FrequentFoodRow
+                    food={food}
+                    onPressName={() => router.push('/add-food')}
+                    onQuickAdd={handleQuickAdd}
+                  />
+                </View>
+              ))}
+            </View>
           </View>
         )}
 
-        {/* Dev: Barcode demo (standalone feature) */}
-        <Pressable
-          style={({ pressed }) => [
-            styles.barcodeDemoButton,
-            { backgroundColor: colors.surfaceSecondary, opacity: pressed ? 0.8 : 1 },
-          ]}
-          onPress={() => router.push('/barcode-demo')}
-        >
-          <ThemedText style={[Typography.footnote, { color: colors.textTertiary }]}>
-            Barcode demo
-          </ThemedText>
-        </Pressable>
+        {/* Today's Log Preview */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <ThemedText style={[Typography.headline, { color: colors.text }]}>
+              Today's Log
+            </ThemedText>
+            <Pressable
+              onPress={() => router.push('/(tabs)/log')}
+              style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+            >
+              <ThemedText style={[Typography.subhead, { color: colors.tint }]}>
+                See all
+              </ThemedText>
+            </Pressable>
+          </View>
+
+          {isLoading && !refreshing ? (
+            <ActivityIndicator style={styles.loader} size="small" color={colors.tint} />
+          ) : error ? (
+            <View style={[styles.card, { backgroundColor: colors.surface }]}>
+              <ThemedText style={[Typography.subhead, { color: colors.destructive, textAlign: 'center' }]}>
+                Unable to connect. Pull to refresh.
+              </ThemedText>
+            </View>
+          ) : recentEntries.length === 0 ? (
+            <View style={[styles.card, { backgroundColor: colors.surface }]}>
+              <View style={styles.emptyState}>
+                <Ionicons name="nutrition-outline" size={32} color={colors.textTertiary} />
+                <ThemedText style={[Typography.subhead, { color: colors.textSecondary, textAlign: 'center' }]}>
+                  Nothing logged yet today.
+                </ThemedText>
+                <Pressable
+                  onPress={() => router.push('/add-food')}
+                  style={({ pressed }) => [
+                    styles.logButton,
+                    { backgroundColor: colors.tint },
+                    pressed && { opacity: 0.8 },
+                  ]}
+                >
+                  <Ionicons name="add" size={18} color="#FFFFFF" />
+                  <ThemedText style={[Typography.subhead, { color: '#FFFFFF', fontWeight: '600' }]}>
+                    Log Food
+                  </ThemedText>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <View style={[styles.listCard, { backgroundColor: colors.surface }]}>
+              {recentEntries.map((entry, i) => (
+                <View key={entry.id}>
+                  {i > 0 && (
+                    <View style={[styles.separator, { backgroundColor: colors.borderLight }]} />
+                  )}
+                  <View style={styles.entryRow}>
+                    <View style={styles.entryInfo}>
+                      <ThemedText
+                        style={[Typography.body, { color: colors.text }]}
+                        numberOfLines={1}
+                      >
+                        {entry.name}
+                      </ThemedText>
+                      <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>
+                        {entry.quantity}{entry.unit} · {MEAL_ORDER.includes(entry.mealLabel) ? entry.mealLabel.charAt(0).toUpperCase() + entry.mealLabel.slice(1) : entry.mealLabel}
+                      </ThemedText>
+                    </View>
+                    <ThemedText style={[Typography.subhead, { color: colors.text, fontWeight: '500' }]}>
+                      {Math.round(entry.calories)} cal
+                    </ThemedText>
+                  </View>
+                </View>
+              ))}
+              {entries.length > 3 && (
+                <Pressable
+                  style={[styles.seeMoreRow, { borderTopColor: colors.borderLight }]}
+                  onPress={() => router.push('/(tabs)/log')}
+                >
+                  <ThemedText style={[Typography.footnote, { color: colors.tint }]}>
+                    +{entries.length - 3} more entries
+                  </ThemedText>
+                </Pressable>
+              )}
+            </View>
+          )}
+        </View>
       </ScrollView>
-
-      {editEntry && (
-        <EditEntrySheet
-          entry={editEntry}
-          onDismiss={() => setEditEntry(null)}
-          onSaved={handleEditSaved}
-          onDeleted={handleEditDeleted}
-        />
-      )}
-
-      <UndoSnackbar
-        message={deletedEntry ? `${deletedEntry.name} deleted.` : ''}
-        visible={!!deletedEntry}
-        onUndo={handleUndo}
-        onDismiss={handleUndoDismiss}
-      />
     </SafeAreaView>
   );
 }
@@ -270,29 +349,66 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
     gap: Spacing.xl,
   },
-  macroCard: {
+  greetingSection: {
+    gap: Spacing.xs,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xs,
+  },
+  card: {
     borderRadius: BorderRadius.lg,
     padding: Spacing.xl,
+  },
+  barsContainer: {
     gap: Spacing.lg,
   },
-  noGoalsState: {
-    paddingVertical: Spacing.xxl,
+  section: {
+    gap: Spacing.md,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xs,
+  },
+  listCard: {
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: Spacing.lg,
   },
   loader: {
-    marginTop: Spacing.xxxl,
+    marginTop: Spacing.lg,
   },
   emptyState: {
-    paddingVertical: Spacing.xxxl,
-    paddingHorizontal: Spacing.xl,
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingVertical: Spacing.lg,
   },
-  mealGroups: {
-    gap: Spacing.xl,
-  },
-  barcodeDemoButton: {
+  logButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: 8,
-    alignSelf: 'center',
-    marginTop: Spacing.lg,
+    borderRadius: BorderRadius.full,
+    marginTop: Spacing.xs,
+  },
+  entryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    gap: Spacing.md,
+  },
+  entryInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  seeMoreRow: {
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
 });

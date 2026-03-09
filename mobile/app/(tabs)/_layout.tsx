@@ -27,14 +27,14 @@ export default function TabLayout() {
         name="log"
         options={{
           title: 'Log',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="plus.circle.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="book.fill" color={color} />,
         }}
       />
       <Tabs.Screen
-        name="goals"
+        name="profile"
         options={{
-          title: 'Goals',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="target" color={color} />,
+          title: 'Profile',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.circle.fill" color={color} />,
         }}
       />
     </Tabs>

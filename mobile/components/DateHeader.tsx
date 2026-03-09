@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, View, Pressable, Platform, Modal } from 'react-native';
 import DateTimePicker, {
   DateTimePickerEvent,
@@ -24,7 +24,11 @@ function toDateString(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-export default function DateHeader() {
+interface DateHeaderProps {
+  rightAction?: React.ReactNode;
+}
+
+export default function DateHeader({ rightAction }: DateHeaderProps = {}) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const { selectedDate, setDate, goToPreviousDay, goToNextDay } =
@@ -53,37 +57,43 @@ export default function DateHeader() {
   return (
     <View style={styles.wrapper}>
       <View style={[styles.container, { borderBottomColor: colors.borderLight }]}>
-        <Pressable
-          onPress={handlePrev}
-          hitSlop={12}
-          style={styles.arrowBtn}
-        >
-          <MaterialIcons name="chevron-left" size={28} color={colors.tint} />
-        </Pressable>
+        <View style={styles.dateRow}>
+          <Pressable
+            onPress={handlePrev}
+            hitSlop={12}
+            style={styles.arrowBtn}
+          >
+            <MaterialIcons name="chevron-left" size={28} color={colors.tint} />
+          </Pressable>
 
-        <Pressable
-          onPress={() => setShowPicker(true)}
-          style={styles.dateBtn}
-        >
-          <ThemedText style={[Typography.headline, { color: colors.text }]}>
-            {isToday ? 'Today' : formatDisplayDate(selectedDate)}
-          </ThemedText>
-          {isToday && (
-            <ThemedText
-              style={[Typography.caption1, { color: colors.textSecondary }]}
-            >
-              {formatDisplayDate(selectedDate)}
+          <Pressable
+            onPress={() => setShowPicker(true)}
+            style={styles.dateBtn}
+          >
+            <ThemedText style={[Typography.headline, { color: colors.text }]}>
+              {isToday ? 'Today' : formatDisplayDate(selectedDate)}
             </ThemedText>
-          )}
-        </Pressable>
+            {isToday && (
+              <ThemedText
+                style={[Typography.caption1, { color: colors.textSecondary }]}
+              >
+                {formatDisplayDate(selectedDate)}
+              </ThemedText>
+            )}
+          </Pressable>
 
-        <Pressable
-          onPress={handleNext}
-          hitSlop={12}
-          style={styles.arrowBtn}
-        >
-          <MaterialIcons name="chevron-right" size={28} color={colors.tint} />
-        </Pressable>
+          <Pressable
+            onPress={handleNext}
+            hitSlop={12}
+            style={styles.arrowBtn}
+          >
+            <MaterialIcons name="chevron-right" size={28} color={colors.tint} />
+          </Pressable>
+        </View>
+
+        {rightAction != null && (
+          <View style={styles.rightAction}>{rightAction}</View>
+        )}
       </View>
 
       {showPicker && Platform.OS === 'android' && (
@@ -128,10 +138,15 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  dateRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   arrowBtn: {
     padding: Spacing.xs,
@@ -139,6 +154,9 @@ const styles = StyleSheet.create({
   dateBtn: {
     alignItems: 'center',
     gap: 2,
+  },
+  rightAction: {
+    marginLeft: Spacing.md,
   },
   modalOverlay: {
     flex: 1,

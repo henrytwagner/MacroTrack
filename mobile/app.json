@@ -10,7 +10,11 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.macrotrack"
+      "bundleIdentifier": "com.henrywagner.macrotrack",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "MacroTrack needs microphone access so you can log food by voice in Kitchen Mode.",
+        "NSSpeechRecognitionUsageDescription": "MacroTrack uses speech recognition to understand your food logging commands."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -23,8 +27,11 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "package": "com.henrywagner.macrotrack"
     },
     "web": {
       "output": "static",
@@ -50,7 +57,14 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "MacroTrack needs microphone access so you can log food by voice in Kitchen Mode.",
+          "speechRecognitionPermission": "MacroTrack uses speech recognition to understand your food logging commands."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

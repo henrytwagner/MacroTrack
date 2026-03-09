@@ -6,6 +6,7 @@ import { goalsRoutes } from "./routes/goals.js";
 import { foodRoutes } from "./routes/food.js";
 import { customFoodRoutes } from "./routes/customFood.js";
 import { barcodeRoutes } from "./routes/barcode.js";
+import { voiceSessionRoutes } from "./websocket/voiceSession.js";
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
@@ -25,6 +26,7 @@ export async function buildApp() {
   await app.register(foodRoutes);
   await app.register(customFoodRoutes);
   await app.register(barcodeRoutes);
+  await app.register(voiceSessionRoutes);
 
   return app;
 }
