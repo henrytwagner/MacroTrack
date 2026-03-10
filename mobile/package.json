@@ -7,6 +7,9 @@
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "ios:device": "expo run:ios --device",
+    "clean:cache": "rm -rf node_modules/.cache 2>/dev/null; rm -rf $TMPDIR/haste-map-* 2>/dev/null; rm -rf $TMPDIR/metro-cache 2>/dev/null; echo 'Bundler cache cleared.'",
+    "ios:device:clean": "npm run clean:cache && expo run:ios --device --no-build-cache",
     "web": "expo start --web",
     "lint": "expo lint",
     "test": "jest"

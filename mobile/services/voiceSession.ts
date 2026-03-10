@@ -4,11 +4,9 @@ import type { WSClientMessage, WSServerMessage } from '@shared/types';
 // ---------------------------------------------------------------------------
 // WebSocket URL derivation (mirrors api.ts BASE_URL but uses ws:// / wss://)
 // ---------------------------------------------------------------------------
-
 const DEV_HOST =
   process.env.EXPO_PUBLIC_API_HOST ||
   (Platform.OS === 'android' ? '10.0.2.2' : 'localhost');
-
 const WS_BASE = __DEV__
   ? `ws://${DEV_HOST}:3000`
   : 'wss://api.macrotrack.app';

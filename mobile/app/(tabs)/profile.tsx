@@ -111,6 +111,14 @@ export default function ProfileScreen() {
               onPress={() => router.push('/add-food')}
               colors={colors}
             />
+            <View style={[styles.rowSeparator, { backgroundColor: colors.borderLight }]} />
+            <SettingsRow
+              icon="barcode-outline"
+              label="Barcode demo"
+              subtitle="Scan or enter barcode to look up product"
+              onPress={() => router.push('/barcode-demo')}
+              colors={colors}
+            />
           </View>
         </View>
 

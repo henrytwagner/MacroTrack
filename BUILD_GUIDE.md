@@ -330,6 +330,101 @@ Use one prompt per Cursor chat to keep context manageable. Reference this file a
 
 ---
 
+## iOS device build: “latest code not in build”
+
+**Symptom**: `npx expo run:ios --device` (or simulator without Metro) shows an old app; `npx expo start` + open app shows the latest code.
+
+**Likely cause**: The `ios/` folder is **generated** by `expo prebuild` and is not in git. The default Expo/React Native template does two things in Debug: (1) the Xcode “Bundle React Native code and images” phase sets `SKIP_BUNDLING=1`, so no JS bundle is embedded; (2) `AppDelegate` uses the Metro URL for the bundle, so the app expects to load from the dev server. When you run `expo run:ios --device` without Metro, the app falls back to an old or missing embedded bundle, so you see stale (or broken) UI.
+
+**Why it can appear as a “new” regression**: After a fresh `expo prebuild` (e.g. when adding the iOS bundle ID, running prebuild for the first time, or upgrading Expo), the newly generated `ios/` uses these defaults. Older checkouts may have been run with a previously generated `ios/` that behaved differently, or always with Metro running.
+
+**Fix** (re-apply after any `expo prebuild --clean`):
+
+1. **`ios/.xcode.env.updates`** (create if missing):
+   ```bash
+   # Force embedding the JS bundle in Debug so device builds show latest code.
+   # react-native-xcode.sh skips when SKIP_BUNDLING is any non-empty value (even "0"), so we must unset.
+   unset SKIP_BUNDLING
+   ```
+
+2. **`ios/MacroTrack/AppDelegate.swift`** — In `bundleURL()`, for Debug on a **physical device** use the embedded bundle first so `expo run:ios --device` without Metro works; keep using Metro on the simulator so `expo start` still works:
+   ```swift
+   override func bundleURL() -> URL? {
+   #if DEBUG
+     #if targetEnvironment(simulator)
+     return RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: ".expo/.virtual-metro-entry")
+     #else
+     return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
+       ?? RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: ".expo/.virtual-metro-entry")
+     #endif
+   #else
+     return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
+   #endif
+   }
+   ```
+
+Then run a **clean** device build once: `cd mobile && npx expo run:ios --device --no-build-cache`.
+
+---
+
+
+## Debugging “latest code not in device build” (step-by-step)
+
+If the fix above still doesn’t work, use these steps to see where the pipeline fails.
+
+**1. Confirm `.xcode.env.updates` is used during the build**
+
+- From `mobile/`, run: `rm -f ios/bundle-phase-debug.log` then `npx expo run:ios --device --no-build-cache`.
+- After the build finishes, run: `cat mobile/ios/bundle-phase-debug.log`.
+- **Expected:** A line with a recent timestamp and `SKIP_BUNDLING=<unset>`.
+- **If the file is missing or empty:** The bundle script never sourced `.xcode.env.updates` (path or name might be wrong, or the phase didn’t run).
+
+**2. See whether the bundle phase skips or runs**
+
+- Pick your device UDID (run once): `xcrun devicectl list devices` or look for the device in the Expo device picker. Example: `00008120-001035222205A01E`.
+- Build with that device so there’s no interactive prompt, and capture the log:
+  ```bash
+  cd mobile && npx expo run:ios --device <YOUR_DEVICE_UDID> --no-build-cache 2>&1 | tee ../ios-build.log
+  ```
+  (Replace `<YOUR_DEVICE_UDID>` with your phone’s UDID.)
+- Search the log:
+  - `SKIP_BUNDLING enabled; skipping` → The phase is still skipping; `unset SKIP_BUNDLING` isn’t taking effect (e.g. script order, or a different shell).
+  - `Bundling for physical device` → The phase is running; the next step is to confirm the bundle file exists.
+
+**3. Confirm `main.jsbundle` is in the built app**
+
+- After a device build, find the built `.app` (e.g. in Xcode’s DerivedData or from the build log).
+- Example (replace with your DerivedData path if different):
+  ```bash
+  APP=$(find ~/Library/Developer/Xcode/DerivedData -name "MacroTrack.app" -path "*Debug-iphoneos*" -type d 2>/dev/null | head -1)
+  ls -la "$APP/main.jsbundle" 2>/dev/null && echo "Found" || echo "main.jsbundle NOT in app"
+  ```
+- **If not found:** The bundle phase may have failed, or the bundle is written somewhere else. Check the full build log for errors from the “Bundle React Native code and images” phase.
+- **If found:** Check size and timestamp; they should look recent. Then the problem is likely at runtime (app not loading this bundle; see step 4).
+
+**4. Confirm which bundle URL the app uses at runtime**
+
+- In Xcode, open `ios/MacroTrack.xcworkspace`, set the run destination to your device, and run (Run ▶️).
+- In `AppDelegate.swift`, set a breakpoint in `bundleURL()` (and optionally in `sourceURL(for:)`).
+- When the breakpoint hits, inspect the return value and whether you’re in the simulator or device branch.
+- **Expected on device:** `bundleURL()` returns `Bundle.main.url(forResource: "main", withExtension: "jsbundle")` (non-nil) so the app loads the embedded bundle.
+- If it returns the Metro URL or nil, the app won’t use the embedded bundle you built.
+
+**5. Optional: clean everything and rebuild**
+
+- From repo root:
+  ```bash
+  cd mobile
+  rm -rf ios/build ios/bundle-phase-debug.log
+  rm -rf ~/Library/Developer/Xcode/DerivedData/MacroTrack-*
+  npx expo run:ios --device --no-build-cache
+  ```
+- Then repeat steps 1–3.
+
+When you’re done debugging, you can remove the `echo ... bundle-phase-debug.log` line from `ios/.xcode.env.updates` and delete `ios/bundle-phase-debug.log`.
+
+---
+
 ## Quick Reference
 
 | Session | Phases | Key Files | Est. Complexity |
