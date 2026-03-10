@@ -20,8 +20,8 @@ import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import DateHeader from '@/components/DateHeader';
 import MacroProgressBar from '@/components/MacroProgressBar';
+import MacroRingProgress from '@/components/MacroRingProgress';
 import MealGroup from '@/components/MealGroup';
-import EditEntrySheet from '@/components/EditEntrySheet';
 import UndoSnackbar from '@/components/UndoSnackbar';
 import { useDateStore } from '@/stores/dateStore';
 import { useDailyLogStore } from '@/stores/dailyLogStore';
@@ -34,6 +34,51 @@ function addDays(dateStr: string, delta: number): string {
   const d = new Date(dateStr + 'T12:00:00');
   d.setDate(d.getDate() + delta);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function MacroPreviewRow({
+  label,
+  current,
+  goal,
+  unit,
+  colors,
+}: {
+  label: string;
+  current: number;
+  goal: number;
+  unit: string;
+  colors: Record<string, string>;
+}) {
+  const remaining = goal - current;
+  const isOver = remaining < 0;
+  const text =
+    remaining >= 0
+      ? `${Math.round(remaining)}${unit} left`
+      : `${Math.round(Math.abs(remaining))}${unit} over`;
+  return (
+    <View style={styles.macroPreviewRow}>
+      <ThemedText style={[Typography.caption2, { color: colors.textSecondary }]}>
+        {label}
+      </ThemedText>
+      <ThemedText
+        style={[
+          Typography.caption2,
+          { color: isOver ? colors.progressOverflow : colors.textSecondary },
+          styles.macroPreviewValue,
+        ]}
+      >
+        {Math.round(current)} / {goal}
+      </ThemedText>
+      <ThemedText
+        style={[
+          Typography.caption2,
+          { color: isOver ? colors.progressOverflow : colors.textTertiary },
+        ]}
+      >
+        {text}
+      </ThemedText>
+    </View>
+  );
 }
 
 export default function LogScreen() {
@@ -58,9 +103,10 @@ export default function LogScreen() {
   } = useDailyLogStore();
   const { goals, fetch: fetchGoals } = useGoalStore();
 
-  const [editEntry, setEditEntry] = useState<FoodEntry | null>(null);
   const [deletedEntry, setDeletedEntry] = useState<FoodEntry | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [scrollY, setScrollY] = useState(0);
+  const [macroPreviewExpanded, setMacroPreviewExpanded] = useState(false);
 
   // Keep pager on center page when selectedDate changes (e.g. from header)
   useEffect(() => {
@@ -103,7 +149,7 @@ export default function LogScreen() {
 
   const handlePressEntry = (entry: FoodEntry) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setEditEntry(entry);
+    router.push({ pathname: '/edit-entry', params: { id: entry.id } });
   };
 
   const handleDeleteEntry = (entry: FoodEntry) => {
@@ -129,16 +175,6 @@ export default function LogScreen() {
     }
   };
 
-  const handleEditSaved = () => {
-    setEditEntry(null);
-    fetchEntries(selectedDate);
-  };
-
-  const handleEditDeleted = () => {
-    setEditEntry(null);
-    fetchEntries(selectedDate);
-  };
-
   const handleAddPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push('/add-food');
@@ -151,16 +187,7 @@ export default function LogScreen() {
 
   const hasGoals = goals !== null;
   const hasEntries = entries.length > 0;
-
-  const addButton = (
-    <Pressable
-      onPress={handleAddPress}
-      hitSlop={12}
-      style={({ pressed }) => [pressed && { opacity: 0.6 }]}
-    >
-      <Ionicons name="add-circle" size={28} color={colors.tint} />
-    </Pressable>
-  );
+  const showMacroPreview = hasGoals && scrollY > 56;
 
   const prevDateLabel = (() => {
     const d = new Date(addDays(selectedDate, -1) + 'T12:00:00');
@@ -178,6 +205,8 @@ export default function LogScreen() {
       style={[styles.scrollView, pageStyle]}
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
+      onScroll={(e) => setScrollY(e.nativeEvent.contentOffset.y)}
+      scrollEventThrottle={32}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -271,7 +300,66 @@ export default function LogScreen() {
       style={[styles.container, { backgroundColor: colors.background }]}
       edges={['top']}
     >
-      <DateHeader rightAction={addButton} />
+      <DateHeader showArrows={false} alignDate="left" />
+
+      {/* Macro preview: rings always visible; tap toggles detail breakdown below */}
+      {showMacroPreview && (
+        <Pressable
+          style={[
+            styles.macroPreviewPill,
+            {
+              backgroundColor: colorScheme === 'dark'
+                ? 'rgba(28, 28, 30, 0.92)'
+                : 'rgba(255, 255, 255, 0.92)',
+              borderColor: colors.border,
+              shadowColor: '#000',
+            },
+          ]}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setMacroPreviewExpanded((e) => !e);
+          }}
+        >
+          <MacroRingProgress
+            totals={totals}
+            goals={goals}
+            variant="compact"
+            showCalorieSummary={!macroPreviewExpanded}
+          />
+          {macroPreviewExpanded && goals && (
+            <View style={[styles.macroPreviewDetails, { borderTopColor: colors.border }]}>
+              <MacroPreviewRow
+                label="Cal"
+                current={totals.calories}
+                goal={goals.calories}
+                unit=""
+                colors={colors}
+              />
+              <MacroPreviewRow
+                label="P"
+                current={totals.proteinG}
+                goal={goals.proteinG}
+                unit="g"
+                colors={colors}
+              />
+              <MacroPreviewRow
+                label="C"
+                current={totals.carbsG}
+                goal={goals.carbsG}
+                unit="g"
+                colors={colors}
+              />
+              <MacroPreviewRow
+                label="F"
+                current={totals.fatG}
+                goal={goals.fatG}
+                unit="g"
+                colors={colors}
+              />
+            </View>
+          )}
+        </Pressable>
+      )}
 
       <ScrollView
         ref={pagerRef}
@@ -307,26 +395,29 @@ export default function LogScreen() {
         </View>
       </ScrollView>
 
-      {/* Mic FAB — bottom right */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.micFab,
-          { backgroundColor: colors.tint },
-          pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
-        ]}
-        onPress={handleMicPress}
-      >
-        <Ionicons name="mic" size={28} color="#FFFFFF" />
-      </Pressable>
-
-      {editEntry && (
-        <EditEntrySheet
-          entry={editEntry}
-          onDismiss={() => setEditEntry(null)}
-          onSaved={handleEditSaved}
-          onDeleted={handleEditDeleted}
-        />
-      )}
+      {/* Bottom right: mic (small, white, blue) above add (main FAB) */}
+      <View style={styles.fabStack}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.micFabSmall,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+            pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
+          ]}
+          onPress={handleMicPress}
+        >
+          <Ionicons name="mic" size={22} color={colors.tint} />
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [
+            styles.addFab,
+            { backgroundColor: colors.tint },
+            pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
+          ]}
+          onPress={handleAddPress}
+        >
+          <Ionicons name="add" size={28} color="#FFFFFF" />
+        </Pressable>
+      </View>
 
       <UndoSnackbar
         message={deletedEntry ? `${deletedEntry.name} deleted.` : ''}
@@ -356,13 +447,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
     paddingBottom: 120,
-    gap: Spacing.xl,
+    gap: Spacing.lg,
   },
   macroCard: {
     borderRadius: BorderRadius.lg,
-    padding: Spacing.xl,
+    padding: Spacing.lg,
     gap: Spacing.lg,
   },
   noGoalsState: {
@@ -379,10 +471,57 @@ const styles = StyleSheet.create({
   mealGroups: {
     gap: Spacing.xl,
   },
-  micFab: {
+  macroPreviewPill: {
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  macroPreviewDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: Spacing.sm,
+    paddingTop: Spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  macroPreviewRow: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  macroPreviewValue: {
+    fontWeight: '600',
+  },
+  fabStack: {
     position: 'absolute',
     bottom: 24,
     right: 24,
+    alignItems: 'center',
+    gap: 12,
+  },
+  micFabSmall: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  addFab: {
     width: 60,
     height: 60,
     borderRadius: 30,
