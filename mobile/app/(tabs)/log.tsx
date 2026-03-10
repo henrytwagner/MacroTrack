@@ -302,66 +302,8 @@ export default function LogScreen() {
     >
       <DateHeader showArrows={false} alignDate="left" />
 
-      {/* Macro preview: rings always visible; tap toggles detail breakdown below */}
-      {showMacroPreview && (
-        <Pressable
-          style={[
-            styles.macroPreviewPill,
-            {
-              backgroundColor: colorScheme === 'dark'
-                ? 'rgba(28, 28, 30, 0.92)'
-                : 'rgba(255, 255, 255, 0.92)',
-              borderColor: colors.border,
-              shadowColor: '#000',
-            },
-          ]}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setMacroPreviewExpanded((e) => !e);
-          }}
-        >
-          <MacroRingProgress
-            totals={totals}
-            goals={goals}
-            variant="compact"
-            showCalorieSummary={!macroPreviewExpanded}
-          />
-          {macroPreviewExpanded && goals && (
-            <View style={[styles.macroPreviewDetails, { borderTopColor: colors.border }]}>
-              <MacroPreviewRow
-                label="Cal"
-                current={totals.calories}
-                goal={goals.calories}
-                unit=""
-                colors={colors}
-              />
-              <MacroPreviewRow
-                label="P"
-                current={totals.proteinG}
-                goal={goals.proteinG}
-                unit="g"
-                colors={colors}
-              />
-              <MacroPreviewRow
-                label="C"
-                current={totals.carbsG}
-                goal={goals.carbsG}
-                unit="g"
-                colors={colors}
-              />
-              <MacroPreviewRow
-                label="F"
-                current={totals.fatG}
-                goal={goals.fatG}
-                unit="g"
-                colors={colors}
-              />
-            </View>
-          )}
-        </Pressable>
-      )}
-
-      <ScrollView
+      <View style={styles.pagerWrapper}>
+        <ScrollView
         ref={pagerRef}
         horizontal
         pagingEnabled
@@ -394,6 +336,66 @@ export default function LogScreen() {
           </ThemedText>
         </View>
       </ScrollView>
+
+        {/* Macro preview: absolutely positioned over scroll area */}
+        {showMacroPreview && (
+          <Pressable
+            style={[
+              styles.macroPreviewPill,
+              {
+                backgroundColor: colorScheme === 'dark'
+                  ? 'rgba(28, 28, 30, 0.92)'
+                  : 'rgba(255, 255, 255, 0.92)',
+                borderColor: colors.border,
+                shadowColor: '#000',
+              },
+            ]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setMacroPreviewExpanded((e) => !e);
+            }}
+          >
+            <MacroRingProgress
+              totals={totals}
+              goals={goals}
+              variant="compact"
+              showCalorieSummary={!macroPreviewExpanded}
+            />
+            {macroPreviewExpanded && goals && (
+              <View style={[styles.macroPreviewDetails, { borderTopColor: colors.border }]}>
+                <MacroPreviewRow
+                  label="Cal"
+                  current={totals.calories}
+                  goal={goals.calories}
+                  unit=""
+                  colors={colors}
+                />
+                <MacroPreviewRow
+                  label="P"
+                  current={totals.proteinG}
+                  goal={goals.proteinG}
+                  unit="g"
+                  colors={colors}
+                />
+                <MacroPreviewRow
+                  label="C"
+                  current={totals.carbsG}
+                  goal={goals.carbsG}
+                  unit="g"
+                  colors={colors}
+                />
+                <MacroPreviewRow
+                  label="F"
+                  current={totals.fatG}
+                  goal={goals.fatG}
+                  unit="g"
+                  colors={colors}
+                />
+              </View>
+            )}
+          </Pressable>
+        )}
+      </View>
 
       {/* Bottom right: mic (small, white, blue) above add (main FAB) */}
       <View style={styles.fabStack}>
@@ -432,6 +434,10 @@ export default function LogScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  pagerWrapper: {
+    flex: 1,
+    position: 'relative',
   },
   pager: {
     flex: 1,
@@ -472,8 +478,11 @@ const styles = StyleSheet.create({
     gap: Spacing.xl,
   },
   macroPreviewPill: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.sm,
+    position: 'absolute',
+    top: Spacing.sm,
+    left: Spacing.lg,
+    right: Spacing.lg,
+    zIndex: 10,
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.lg,

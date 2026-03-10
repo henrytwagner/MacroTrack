@@ -15,8 +15,10 @@ import * as Haptics from 'expo-haptics';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import MacroProgressBar from '@/components/MacroProgressBar';
+import { DashboardMacroSingleLayout } from '@/components/DashboardMacroLayouts';
+import { useDashboardLayoutStore } from '@/stores/dashboardLayoutStore';
 import FrequentFoodRow from '@/components/FrequentFoodRow';
+import MacroInlineLine from '@/components/MacroInlineLine';
 import { useDailyLogStore } from '@/stores/dailyLogStore';
 import { useGoalStore } from '@/stores/goalStore';
 import { todayString } from '@/stores/dateStore';
@@ -63,6 +65,7 @@ export default function DashboardScreen() {
     fetch: fetchEntries,
   } = useDailyLogStore();
   const { goals, fetch: fetchGoals } = useGoalStore();
+  const { layoutId } = useDashboardLayoutStore();
 
   const [frequentFoods, setFrequentFoods] = useState<FrequentFood[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -165,41 +168,14 @@ export default function DashboardScreen() {
           </ThemedText>
         </View>
 
-        {/* Macro Progress */}
+        {/* Macro Progress — single layout (selector on Edit dashboard) */}
         <View style={[styles.card, { backgroundColor: colors.surface }]}>
           <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
             Today's Progress
           </ThemedText>
           {hasGoals ? (
-            <View style={styles.barsContainer}>
-              <MacroProgressBar
-                label="Calories"
-                current={totals.calories}
-                goal={goals!.calories}
-                accentColor={colors.caloriesAccent}
-                unit=" cal"
-              />
-              <MacroProgressBar
-                label="Protein"
-                current={totals.proteinG}
-                goal={goals!.proteinG}
-                accentColor={colors.proteinAccent}
-                unit="g"
-              />
-              <MacroProgressBar
-                label="Carbs"
-                current={totals.carbsG}
-                goal={goals!.carbsG}
-                accentColor={colors.carbsAccent}
-                unit="g"
-              />
-              <MacroProgressBar
-                label="Fat"
-                current={totals.fatG}
-                goal={goals!.fatG}
-                accentColor={colors.fatAccent}
-                unit="g"
-              />
+            <View style={styles.progressLayoutWrap}>
+              <DashboardMacroSingleLayout layoutId={layoutId} totals={totals} goals={goals} />
             </View>
           ) : (
             <Pressable
@@ -309,12 +285,18 @@ export default function DashboardScreen() {
                       >
                         {entry.name}
                       </ThemedText>
-                      <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>
-                        {entry.quantity}{entry.unit} · {MEAL_ORDER.includes(entry.mealLabel) ? entry.mealLabel.charAt(0).toUpperCase() + entry.mealLabel.slice(1) : entry.mealLabel}
-                      </ThemedText>
+                      <MacroInlineLine
+                        prefix={`${entry.quantity} ${entry.unit}`}
+                        macros={entry}
+                        colors={{
+                          ...colors,
+                          textSecondary: colors.textSecondary,
+                        }}
+                        textStyle="caption1"
+                      />
                     </View>
-                    <ThemedText style={[Typography.subhead, { color: colors.text, fontWeight: '500' }]}>
-                      {Math.round(entry.calories)} cal
+                    <ThemedText style={[Typography.caption1, { color: colors.textTertiary }]}>
+                      {MEAL_ORDER.includes(entry.mealLabel) ? entry.mealLabel.charAt(0).toUpperCase() + entry.mealLabel.slice(1) : entry.mealLabel}
                     </ThemedText>
                   </View>
                 </View>
@@ -332,6 +314,18 @@ export default function DashboardScreen() {
             </View>
           )}
         </View>
+
+        {/* Edit dashboard link — bottom of dashboard */}
+        <Pressable
+          onPress={() => router.push('/edit-dashboard')}
+          style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+        >
+          <ThemedText
+            style={[Typography.subhead, { color: colors.tint, textAlign: 'center' }]}
+          >
+            Edit dashboard
+          </ThemedText>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -358,8 +352,11 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     padding: Spacing.xl,
   },
-  barsContainer: {
-    gap: Spacing.lg,
+  progressLayoutWrap: {
+    width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
+    overflow: 'hidden',
   },
   section: {
     gap: Spacing.md,
@@ -404,7 +401,7 @@ const styles = StyleSheet.create({
   },
   entryInfo: {
     flex: 1,
-    gap: 2,
+    gap: 4,
   },
   seeMoreRow: {
     alignItems: 'center',

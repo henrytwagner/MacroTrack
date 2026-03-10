@@ -4,6 +4,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,7 +14,7 @@ import * as KeepAwake from 'expo-keep-awake';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
-import MacroSummaryBar from '@/components/MacroSummaryBar';
+import MacroRingProgress from '@/components/MacroRingProgress';
 import DraftMealCard from '@/components/DraftMealCard';
 import ListeningIndicator, { type ListeningState } from '@/components/ListeningIndicator';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
@@ -24,7 +25,57 @@ import { useDraftStore } from '@/stores/draftStore';
 import { useGoalStore } from '@/stores/goalStore';
 import * as voiceSession from '@/services/voiceSession';
 import * as speech from '@/services/speech';
+import { createSTTStrategy, type STTCallbacks } from '@/services/sttStrategy';
 import type { WSServerMessage } from '@shared/types';
+
+// ---------------------------------------------------------------------------
+// Macro preview row (tap-to-expand details)
+// ---------------------------------------------------------------------------
+
+function MacroPreviewRow({
+  label,
+  current,
+  goal,
+  unit,
+  colors,
+}: {
+  label: string;
+  current: number;
+  goal: number;
+  unit: string;
+  colors: Record<string, string>;
+}) {
+  const remaining = goal - current;
+  const isOver = remaining < 0;
+  const text =
+    remaining >= 0
+      ? `${Math.round(remaining)}${unit} left`
+      : `${Math.round(Math.abs(remaining))}${unit} over`;
+  return (
+    <View style={styles.macroPreviewRow}>
+      <ThemedText style={[Typography.caption2, { color: colors.textSecondary }]}>
+        {label}
+      </ThemedText>
+      <ThemedText
+        style={[
+          Typography.caption2,
+          { color: isOver ? colors.progressOverflow : colors.textSecondary },
+          styles.macroPreviewValue,
+        ]}
+      >
+        {Math.round(current)} / {goal}
+      </ThemedText>
+      <ThemedText
+        style={[
+          Typography.caption2,
+          { color: isOver ? colors.progressOverflow : colors.textTertiary },
+        ]}
+      >
+        {text}
+      </ThemedText>
+    </View>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -37,17 +88,24 @@ export default function KitchenModeScreen() {
 
   const selectedDate = useDateStore((s) => s.selectedDate);
   const { totals, fetch: fetchEntries } = useDailyLogStore();
-  const { fetch: fetchGoals } = useGoalStore();
-  const { items, initSession, applyServerMessage, reset } = useDraftStore();
+  const { goals, fetch: fetchGoals } = useGoalStore();
+  const { items, projectedTotals, initSession, applyServerMessage, reset } = useDraftStore();
 
   const [listeningState, setListeningState] = useState<ListeningState>('idle');
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [nativeModuleMissing, setNativeModuleMissing] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  // On-screen debug (dev only): last STT result, live interim, or error
+  const [debugSttLastResult, setDebugSttLastResult] = useState<string | null>(null);
+  const [debugSttInterim, setDebugSttInterim] = useState<string | null>(null);
+  const [debugSttLastError, setDebugSttLastError] = useState<string | null>(null);
+  const [debugInputText, setDebugInputText] = useState('');
+  const [macroPreviewExpanded, setMacroPreviewExpanded] = useState(false);
 
   // Refs that don't need to trigger re-renders
   const sessionEndedRef = useRef(false);
   const isSavingRef = useRef(false);
+  const sttStrategyRef = useRef(createSTTStrategy());
 
   // ---------------------------------------------------------------------------
   // STT — start / restart listening
@@ -55,21 +113,31 @@ export default function KitchenModeScreen() {
   // ---------------------------------------------------------------------------
 
   const startListening = useCallback(() => {
-    speech.startListening(
-      (transcript) => {
-        console.log('[KitchenMode] STT result:', transcript);
+    const strategy = sttStrategyRef.current;
+    const callbacks: STTCallbacks = {
+      onResult: (transcript) => {
+        if (__DEV__) {
+          setDebugSttLastResult(transcript);
+          setDebugSttInterim(null);
+          setDebugSttLastError(null);
+        }
         setListeningState('processing');
         voiceSession.sendTranscript(transcript);
       },
-      (error) => {
-        console.warn('[KitchenMode] STT error:', error);
+      onError: (error) => {
+        if (__DEV__) {
+          setDebugSttLastError(error);
+        }
         if (!sessionEndedRef.current) {
           setTimeout(() => {
             if (!sessionEndedRef.current) startListening();
           }, 1000);
         }
       },
-      () => {
+      onInterimResult: __DEV__
+        ? (transcript) => setDebugSttInterim(transcript)
+        : undefined,
+      onEnd: () => {
         // STT ended (iOS silence timeout) — silently restart without
         // dropping to 'idle' so the animation doesn't flicker.
         if (!sessionEndedRef.current) {
@@ -78,7 +146,9 @@ export default function KitchenModeScreen() {
           }, 300);
         }
       },
-    );
+    };
+
+    strategy.start(callbacks);
     setListeningState('listening');
   }, []);
 
@@ -89,7 +159,7 @@ export default function KitchenModeScreen() {
   const speakAndResume = useCallback(
     (text: string) => {
       if (!text || sessionEndedRef.current) return;
-      speech.stopListening();
+      sttStrategyRef.current.stop();
       setListeningState('speaking');
       speech.speak(text, () => {
         if (!sessionEndedRef.current) startListening();
@@ -103,7 +173,7 @@ export default function KitchenModeScreen() {
   // ---------------------------------------------------------------------------
 
   const endSession = useCallback(() => {
-    speech.stopListening();
+    sttStrategyRef.current.stop();
     speech.stopSpeaking();
     voiceSession.disconnect();
     KeepAwake.deactivateKeepAwake();
@@ -172,17 +242,20 @@ export default function KitchenModeScreen() {
       initSession(currentTotals);
 
       // Check native module availability (requires dev build, not Expo Go)
-      if (!speech.isSTTAvailable()) {
+      const textOnlyDebug = __DEV__ && !speech.isSTTAvailable();
+      if (!speech.isSTTAvailable() && !textOnlyDebug) {
         setNativeModuleMissing(true);
         return;
       }
 
-      // Request microphone permission
-      const granted = await speech.requestSpeechPermission();
-      if (!mounted) return;
-      if (!granted) {
-        setPermissionDenied(true);
-        return;
+      // Request microphone permission (skip in text-only debug mode for simulator)
+      if (!textOnlyDebug) {
+        const granted = await speech.requestSpeechPermission();
+        if (!mounted) return;
+        if (!granted) {
+          setPermissionDenied(true);
+          return;
+        }
       }
 
       // Connect WebSocket
@@ -195,8 +268,9 @@ export default function KitchenModeScreen() {
             setConnectionError(
               'Connection lost. Your items have been saved.',
             );
-            speech.stopListening();
+            sttStrategyRef.current.stop();
           },
+          sttStrategyRef.current.mode,
         );
       } catch {
         if (!mounted) return;
@@ -209,7 +283,9 @@ export default function KitchenModeScreen() {
       if (!mounted) return;
 
       KeepAwake.activateKeepAwakeAsync();
-      startListening();
+      if (!textOnlyDebug) {
+        startListening();
+      }
     }
 
     init();
@@ -220,7 +296,7 @@ export default function KitchenModeScreen() {
       // The server's onclose handler saves any pending draft items.
       if (!sessionEndedRef.current && !isSavingRef.current) {
         sessionEndedRef.current = true;
-        speech.stopListening();
+        sttStrategyRef.current.stop();
         speech.stopSpeaking();
         voiceSession.disconnect();
       }
@@ -238,7 +314,7 @@ export default function KitchenModeScreen() {
     if (isSavingRef.current || sessionEndedRef.current) return;
     isSavingRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    speech.stopListening();
+    sttStrategyRef.current.stop();
     speech.stopSpeaking();
     setListeningState('idle');
     voiceSession.sendSave();
@@ -248,6 +324,18 @@ export default function KitchenModeScreen() {
   // ---------------------------------------------------------------------------
   // Cancel
   // ---------------------------------------------------------------------------
+
+  // Dev/simulator: submit typed text as if it were a voice transcript
+  const handleDebugSubmit = useCallback(() => {
+    const trimmed = debugInputText.trim();
+    if (!trimmed || sessionEndedRef.current) return;
+    setDebugInputText('');
+    setDebugSttLastResult(trimmed);
+    setDebugSttInterim(null);
+    setDebugSttLastError(null);
+    setListeningState('processing');
+    voiceSession.sendTranscript(trimmed);
+  }, [debugInputText]);
 
   const handleCancel = useCallback(() => {
     if (sessionEndedRef.current) return;
@@ -418,8 +506,53 @@ export default function KitchenModeScreen() {
         )}
       </View>
 
-      {/* Live macro summary */}
-      <MacroSummaryBar />
+      {/* Live macro rings (always visible); tap to toggle detail breakdown below */}
+      <Pressable
+        style={[styles.ringBar, { backgroundColor: colors.surface }]}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setMacroPreviewExpanded((e) => !e);
+        }}
+      >
+        <MacroRingProgress
+          totals={projectedTotals}
+          goals={goals}
+          variant="default"
+          showCalorieSummary={!macroPreviewExpanded}
+        />
+        {macroPreviewExpanded && goals && (
+          <View style={[styles.macroPreviewDetails, { borderTopColor: colors.border }]}>
+            <MacroPreviewRow
+              label="Cal"
+              current={projectedTotals.calories}
+              goal={goals.calories}
+              unit=""
+              colors={colors}
+            />
+            <MacroPreviewRow
+              label="P"
+              current={projectedTotals.proteinG}
+              goal={goals.proteinG}
+              unit="g"
+              colors={colors}
+            />
+            <MacroPreviewRow
+              label="C"
+              current={projectedTotals.carbsG}
+              goal={goals.carbsG}
+              unit="g"
+              colors={colors}
+            />
+            <MacroPreviewRow
+              label="F"
+              current={projectedTotals.fatG}
+              goal={goals.fatG}
+              unit="g"
+              colors={colors}
+            />
+          </View>
+        )}
+      </Pressable>
       <View style={[styles.hairline, { backgroundColor: colors.border }]} />
 
       {/* Draft cards */}
@@ -457,6 +590,45 @@ export default function KitchenModeScreen() {
         style={[styles.bottomSection, { borderTopColor: colors.border }]}
       >
         <ListeningIndicator state={listeningState} />
+        {__DEV__ && (
+          <>
+            <TextInput
+              style={[
+                styles.debugInput,
+                {
+                  backgroundColor: colors.surfaceSecondary,
+                  color: colors.text,
+                  borderColor: colors.border,
+                },
+              ]}
+              placeholder="Type to simulate voice (simulator)"
+              placeholderTextColor={colors.textTertiary}
+              value={debugInputText}
+              onChangeText={setDebugInputText}
+              onSubmitEditing={handleDebugSubmit}
+              returnKeyType="send"
+              blurOnSubmit={false}
+            />
+            <View style={[styles.debugStrip, { backgroundColor: colors.surfaceSecondary }]}>
+              <ThemedText
+              style={[Typography.caption2, { color: colors.textSecondary }]}
+              numberOfLines={2}
+            >
+              {debugSttLastError != null
+                ? `Error: ${debugSttLastError}`
+                : debugSttInterim != null
+                  ? `Live: «${debugSttInterim}»`
+                  : debugSttLastResult != null
+                    ? `Heard: «${debugSttLastResult}»`
+                    : listeningState === 'listening' || listeningState === 'processing'
+                      ? 'Listening…'
+                      : listeningState === 'speaking'
+                        ? 'Speaking…'
+                        : '—'}
+              </ThemedText>
+            </View>
+          </>
+        )}
 
         <View style={styles.actionRow}>
           <Pressable
@@ -514,6 +686,28 @@ const styles = StyleSheet.create({
   hairline: {
     height: StyleSheet.hairlineWidth,
   },
+  ringBar: {
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  macroPreviewDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: Spacing.sm,
+    paddingTop: Spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  macroPreviewRow: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  macroPreviewValue: {
+    fontWeight: '600',
+  },
   scrollView: {
     flex: 1,
   },
@@ -537,6 +731,20 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.lg,
     gap: Spacing.lg,
     alignItems: 'center',
+  },
+  debugInput: {
+    alignSelf: 'stretch',
+    borderWidth: 1,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    ...Typography.body,
+  },
+  debugStrip: {
+    alignSelf: 'stretch',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.sm,
   },
   actionRow: {
     flexDirection: 'row',
