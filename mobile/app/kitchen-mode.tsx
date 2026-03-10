@@ -57,32 +57,30 @@ export default function KitchenModeScreen() {
   const startListening = useCallback(() => {
     speech.startListening(
       (transcript) => {
+        console.log('[KitchenMode] STT result:', transcript);
         setListeningState('processing');
         voiceSession.sendTranscript(transcript);
       },
       (error) => {
         console.warn('[KitchenMode] STT error:', error);
         if (!sessionEndedRef.current) {
-          // Brief pause then restart
           setTimeout(() => {
-            if (!sessionEndedRef.current) {
-              startListening();
-            }
+            if (!sessionEndedRef.current) startListening();
           }, 1000);
         }
       },
       () => {
-        // STT ended (iOS silence timeout) — restart automatically
+        // STT ended (iOS silence timeout) — silently restart without
+        // dropping to 'idle' so the animation doesn't flicker.
         if (!sessionEndedRef.current) {
-          setListeningState('idle');
           setTimeout(() => {
             if (!sessionEndedRef.current) startListening();
-          }, 500);
+          }, 300);
         }
       },
     );
     setListeningState('listening');
-  }, []); // no deps — only uses refs and stable service functions
+  }, []);
 
   // ---------------------------------------------------------------------------
   // TTS — speak a prompt then resume listening

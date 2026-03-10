@@ -15,14 +15,13 @@ export type STTErrorCallback = (error: string) => void;
 // running in Expo Go, we resolve the module lazily on first use.
 // ---------------------------------------------------------------------------
 
-let _sttModule: typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule | null = null;
+let _sttModule: any | null = null;
 let _sttModuleChecked = false;
 
 function getSTTModule() {
   if (_sttModuleChecked) return _sttModule;
   _sttModuleChecked = true;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const mod = require('expo-speech-recognition');
     _sttModule = mod.ExpoSpeechRecognitionModule;
   } catch {
@@ -60,8 +59,10 @@ export async function requestSpeechPermission(): Promise<boolean> {
 
 /**
  * Start continuous on-device speech recognition.
- * Each final result segment fires onResult with the transcript text.
- * When recognition unexpectedly ends (e.g., long silence on iOS), onEnd fires.
+ *
+ * Uses interimResults so we get partial transcripts for responsiveness,
+ * but only fires onResult with the final transcript.
+ * Auto-restarts when iOS ends the session (silence timeout).
  */
 export function startListening(
   onResult: STTResultCallback,
@@ -74,7 +75,7 @@ export function startListening(
     return;
   }
 
-  stopListening();
+  removeListeners();
 
   sttResultListener = mod.addListener('result', (event: any) => {
     if (event.isFinal) {
@@ -86,7 +87,9 @@ export function startListening(
   });
 
   sttErrorListener = mod.addListener('error', (event: any) => {
-    if (event.error === 'no-speech') return;
+    const code = event.error;
+    // These are not real errors — silence or speech timeout, just let onEnd restart
+    if (code === 'no-speech' || code === 'speech-timeout') return;
     onError(event.message ?? event.error ?? 'Speech recognition error');
   });
 
@@ -107,7 +110,15 @@ export function startListening(
  */
 export function stopListening(): void {
   const mod = getSTTModule();
-  mod?.stop();
+  try {
+    mod?.stop();
+  } catch {
+    // ignore if not running
+  }
+  removeListeners();
+}
+
+function removeListeners(): void {
   sttResultListener?.remove();
   sttErrorListener?.remove();
   sttEndListener?.remove();
@@ -120,7 +131,12 @@ export function stopListening(): void {
  * Briefly pause recognition (e.g., while TTS is speaking).
  */
 export function pauseListening(): void {
-  getSTTModule()?.stop();
+  const mod = getSTTModule();
+  try {
+    mod?.stop();
+  } catch {
+    // ignore
+  }
 }
 
 export function resumeListening(
