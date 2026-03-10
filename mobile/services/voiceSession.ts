@@ -18,6 +18,8 @@ const WS_BASE = __DEV__
 export type WSMessageCallback = (message: WSServerMessage) => void;
 export type WSDisconnectCallback = () => void;
 
+export type STTMode = 'local' | 'cloud';
+
 // ---------------------------------------------------------------------------
 // Voice session client
 // ---------------------------------------------------------------------------
@@ -37,6 +39,7 @@ export function connect(
   date: string,
   onMessage: WSMessageCallback,
   onDisconnect: WSDisconnectCallback,
+  sttMode: STTMode = 'local',
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -46,7 +49,15 @@ export function connect(
     onMessageCallback = onMessage;
     onDisconnectCallback = onDisconnect;
 
-    const url = `${WS_BASE}/ws/voice-session?date=${encodeURIComponent(date)}`;
+    const params = new URLSearchParams({
+      date,
+      sttMode,
+    });
+    const url = `${WS_BASE}/ws/voice-session?${params.toString()}`;
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.log('[voiceSession] Connecting →', url);
+    }
     ws = new WebSocket(url);
 
     const timeout = setTimeout(() => {
@@ -55,6 +66,10 @@ export function connect(
 
     ws.onopen = () => {
       clearTimeout(timeout);
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.log('[voiceSession] Connected');
+      }
       resolve();
     };
 
@@ -67,6 +82,10 @@ export function connect(
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data as string) as WSServerMessage;
+        if (__DEV__) {
+          // eslint-disable-next-line no-console
+          console.log('[voiceSession] ←', msg.type, msg.type === 'items_added' ? `(${msg.items?.length ?? 0} items)` : msg.type === 'error' ? (msg as { message?: string }).message : '');
+        }
         onMessageCallback?.(msg);
       } catch (e) {
         console.error('[voiceSession] Failed to parse message:', e);
@@ -89,6 +108,15 @@ export function connect(
  */
 export function sendTranscript(text: string): void {
   sendMessage({ type: 'transcript', text });
+}
+
+/**
+ * Send a chunk of audio data (base64-encoded) to the server.
+ * Used when cloud STT is enabled so the backend can stream audio
+ * to a third-party transcription service.
+ */
+export function sendAudioChunk(data: string, sequence: number): void {
+  sendMessage({ type: 'audio_chunk', data, sequence });
 }
 
 /**
@@ -125,6 +153,11 @@ export function isConnected(): boolean {
 
 function sendMessage(msg: WSClientMessage): void {
   if (ws && ws.readyState === WebSocket.OPEN) {
+    if (__DEV__) {
+      const summary = msg.type === 'transcript' ? ` "${(msg as { text: string }).text.slice(0, 50)}${(msg as { text: string }).text.length > 50 ? '…' : ''}"` : '';
+      // eslint-disable-next-line no-console
+      console.log('[voiceSession] →', msg.type + summary);
+    }
     ws.send(JSON.stringify(msg));
   } else {
     console.warn('[voiceSession] Attempted to send on closed socket:', msg.type);

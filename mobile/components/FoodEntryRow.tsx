@@ -1,11 +1,12 @@
 import { useRef } from 'react';
 import { StyleSheet, View, Pressable, Animated } from 'react-native';
-import { Swipeable } from 'react-native-gesture-handler';
+import { Swipeable, TouchableOpacity } from 'react-native-gesture-handler';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Typography, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import MacroInlineLine from '@/components/MacroInlineLine';
 import type { FoodEntry } from '@shared/types';
 
 interface FoodEntryRowProps {
@@ -56,9 +57,10 @@ export default function FoodEntryRow({
       overshootRight={false}
       friction={2}
     >
-      <Pressable
+      <TouchableOpacity
         style={[styles.row, { backgroundColor: colors.surface }]}
         onPress={() => onPress(entry)}
+        activeOpacity={0.7}
       >
         <View style={styles.mainContent}>
           <ThemedText
@@ -68,26 +70,15 @@ export default function FoodEntryRow({
             {entry.name}
           </ThemedText>
           <View style={styles.details}>
-            <ThemedText
-              style={[Typography.caption1, { color: colors.textSecondary }]}
-            >
-              {entry.quantity}
-              {' '}
-              {entry.unit}
-            </ThemedText>
-            <ThemedText
-              style={[Typography.caption1, { color: colors.textTertiary }]}
-            >
-              ·
-            </ThemedText>
-            <ThemedText
-              style={[
-                Typography.subhead,
-                { color: colors.text, fontWeight: '500' },
-              ]}
-            >
-              {Math.round(entry.calories)} cal
-            </ThemedText>
+            <MacroInlineLine
+              prefix={`${entry.quantity} ${entry.unit}`}
+              macros={entry}
+              colors={{
+                ...colors,
+                textSecondary: colors.textSecondary,
+              }}
+              textStyle="caption1"
+            />
           </View>
         </View>
         <MaterialIcons
@@ -95,7 +86,7 @@ export default function FoodEntryRow({
           size={16}
           color={colors.textTertiary}
         />
-      </Pressable>
+      </TouchableOpacity>
     </Swipeable>
   );
 }
@@ -110,12 +101,11 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     flex: 1,
-    gap: 2,
+    gap: 4,
   },
   details: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.xs,
   },
   deleteAction: {
     width: 80,

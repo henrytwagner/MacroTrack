@@ -174,6 +174,7 @@ const styles = StyleSheet.create({
   valueText: {
     flexShrink: 0,
     minWidth: 96,
+    textAlign: 'right',
   },
   barOuter: {
     height: 8,

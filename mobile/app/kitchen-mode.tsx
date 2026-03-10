@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as KeepAwake from 'expo-keep-awake';
 import * as Haptics from 'expo-haptics';
@@ -85,6 +85,7 @@ export default function KitchenModeScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const router = useRouter();
+  const { from } = useLocalSearchParams<{ from?: string }>();
 
   const selectedDate = useDateStore((s) => s.selectedDate);
   const { totals, fetch: fetchEntries } = useDailyLogStore();
@@ -211,7 +212,11 @@ export default function KitchenModeScreen() {
         endSession();
         fetchEntries(selectedDate).catch(() => {});
         reset();
-        router.replace('/');
+        if (from === 'log') {
+          router.back();
+        } else {
+          router.replace('/(tabs)/log');
+        }
       } else if (msg.type === 'session_cancelled') {
         sessionEndedRef.current = true;
         endSession();
@@ -219,7 +224,7 @@ export default function KitchenModeScreen() {
         router.back();
       }
     },
-    [applyServerMessage, speakAndResume, endSession, fetchEntries, selectedDate, reset, router],
+    [applyServerMessage, speakAndResume, endSession, fetchEntries, selectedDate, reset, router, from],
   );
 
   // ---------------------------------------------------------------------------

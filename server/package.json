@@ -20,6 +20,7 @@
     "@fastify/cors": "^11.2.0",
     "@fastify/websocket": "^11.2.0",
     "@google/generative-ai": "^0.24.1",
+    "@deepgram/sdk": "^3.4.0",
     "@prisma/adapter-pg": "^7.4.1",
     "@prisma/client": "^7.4.1",
     "dotenv": "^17.3.1",

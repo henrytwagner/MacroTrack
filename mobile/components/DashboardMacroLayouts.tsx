@@ -27,7 +27,7 @@ const LAYOUT_IDS: MacroLayoutId[] = [
 
 const LAYOUT_LABELS: Record<MacroLayoutId, string> = {
   bars: 'Bars',
-  'nested-rings': 'Nested',
+  'nested-rings': 'Overview',
   'activity-rings': 'Activity',
 };
 
@@ -105,14 +105,20 @@ function SingleRing({
       </Svg>
       {(centerText !== undefined || label !== undefined) && (
         <View style={[localStyles.ringCenter, StyleSheet.absoluteFillObject]}>
-          {centerText !== undefined && (
-            <ThemedText style={[Typography.caption2, localStyles.ringCenterText, centerTextStyle]} numberOfLines={1}>
-              {centerText}
+          {label !== undefined && (
+            <ThemedText
+              style={[Typography.caption2, localStyles.ringCenterLabel, labelStyle]}
+              numberOfLines={1}
+            >
+              {label}
             </ThemedText>
           )}
-          {label !== undefined && centerText === undefined && (
-            <ThemedText style={[Typography.caption2, localStyles.ringCenterText, labelStyle]} numberOfLines={1}>
-              {label}
+          {centerText !== undefined && (
+            <ThemedText
+              style={[Typography.caption2, localStyles.ringCenterText, centerTextStyle]}
+              numberOfLines={1}
+            >
+              {centerText}
             </ThemedText>
           )}
         </View>
@@ -167,7 +173,7 @@ function LayoutBars({
   );
 }
 
-// 2. Nested: one big calorie ring with text stats to the right, three rings below
+// 2. Overview: centered calorie ring with three macro rings below
 function LayoutNestedRings({
   totals,
   goals,
@@ -177,24 +183,18 @@ function LayoutNestedRings({
   goals: Macros;
   colors: Record<string, string>;
 }) {
-  const big = 128;
-  const small = 72;
+  const big = 156;
+  const small = 80;
   const swBig = 11;
   const swSmall = 6;
   const calProgress =
     goals.calories > 0
       ? `${Math.round(totals.calories)} / ${goals.calories}`
       : `${Math.round(totals.calories)}`;
-  const stats = [
-    { label: 'Calories', current: Math.round(totals.calories), goal: goals.calories, unit: ' cal' },
-    { label: 'Protein', current: Math.round(totals.proteinG), goal: goals.proteinG, unit: 'g' },
-    { label: 'Carbs', current: Math.round(totals.carbsG), goal: goals.carbsG, unit: 'g' },
-    { label: 'Fat', current: Math.round(totals.fatG), goal: goals.fatG, unit: 'g' },
-  ];
   const macroData = [
-    { label: 'Protein', current: totals.proteinG, goal: goals.proteinG, unit: 'g', color: colors.proteinAccent },
-    { label: 'Carbs', current: totals.carbsG, goal: goals.carbsG, unit: 'g', color: colors.carbsAccent },
-    { label: 'Fat', current: totals.fatG, goal: goals.fatG, unit: 'g', color: colors.fatAccent },
+    { label: 'P', current: totals.proteinG, goal: goals.proteinG, color: colors.proteinAccent },
+    { label: 'C', current: totals.carbsG, goal: goals.carbsG, color: colors.carbsAccent },
+    { label: 'F', current: totals.fatG, goal: goals.fatG, color: colors.fatAccent },
   ];
   return (
     <View style={[localStyles.layoutPad, localStyles.layoutConstrained]}>
@@ -209,39 +209,31 @@ function LayoutNestedRings({
             trackColor={colors.progressTrack}
             centerText={calProgress}
             centerTextStyle={[Typography.callout, { fontWeight: '700', color: colors.text }]}
+            label="Calories"
+            labelStyle={[localStyles.nestedCalLabel, { color: colors.textTertiary }]}
           />
-          <View style={localStyles.nestedStats}>
-            {stats.map((s) => (
-              <View key={s.label} style={localStyles.nestedStatRow}>
-                <ThemedText style={[Typography.caption2, { color: colors.textSecondary }]}>
-                  {s.label}
-                </ThemedText>
-                <ThemedText style={[Typography.subhead, { color: colors.text, fontWeight: '600' }]}>
-                  {s.goal > 0 ? `${s.current} / ${s.goal}${s.unit}`.trim() : `${s.current}${s.unit}`}
-                </ThemedText>
-              </View>
-            ))}
-          </View>
         </View>
         <View style={localStyles.nestedRow}>
-          {macroData.map((m) => (
-            <View key={m.label} style={localStyles.nestedRingWithData}>
-              <SingleRing
-                size={small}
-                strokeWidth={swSmall}
-                current={m.current}
-                goal={m.goal}
-                accentColor={m.color}
-                trackColor={colors.progressTrack}
-              />
-              <ThemedText style={[Typography.subhead, { color: colors.textSecondary, fontWeight: '600' }]}>
-                {m.label}
-              </ThemedText>
-              <ThemedText style={[Typography.callout, { color: colors.text, fontWeight: '700' }]}>
-                {Math.round(m.current)} / {m.goal}{m.unit}
-              </ThemedText>
-            </View>
-          ))}
+          {macroData.map((m) => {
+            const ratio =
+              m.goal > 0 ? `${Math.round(m.current)} / ${m.goal}` : `${Math.round(m.current)}`;
+            return (
+              <View key={m.label} style={localStyles.nestedRingWithData}>
+                <SingleRing
+                  size={small}
+                  strokeWidth={swSmall}
+                  current={m.current}
+                  goal={m.goal}
+                  accentColor={m.color}
+                  trackColor={colors.progressTrack}
+                  label={m.label}
+                  labelStyle={[Typography.caption2, { color: colors.textSecondary }]}
+                  centerText={ratio}
+                  centerTextStyle={[Typography.subhead, { fontWeight: '600', color: colors.text }]}
+                />
+              </View>
+            );
+          })}
         </View>
       </View>
     </View>
@@ -561,16 +553,25 @@ const localStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  ringCenterLabel: {
+    textAlign: 'center',
+    marginBottom: 0,
+  },
   ringCenterText: {
     textAlign: 'center',
   },
   nestedTop: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.lg,
+    gap: Spacing.xs,
     marginBottom: Spacing.lg,
-    flexWrap: 'wrap',
+  },
+  nestedCalLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 2,
   },
   nestedStats: {
     gap: Spacing.xs,

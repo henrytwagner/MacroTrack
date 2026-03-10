@@ -58,16 +58,24 @@ export async function requestSpeechPermission(): Promise<boolean> {
 }
 
 /**
+ * Optional callback for live partial transcripts (interim results).
+ * Used in dev to confirm the mic/recognizer is receiving audio.
+ */
+export type STTInterimCallback = (transcript: string) => void;
+
+/**
  * Start continuous on-device speech recognition.
  *
- * Uses interimResults so we get partial transcripts for responsiveness,
- * but only fires onResult with the final transcript.
+ * With interimResults: true we get partial transcripts; only final ones
+ * are passed to onResult and sent to the server. onInterimResult (optional)
+ * can be used to show live feedback (e.g. in dev).
  * Auto-restarts when iOS ends the session (silence timeout).
  */
 export function startListening(
   onResult: STTResultCallback,
   onError: STTErrorCallback,
   onEnd?: () => void,
+  onInterimResult?: STTInterimCallback,
 ): void {
   const mod = getSTTModule();
   if (!mod) {
@@ -78,11 +86,12 @@ export function startListening(
   removeListeners();
 
   sttResultListener = mod.addListener('result', (event: any) => {
+    const transcript = event.results?.[0]?.transcript?.trim();
+    if (!transcript) return;
     if (event.isFinal) {
-      const transcript = event.results?.[0]?.transcript;
-      if (transcript?.trim()) {
-        onResult(transcript.trim());
-      }
+      onResult(transcript);
+    } else if (onInterimResult) {
+      onInterimResult(transcript);
     }
   });
 
@@ -99,9 +108,10 @@ export function startListening(
 
   mod.start({
     lang: 'en-US',
-    interimResults: false,
+    interimResults: true,
     continuous: true,
-    requiresOnDeviceRecognition: false,
+    // On-device can be more reliable on physical devices; off-device may not emit results in some configs
+    requiresOnDeviceRecognition: true,
   });
 }
 
@@ -143,8 +153,9 @@ export function resumeListening(
   onResult: STTResultCallback,
   onError: STTErrorCallback,
   onEnd?: () => void,
+  onInterimResult?: STTInterimCallback,
 ): void {
-  startListening(onResult, onError, onEnd);
+  startListening(onResult, onError, onEnd, onInterimResult);
 }
 
 // ---------------------------------------------------------------------------

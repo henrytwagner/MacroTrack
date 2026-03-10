@@ -182,7 +182,7 @@ export default function LogScreen() {
 
   const handleMicPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    router.push('/kitchen-mode');
+    router.push({ pathname: '/kitchen-mode', params: { from: 'log' } });
   };
 
   const hasGoals = goals !== null;

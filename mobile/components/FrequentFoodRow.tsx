@@ -5,6 +5,7 @@ import * as Haptics from 'expo-haptics';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import MacroInlineLine from '@/components/MacroInlineLine';
 import type { FrequentFood, RecentFood } from '@shared/types';
 
 type FoodItem = FrequentFood | RecentFood;
@@ -50,23 +51,26 @@ export default function FrequentFoodRow({
         >
           {food.name}
         </ThemedText>
-        <ThemedText
-          style={[Typography.footnote, { color: colors.textSecondary }]}
-        >
-          {qty} {unit} · {Math.round(food.macros.calories)} cal
-        </ThemedText>
+        <MacroInlineLine
+          prefix={`${qty} ${unit}`}
+          macros={food.macros}
+          colors={{
+            ...colors,
+            textSecondary: colors.textSecondary,
+          }}
+          textStyle="footnote"
+        />
       </Pressable>
 
       <Pressable
         style={({ pressed }) => [
           styles.addButton,
-          { backgroundColor: colors.tint },
           pressed && { opacity: 0.7 },
         ]}
         onPress={handleQuickAdd}
         hitSlop={8}
       >
-        <Ionicons name="add" size={20} color="#FFFFFF" />
+        <Ionicons name="add" size={20} color={colors.tint} />
       </Pressable>
     </View>
   );
@@ -82,13 +86,10 @@ const styles = StyleSheet.create({
   },
   nameArea: {
     flex: 1,
-    gap: 2,
+    gap: 4,
     marginRight: Spacing.md,
   },
   addButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },

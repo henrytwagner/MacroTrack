@@ -215,6 +215,18 @@ export interface WSTranscriptMessage {
   text: string;
 }
 
+export interface WSAudioChunkMessage {
+  type: "audio_chunk";
+  /**
+   * Base64-encoded audio data (e.g., 16 kHz mono PCM).
+   */
+  data: string;
+  /**
+   * Monotonic sequence number so the server can reassemble the stream.
+   */
+  sequence: number;
+}
+
 export interface WSSaveMessage {
   type: "save";
 }
@@ -225,6 +237,7 @@ export interface WSCancelMessage {
 
 export type WSClientMessage =
   | WSTranscriptMessage
+  | WSAudioChunkMessage
   | WSSaveMessage
   | WSCancelMessage;
 

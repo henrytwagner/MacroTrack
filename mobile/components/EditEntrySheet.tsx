@@ -7,7 +7,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import BottomSheet, { BottomSheetBackdrop } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
@@ -33,7 +33,7 @@ export default function EditEntrySheet({
 }: EditEntrySheetProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const sheetRef = useRef<BottomSheet>(null);
+  const sheetRef = useRef<BottomSheetModal>(null);
   const snapPoints = useMemo(() => ['55%'], []);
 
   const [quantity, setQuantity] = useState('');
@@ -45,6 +45,7 @@ export default function EditEntrySheet({
     if (entry) {
       setQuantity(String(entry.quantity));
       setUnit(entry.unit);
+      sheetRef.current?.present();
     }
   }, [entry]);
 
@@ -110,12 +111,11 @@ export default function EditEntrySheet({
   if (!entry) return null;
 
   return (
-    <BottomSheet
+    <BottomSheetModal
       ref={sheetRef}
-      index={0}
       snapPoints={snapPoints}
       enablePanDownToClose
-      onClose={onDismiss}
+      onDismiss={onDismiss}
       backdropComponent={renderBackdrop}
       backgroundStyle={{ backgroundColor: colors.surface }}
       handleIndicatorStyle={{ backgroundColor: colors.sheetHandle }}
@@ -235,7 +235,7 @@ export default function EditEntrySheet({
           </Pressable>
         </View>
       </View>
-    </BottomSheet>
+    </BottomSheetModal>
   );
 }
 

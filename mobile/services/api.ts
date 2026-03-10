@@ -39,7 +39,12 @@ async function request<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const url = `${BASE_URL}${path}`;
+  const method = (options.method ?? 'GET').toUpperCase();
   const hasBody = options.body != null && options.body !== '';
+  if (__DEV__) {
+    // eslint-disable-next-line no-console
+    console.log(`[API] ${method} ${url}`);
+  }
   const res = await fetch(url, {
     ...options,
     headers: {
@@ -47,7 +52,10 @@ async function request<T>(
       ...options.headers,
     },
   });
-
+  if (__DEV__) {
+    // eslint-disable-next-line no-console
+    console.log(`[API] ${method} ${path} → ${res.status}`);
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new ApiError(res.status, body || `Request failed: ${res.status}`);

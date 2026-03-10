@@ -20,6 +20,7 @@ import type {
   GeminiCreateFoodResponseIntent,
   MealLabel,
 } from "../../../shared/types.js";
+import { createCloudSttSession, type CloudSttSession } from "../voice/sttCloudClient.js";
 
 // ---------------------------------------------------------------------------
 // Custom food creation flow constants
@@ -389,6 +390,11 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
       const query = request.query as Record<string, string>;
       const today = new Date().toISOString().split("T")[0];
       const date = query.date ?? today;
+      const sttMode =
+        (query.sttMode as "local" | "cloud" | undefined) ??
+        (process.env.VOICE_STT_MODE as "local" | "cloud" | undefined) ??
+        "local";
+      const useCloudStt = sttMode === "cloud";
 
       const session: VoiceSessionState = {
         userId,
@@ -402,6 +408,32 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
       };
 
       console.log(`[voiceSession] Connected — date: ${date}`);
+
+      let cloudStt: CloudSttSession | null = null;
+      if (useCloudStt) {
+        cloudStt = createCloudSttSession({
+          onTranscript: async (text) => {
+            // Route cloud transcripts through the same handlers as client
+            // transcripts so the downstream behavior is identical.
+            try {
+              if (session.sessionState.startsWith("creating:")) {
+                await handleCreatingTranscript(text, session, socket);
+              } else {
+                await handleNormalTranscript(text, session, socket);
+              }
+            } catch (err) {
+              console.error(
+                "[voiceSession] Error handling cloud transcript:",
+                err,
+              );
+              send(socket, {
+                type: "error",
+                message: "Something went wrong while transcribing audio.",
+              } satisfies WSErrorMessage);
+            }
+          },
+        });
+      }
 
       socket.on("message", async (rawData: Buffer | string) => {
         let msg: WSClientMessage;
@@ -417,6 +449,16 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
               await handleCreatingTranscript(msg.text, session, socket);
             } else {
               await handleNormalTranscript(msg.text, session, socket);
+            }
+          } else if (msg.type === "audio_chunk") {
+            if (cloudStt) {
+              const buffer = Buffer.from(msg.data, "base64");
+              cloudStt.pushAudioChunk(buffer);
+            } else {
+              // eslint-disable-next-line no-console
+              console.warn(
+                "[voiceSession] Received audio_chunk but cloud STT is disabled. Ignoring.",
+              );
             }
           } else if (msg.type === "save") {
             await saveSession(session, socket);
@@ -434,6 +476,9 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
 
       socket.on("close", async () => {
         console.log(`[voiceSession] Disconnected — completed: ${session.completed}`);
+        if (cloudStt) {
+          cloudStt.close();
+        }
         // Auto-save if session wasn't explicitly saved or cancelled
         if (!session.completed && session.draft.length > 0) {
           try {

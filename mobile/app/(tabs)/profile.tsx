@@ -2,6 +2,7 @@ import { StyleSheet, View, Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
@@ -58,6 +59,13 @@ export default function ProfileScreen() {
   const colors = Colors[colorScheme ?? 'light'];
   const router = useRouter();
   const { appearance, setAppearance } = useAppearanceStore();
+
+  const appVersion =
+    Constants.expoConfig?.version ?? Constants.manifest2?.extra?.version ?? '1.0.0';
+  const buildNumber =
+    (Constants.expoConfig as any)?.ios?.buildNumber ??
+    (Constants.expoConfig as any)?.android?.versionCode ??
+    'dev';
 
   return (
     <SafeAreaView
@@ -183,9 +191,19 @@ export default function ProfileScreen() {
               <ThemedText style={[Typography.body, { color: colors.text }]}>
                 MacroTrack
               </ThemedText>
-              <ThemedText style={[Typography.body, { color: colors.textSecondary }]}>
-                v1.0.0
-              </ThemedText>
+              <View style={{ alignItems: 'flex-end' }}>
+                <ThemedText style={[Typography.body, { color: colors.textSecondary }]}>
+                  v{appVersion}
+                </ThemedText>
+                <ThemedText
+                  style={[
+                    Typography.caption1,
+                    { color: colors.textTertiary, marginTop: 2 },
+                  ]}
+                >
+                  Build {buildNumber}
+                </ThemedText>
+              </View>
             </View>
           </View>
         </View>

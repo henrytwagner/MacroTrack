@@ -14,6 +14,7 @@ import * as Haptics from 'expo-haptics';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import MacroInlineLine from '@/components/MacroInlineLine';
 import UndoSnackbar from '@/components/UndoSnackbar';
 import type { CustomFood } from '@shared/types';
 import * as api from '@/services/api';
@@ -104,12 +105,15 @@ export default function CustomFoodList({
           >
             {item.name}
           </ThemedText>
-          <ThemedText
-            style={[Typography.footnote, { color: colors.textSecondary }]}
-          >
-            {Math.round(item.calories)} cal · {item.servingSize}{' '}
-            {item.servingUnit}
-          </ThemedText>
+          <MacroInlineLine
+            prefix={`${item.servingSize} ${item.servingUnit}`}
+            macros={item}
+            colors={{
+              ...colors,
+              textSecondary: colors.textSecondary,
+            }}
+            textStyle="footnote"
+          />
         </Pressable>
         <Pressable
           onPress={() => confirmDelete(item)}
@@ -216,7 +220,7 @@ const styles = StyleSheet.create({
   },
   foodInfo: {
     flex: 1,
-    gap: 2,
+    gap: 4,
     marginRight: Spacing.md,
   },
   separator: {
