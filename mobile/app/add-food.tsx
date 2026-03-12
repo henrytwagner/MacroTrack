@@ -9,7 +9,7 @@ import {
   Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
@@ -21,6 +21,7 @@ import FoodSearchResult from '@/components/FoodSearchResult';
 import FoodDetailSheet from '@/components/FoodDetailSheet';
 import CreateFoodSheet from '@/components/CreateFoodSheet';
 import CustomFoodList from '@/components/CustomFoodList';
+import UndoSnackbar from '@/components/UndoSnackbar';
 import { useDateStore, todayString } from '@/stores/dateStore';
 import { useDailyLogStore } from '@/stores/dailyLogStore';
 import type {
@@ -30,6 +31,7 @@ import type {
   USDASearchResult,
   UnifiedSearchResponse,
   MealLabel,
+  FoodEntry,
 } from '@shared/types';
 import * as api from '@/services/api';
 
@@ -50,14 +52,49 @@ function formatDateLabel(dateStr: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+/** Build a food shape from an existing log entry so FoodDetailSheet can edit it. */
+function foodFromEntry(entry: FoodEntry): USDASearchResult | CustomFood {
+  if (entry.source === 'CUSTOM' && entry.customFoodId) {
+    return {
+      id: entry.customFoodId,
+      name: entry.name,
+      servingSize: entry.quantity,
+      servingUnit: entry.unit,
+      calories: entry.calories,
+      proteinG: entry.proteinG,
+      carbsG: entry.carbsG,
+      fatG: entry.fatG,
+      createdAt: '',
+      updatedAt: '',
+    };
+  }
+  return {
+    fdcId: entry.usdaFdcId ?? 0,
+    description: entry.name,
+    servingSize: entry.quantity,
+    servingSizeUnit: entry.unit,
+    macros: {
+      calories: entry.calories,
+      proteinG: entry.proteinG,
+      carbsG: entry.carbsG,
+      fatG: entry.fatG,
+    },
+  };
+}
+
 export default function AddFoodScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const router = useRouter();
 
   const selectedDate = useDateStore((s) => s.selectedDate);
+  const entries = useDailyLogStore((s) => s.entries);
   const fetchDailyLog = useDailyLogStore((s) => s.fetch);
+  const addEntry = useDailyLogStore((s) => s.addEntry);
+  const removeEntry = useDailyLogStore((s) => s.removeEntry);
+  const commitDelete = useDailyLogStore((s) => s.commitDelete);
   const isToday = selectedDate === todayString();
+  const { editEntryId } = useLocalSearchParams<{ editEntryId?: string }>();
 
   const [query, setQuery] = useState('');
   const [searchResults, setSearchResults] = useState<UnifiedSearchResponse | null>(null);
@@ -69,11 +106,13 @@ export default function AddFoodScreen() {
   const [isFetchingLists, setIsFetchingLists] = useState(true);
 
   const [detailFood, setDetailFood] = useState<USDASearchResult | CustomFood | null>(null);
+  const [existingEntry, setExistingEntry] = useState<FoodEntry | null>(null);
   const [showCreateSheet, setShowCreateSheet] = useState(false);
   const [createPrefillName, setCreatePrefillName] = useState<string | undefined>();
   const [editingCustomFood, setEditingCustomFood] = useState<CustomFood | undefined>();
   const [showMyFoods, setShowMyFoods] = useState(false);
   const [myFoodsRefreshKey, setMyFoodsRefreshKey] = useState(0);
+  const [lastAddedEntry, setLastAddedEntry] = useState<FoodEntry | null>(null);
 
   const fetchFrequentRecent = useCallback(async () => {
     setIsFetchingLists(true);
@@ -94,6 +133,18 @@ export default function AddFoodScreen() {
   useEffect(() => {
     fetchFrequentRecent();
   }, [fetchFrequentRecent]);
+
+  // Open sheet in edit mode when navigated with editEntryId (e.g. from Log tab).
+  useEffect(() => {
+    if (!editEntryId) return;
+    const entry = entries.find((e) => e.id === editEntryId);
+    if (entry) {
+      setDetailFood(foodFromEntry(entry));
+      setExistingEntry(entry);
+    } else {
+      fetchDailyLog(selectedDate);
+    }
+  }, [editEntryId, selectedDate, fetchDailyLog, entries]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -137,7 +188,7 @@ export default function AddFoodScreen() {
         : (food as RecentFood).unit;
 
       try {
-        await api.createEntry({
+        const entry = await api.createEntry({
           date: selectedDate,
           name: food.name,
           calories: food.macros.calories,
@@ -152,17 +203,19 @@ export default function AddFoodScreen() {
           customFoodId: food.customFoodId,
         });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        fetchDailyLog(selectedDate);
+        addEntry(entry);
+        setLastAddedEntry(entry);
         fetchFrequentRecent();
       } catch {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     },
-    [selectedDate, fetchDailyLog, fetchFrequentRecent],
+    [selectedDate, addEntry, fetchFrequentRecent],
   );
 
   const handleFoodNamePress = useCallback(
     (food: FrequentFood | RecentFood) => {
+      setExistingEntry(null);
       const isFrequent = 'logCount' in food;
       if (food.customFoodId) {
         const asCustom: CustomFood = {
@@ -203,18 +256,29 @@ export default function AddFoodScreen() {
   const handleSearchResultPress = useCallback(
     (food: USDASearchResult | CustomFood) => {
       Keyboard.dismiss();
+      setExistingEntry(null);
       setDetailFood(food);
     },
     [],
   );
 
-  const handleDetailDismiss = useCallback(() => setDetailFood(null), []);
-
-  const handleDetailSaved = useCallback(() => {
+  const handleDetailDismiss = useCallback(() => {
     setDetailFood(null);
-    fetchDailyLog(selectedDate);
-    fetchFrequentRecent();
-  }, [selectedDate, fetchDailyLog, fetchFrequentRecent]);
+    setExistingEntry(null);
+  }, []);
+
+  const handleDetailSaved = useCallback(
+    (createdEntry?: FoodEntry) => {
+      if (createdEntry) {
+        addEntry(createdEntry);
+        setLastAddedEntry(createdEntry);
+      }
+      setDetailFood(null);
+      setExistingEntry(null);
+      fetchFrequentRecent();
+    },
+    [addEntry, fetchFrequentRecent],
+  );
 
   const handleCreateFood = useCallback(() => {
     setCreatePrefillName(undefined);
@@ -256,6 +320,62 @@ export default function AddFoodScreen() {
     setSearchResults(null);
     Keyboard.dismiss();
   }, []);
+
+  const handleAddedUndo = useCallback(() => {
+    if (lastAddedEntry) {
+      removeEntry(lastAddedEntry.id);
+      commitDelete(lastAddedEntry.id).catch(() => {});
+      setLastAddedEntry(null);
+      fetchFrequentRecent();
+    }
+  }, [lastAddedEntry, removeEntry, commitDelete, fetchFrequentRecent]);
+
+  const handleAddedDismiss = useCallback(() => {
+    setLastAddedEntry(null);
+  }, []);
+
+  // Edit flow: show only the form (same as add), no list. Same page, same info + quantity.
+  const isEditMode = Boolean(editEntryId && detailFood && existingEntry);
+  if (editEntryId && !existingEntry) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+        <View style={[styles.header, { borderBottomColor: colors.borderLight }]}>
+          <Pressable onPress={() => router.back()} hitSlop={12} style={({ pressed }) => [pressed && { opacity: 0.6 }]}>
+            <Ionicons name="chevron-back" size={28} color={colors.tint} />
+          </Pressable>
+          <ThemedText style={[Typography.headline, { color: colors.text }]}>Edit Entry</ThemedText>
+          <View style={{ width: 28 }} />
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={colors.tint} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+  if (isEditMode && detailFood && existingEntry) {
+    return (
+      <FoodDetailSheet
+        food={detailFood}
+        mode="edit"
+        existingEntry={existingEntry}
+        selectedDate={selectedDate}
+        onDismiss={() => {
+          setDetailFood(null);
+          setExistingEntry(null);
+          router.back();
+        }}
+        onSaved={() => {
+          handleDetailSaved();
+          router.back();
+        }}
+        onDeleted={() => {
+          handleDetailSaved();
+          router.back();
+        }}
+        asFullScreen
+      />
+    );
+  }
 
   return (
     <SafeAreaView
@@ -350,22 +470,74 @@ export default function AddFoodScreen() {
                   <>
                     {searchResults.myFoods.length > 0 && (
                       <View style={styles.resultSection}>
-                        <ThemedText style={[Typography.footnote, styles.sectionHeader, { color: colors.textSecondary }]}>
+                        <ThemedText
+                          style={[
+                            Typography.footnote,
+                            styles.sectionHeader,
+                            { color: colors.textSecondary },
+                          ]}
+                        >
                           MY FOODS
                         </ThemedText>
-                        {searchResults.myFoods.map((food) => (
-                          <FoodSearchResult key={food.id} food={food} onPress={handleSearchResultPress} />
-                        ))}
+                        <View
+                          style={[
+                            styles.listCard,
+                            { backgroundColor: colors.surface },
+                          ]}
+                        >
+                          {searchResults.myFoods.map((food, idx) => (
+                            <View key={food.id}>
+                              {idx > 0 && (
+                                <View
+                                  style={[
+                                    styles.separator,
+                                    { backgroundColor: colors.borderLight },
+                                  ]}
+                                />
+                              )}
+                              <FoodSearchResult
+                                food={food}
+                                onPress={handleSearchResultPress}
+                              />
+                            </View>
+                          ))}
+                        </View>
                       </View>
                     )}
                     {searchResults.database.length > 0 && (
                       <View style={styles.resultSection}>
-                        <ThemedText style={[Typography.footnote, styles.sectionHeader, { color: colors.textSecondary }]}>
+                        <ThemedText
+                          style={[
+                            Typography.footnote,
+                            styles.sectionHeader,
+                            { color: colors.textSecondary },
+                          ]}
+                        >
                           DATABASE
                         </ThemedText>
-                        {searchResults.database.map((food) => (
-                          <FoodSearchResult key={food.fdcId} food={food} onPress={handleSearchResultPress} />
-                        ))}
+                        <View
+                          style={[
+                            styles.listCard,
+                            { backgroundColor: colors.surface },
+                          ]}
+                        >
+                          {searchResults.database.map((food, idx) => (
+                            <View key={food.fdcId}>
+                              {idx > 0 && (
+                                <View
+                                  style={[
+                                    styles.separator,
+                                    { backgroundColor: colors.borderLight },
+                                  ]}
+                                />
+                              )}
+                              <FoodSearchResult
+                                food={food}
+                                onPress={handleSearchResultPress}
+                              />
+                            </View>
+                          ))}
+                        </View>
                       </View>
                     )}
                   </>
@@ -400,32 +572,80 @@ export default function AddFoodScreen() {
               <>
                 {frequentFoods.length > 0 && (
                   <View style={styles.resultSection}>
-                    <ThemedText style={[Typography.footnote, styles.sectionHeader, { color: colors.textSecondary }]}>
+                    <ThemedText
+                      style={[
+                        Typography.footnote,
+                        styles.sectionHeader,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
                       FREQUENT
                     </ThemedText>
-                    {frequentFoods.map((food, idx) => (
-                      <FrequentFoodRow
-                        key={`freq-${food.name}-${food.source}-${idx}`}
-                        food={food}
-                        onPressName={handleFoodNamePress}
-                        onQuickAdd={handleQuickAdd}
-                      />
-                    ))}
+                    <View
+                      style={[
+                        styles.listCard,
+                        { backgroundColor: colors.surface },
+                      ]}
+                    >
+                      {frequentFoods.map((food, idx) => (
+                        <View
+                          key={`freq-${food.name}-${food.source}-${idx}`}
+                        >
+                          {idx > 0 && (
+                            <View
+                              style={[
+                                styles.separator,
+                                { backgroundColor: colors.borderLight },
+                              ]}
+                            />
+                          )}
+                          <FrequentFoodRow
+                            food={food}
+                            onPressName={handleFoodNamePress}
+                            onQuickAdd={handleQuickAdd}
+                          />
+                        </View>
+                      ))}
+                    </View>
                   </View>
                 )}
                 {recentFoods.length > 0 && (
                   <View style={styles.resultSection}>
-                    <ThemedText style={[Typography.footnote, styles.sectionHeader, { color: colors.textSecondary }]}>
+                    <ThemedText
+                      style={[
+                        Typography.footnote,
+                        styles.sectionHeader,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
                       RECENT
                     </ThemedText>
-                    {recentFoods.map((food, idx) => (
-                      <FrequentFoodRow
-                        key={`rec-${food.name}-${food.source}-${idx}`}
-                        food={food}
-                        onPressName={handleFoodNamePress}
-                        onQuickAdd={handleQuickAdd}
-                      />
-                    ))}
+                    <View
+                      style={[
+                        styles.listCard,
+                        { backgroundColor: colors.surface },
+                      ]}
+                    >
+                      {recentFoods.map((food, idx) => (
+                        <View
+                          key={`rec-${food.name}-${food.source}-${idx}`}
+                        >
+                          {idx > 0 && (
+                            <View
+                              style={[
+                                styles.separator,
+                                { backgroundColor: colors.borderLight },
+                              ]}
+                            />
+                          )}
+                          <FrequentFoodRow
+                            food={food}
+                            onPressName={handleFoodNamePress}
+                            onQuickAdd={handleQuickAdd}
+                          />
+                        </View>
+                      ))}
+                    </View>
                   </View>
                 )}
                 {frequentFoods.length === 0 && recentFoods.length === 0 && (
@@ -445,10 +665,12 @@ export default function AddFoodScreen() {
       {detailFood && (
         <FoodDetailSheet
           food={detailFood}
-          mode="add"
+          mode={existingEntry ? 'edit' : 'add'}
+          existingEntry={existingEntry ?? undefined}
           selectedDate={selectedDate}
           onDismiss={handleDetailDismiss}
           onSaved={handleDetailSaved}
+          onDeleted={handleDetailSaved}
         />
       )}
 
@@ -465,6 +687,13 @@ export default function AddFoodScreen() {
         onClose={() => setShowMyFoods(false)}
         onEditFood={handleEditCustomFood}
         refreshKey={myFoodsRefreshKey}
+      />
+
+      <UndoSnackbar
+        message={lastAddedEntry ? `Added ${lastAddedEntry.name}.` : ''}
+        visible={!!lastAddedEntry}
+        onUndo={handleAddedUndo}
+        onDismiss={handleAddedDismiss}
       />
     </SafeAreaView>
   );
@@ -531,6 +760,14 @@ const styles = StyleSheet.create({
   },
   searchLoader: { marginTop: Spacing.xl },
   resultSection: { marginTop: Spacing.lg },
+  listCard: {
+    borderRadius: BorderRadius.md,
+    overflow: 'hidden',
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: Spacing.lg,
+  },
   sectionHeader: {
     fontWeight: '600',
     letterSpacing: 0.5,

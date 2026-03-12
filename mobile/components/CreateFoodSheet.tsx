@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
+  Alert,
   StyleSheet,
   View,
   TextInput,
@@ -17,10 +18,13 @@ import * as Haptics from 'expo-haptics';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import type { CustomFood, NutritionUnit } from '@shared/types';
+import type { CustomFood, FoodUnitConversion } from '@shared/types';
 import * as api from '@/services/api';
+import FoodUnitConversionsBlock from '@/components/FoodUnitConversionsBlock';
+import { SERVING_UNITS } from '@/constants/units';
 
-const SERVING_UNITS: NutritionUnit[] = ['g', 'oz', 'cups', 'servings', 'slices', 'pieces', 'ml', 'tbsp', 'tsp'];
+/** Units that can be the base (serving size) unit; exclude abstract "servings". */
+const BASE_UNIT_OPTIONS = SERVING_UNITS.filter((u) => u !== 'servings');
 
 interface CreateFoodSheetProps {
   visible: boolean;
@@ -91,7 +95,7 @@ export default function CreateFoodSheet({
 
   const [name, setName] = useState('');
   const [servingSize, setServingSize] = useState('');
-  const [servingUnit, setServingUnit] = useState<string>('servings');
+  const [servingUnit, setServingUnit] = useState<string>('g');
   const [calories, setCalories] = useState('');
   const [protein, setProtein] = useState('');
   const [carbs, setCarbs] = useState('');
@@ -106,6 +110,12 @@ export default function CreateFoodSheet({
   const [transFat, setTransFat] = useState('');
 
   const [isSaving, setIsSaving] = useState(false);
+  /** Pending conversions when creating a new food; applied after the food is saved. */
+  const [pendingUnitConversions, setPendingUnitConversions] = useState<
+    Array<{ unitName: string; quantityInBaseServings: number }>
+  >([]);
+  /** Saved conversions when editing; synced from block via onConversionsChange. */
+  const [unitConfigs, setUnitConfigs] = useState<FoodUnitConversion[]>([]);
 
   useEffect(() => {
     if (!visible) return;
@@ -131,10 +141,11 @@ export default function CreateFoodSheet({
         editingFood.saturatedFatG != null ||
         editingFood.transFatG != null;
       setShowOptional(hasOptional);
+      setPendingUnitConversions([]);
     } else {
       setName(prefillName || '');
-      setServingSize('');
-      setServingUnit('servings');
+      setServingSize('100');
+      setServingUnit('g');
       setCalories('');
       setProtein('');
       setCarbs('');
@@ -146,8 +157,25 @@ export default function CreateFoodSheet({
       setSaturatedFat('');
       setTransFat('');
       setShowOptional(false);
+      setPendingUnitConversions([]);
     }
   }, [editingFood, prefillName, visible]);
+
+  const baseServingNum = Number(servingSize) || 1;
+  const allConversions = editingFood ? unitConfigs : pendingUnitConversions;
+
+  const handleServingUnitChange = (newUnit: string) => {
+    if (newUnit === servingUnit) return;
+    setPendingUnitConversions([]);
+    if (editingFood && unitConfigs.length > 0) {
+      Promise.all(unitConfigs.map((c) => api.deleteFoodUnitConversion(c.id)))
+        .then(() => setUnitConfigs([]))
+        .catch(() => setUnitConfigs([]));
+    } else if (editingFood) {
+      setUnitConfigs([]);
+    }
+    setServingUnit(newUnit);
+  };
 
   const isValid =
     name.trim().length > 0 &&
@@ -180,11 +208,32 @@ export default function CreateFoodSheet({
         result = await api.updateCustomFood(editingFood.id, data);
       } else {
         result = await api.createCustomFood(data);
+        // Apply pending unit conversions to the new food.
+        for (const pending of pendingUnitConversions) {
+          try {
+            await api.createFoodUnitConversion({
+              unitName: pending.unitName,
+              quantityInBaseServings: pending.quantityInBaseServings,
+              customFoodId: result.id,
+            });
+          } catch (unitErr) {
+            const msg =
+              unitErr instanceof api.ApiError ? unitErr.message : (unitErr as Error)?.message ?? 'Unknown error';
+            Alert.alert(
+              'Food created, some units could not be saved',
+              `"${pending.unitName}" could not be added: ${msg}. You can add it later by editing this food.`,
+            );
+          }
+        }
+        setPendingUnitConversions([]);
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onSaved?.(result);
-    } catch {
+    } catch (e) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      const message =
+        e instanceof api.ApiError ? e.message : (e as Error)?.message ?? 'Could not save. Please try again.';
+      Alert.alert('Could not save', message);
     } finally {
       setIsSaving(false);
     }
@@ -237,7 +286,7 @@ export default function CreateFoodSheet({
               />
             </View>
 
-            {/* Serving Size */}
+            {/* Serving Size — amount and base unit; conversions use this unit */}
             <View style={[styles.section, { borderBottomColor: colors.borderLight }]}>
               <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
                 Serving Size
@@ -247,40 +296,97 @@ export default function CreateFoodSheet({
                   style={[styles.servingSizeInput, { color: colors.text, borderColor: colors.border }]}
                   value={servingSize}
                   onChangeText={setServingSize}
-                  keyboardType="numeric"
-                  placeholder="1"
+                  keyboardType="decimal-pad"
+                  placeholder="100"
                   placeholderTextColor={colors.textTertiary}
                   returnKeyType="done"
                 />
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.unitPills}
+                  contentContainerStyle={styles.servingSizeUnitPills}
                 >
-                  {SERVING_UNITS.map((u) => (
-                    <Pressable
-                      key={u}
-                      style={[
-                        styles.unitPill,
-                        {
-                          backgroundColor: servingUnit === u ? colors.tint : colors.surfaceSecondary,
-                          borderColor: servingUnit === u ? colors.tint : colors.border,
-                        },
-                      ]}
-                      onPress={() => setServingUnit(u)}
-                    >
-                      <ThemedText
+                  {BASE_UNIT_OPTIONS.map((u) => {
+                    const isSelected = servingUnit === u;
+                    return (
+                      <Pressable
+                        key={u}
                         style={[
-                          Typography.caption1,
-                          { color: servingUnit === u ? '#FFFFFF' : colors.text },
+                          styles.servingSizeUnitPill,
+                          {
+                            backgroundColor: isSelected ? colors.tint : colors.surfaceSecondary,
+                            borderColor: isSelected ? colors.tint : colors.border,
+                          },
                         ]}
+                        onPress={() => handleServingUnitChange(u)}
                       >
-                        {u}
-                      </ThemedText>
-                    </Pressable>
-                  ))}
+                        <ThemedText
+                          style={[Typography.caption1, { color: isSelected ? '#FFFFFF' : colors.text }]}
+                        >
+                          {u}
+                        </ThemedText>
+                      </Pressable>
+                    );
+                  })}
                 </ScrollView>
               </View>
+              <ThemedText style={[Typography.caption1, { color: colors.textTertiary, marginTop: Spacing.xs }]}>
+                Add conversions below (e.g. 1 cup = 240 g).
+              </ThemedText>
+            </View>
+
+            {/* Units — choose base unit, add conversions, and see list */}
+            <View style={[styles.section, { borderBottomColor: colors.borderLight }]}>
+              <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.xs }]}>
+                Units
+              </ThemedText>
+              <ThemedText style={[Typography.caption1, { color: colors.textSecondary, marginBottom: Spacing.sm }]}>
+                Add conversions using the base unit above (e.g. 1 cup = 240 g).
+              </ThemedText>
+              {editingFood ? (
+                <FoodUnitConversionsBlock
+                  mode="saved"
+                  customFoodId={editingFood.id}
+                  servingSize={baseServingNum}
+                  servingUnit={servingUnit}
+                  selectedUnit={servingUnit}
+                  onSelectUnit={(u) => {
+                    if (u !== 'servings') handleServingUnitChange(u);
+                  }}
+                  onConversionsChange={setUnitConfigs}
+                />
+              ) : (
+                <FoodUnitConversionsBlock
+                  mode="draft"
+                  servingSize={servingSize}
+                  servingUnit={servingUnit}
+                  pendingConversions={pendingUnitConversions}
+                  onPendingConversionsChange={setPendingUnitConversions}
+                  selectedUnit={servingUnit}
+                  onSelectUnit={(u) => {
+                    if (u !== 'servings') handleServingUnitChange(u);
+                  }}
+                />
+              )}
+              {allConversions.some((c) => c.unitName !== 'servings') && (
+                <View style={[styles.conversionsList, { borderTopColor: colors.borderLight }]}>
+                  <ThemedText style={[Typography.caption1, { color: colors.textSecondary, marginBottom: Spacing.xs }]}>
+                    In place:
+                  </ThemedText>
+                  {allConversions
+                    .filter((c) => c.unitName !== 'servings')
+                    .map((c) => {
+                      const name = c.unitName;
+                      const q = c.quantityInBaseServings;
+                      const amount = (q * baseServingNum).toFixed(2);
+                      return (
+                        <ThemedText key={name} style={[Typography.subhead, { color: colors.text }]}>
+                          1 {name} = {amount} {servingUnit}
+                        </ThemedText>
+                      );
+                    })}
+                </View>
+              )}
             </View>
 
             {/* Required Macros */}
@@ -380,7 +486,10 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
   },
   servingSizeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: Spacing.md,
+    flexWrap: 'wrap',
   },
   servingSizeInput: {
     ...Typography.body,
@@ -388,17 +497,25 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.md,
+    minWidth: 80,
   },
-  unitPills: {
+  servingSizeUnitPills: {
     flexDirection: 'row',
     gap: Spacing.xs,
     paddingVertical: Spacing.sm,
+    alignItems: 'center',
   },
-  unitPill: {
+  servingSizeUnitPill: {
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.full,
     borderWidth: 1,
+  },
+  conversionsList: {
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.xs,
   },
   fieldRow: {
     flexDirection: 'row',

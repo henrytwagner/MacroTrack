@@ -14,6 +14,8 @@ export interface MacroRingProgressProps {
   showCalorieSummary?: boolean;
   /** @deprecated Use showCalorieSummary. Kept for compatibility. */
   showCenterLabel?: boolean;
+  /** Tighter vertical spacing between rings and calorie summary. */
+  tightSpacing?: boolean;
 }
 
 const MACRO_KEYS = ['calories', 'proteinG', 'carbsG', 'fatG'] as const;
@@ -136,6 +138,7 @@ export default function MacroRingProgress({
   variant = 'default',
   showCalorieSummary,
   showCenterLabel,
+  tightSpacing,
 }: MacroRingProgressProps) {
   const showCal = showCalorieSummary ?? showCenterLabel ?? true;
   const colorScheme = useColorScheme();
@@ -178,7 +181,7 @@ export default function MacroRingProgress({
 
   return (
     <View style={styles.wrapper}>
-      <View style={styles.ringsRow}>
+      <View style={[styles.ringsRow, tightSpacing && styles.ringsRowTight]}>
         {items.map((item) => (
           <SingleMacroRing
             key={item.key}
@@ -196,7 +199,10 @@ export default function MacroRingProgress({
       </View>
       {showCal && (
         <ThemedText
-          style={[Typography.footnote, { color: colors.textSecondary, marginTop: Spacing.xs }]}
+          style={[
+            Typography.footnote,
+            { color: colors.textSecondary, marginTop: tightSpacing ? 2 : Spacing.xs },
+          ]}
           numberOfLines={1}
         >
           {calorieSummary}
@@ -216,6 +222,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'center',
     gap: Spacing.sm,
+  },
+  ringsRowTight: {
+    gap: Spacing.xs,
   },
   singleRingWrap: {
     alignItems: 'center',

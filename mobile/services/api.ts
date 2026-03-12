@@ -10,6 +10,13 @@ import type {
   UnifiedSearchResponse,
   FrequentFood,
   RecentFood,
+  UserProfile,
+  GoalForDateResponse,
+  GoalProfilesResponse,
+  UpdateGoalsForDateRequest,
+  FoodUnitConversion,
+  CreateFoodUnitConversionRequest,
+  UpdateFoodUnitConversionRequest,
 } from '@shared/types';
 import type { BarcodeScanResult } from '@/features/barcode/types';
 import { Platform } from 'react-native';
@@ -27,7 +34,7 @@ export function getApiBaseUrl(): string {
   return BASE_URL;
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
     this.name = 'ApiError';
@@ -58,7 +65,14 @@ async function request<T>(
   }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new ApiError(res.status, body || `Request failed: ${res.status}`);
+    let message = body || `Request failed: ${res.status}`;
+    try {
+      const parsed = body ? JSON.parse(body) : null;
+      if (parsed && typeof parsed.error === 'string') message = parsed.error;
+    } catch {
+      // use raw body as message
+    }
+    throw new ApiError(res.status, message);
   }
 
   const text = await res.text();
@@ -67,14 +81,34 @@ async function request<T>(
 
 // --- Goals ---
 
-export async function getGoals(): Promise<DailyGoal | null> {
-  return request<DailyGoal | null>('/api/goals');
+export async function getGoalsForDate(date: string): Promise<GoalForDateResponse> {
+  const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+  return request<GoalForDateResponse>(`/api/goals${qs}`);
 }
 
-export async function updateGoals(data: UpdateGoalsRequest): Promise<DailyGoal> {
-  return request<DailyGoal>('/api/goals', {
-    method: 'PUT',
+export async function changeGoals(
+  data: UpdateGoalsForDateRequest,
+): Promise<GoalForDateResponse> {
+  return request<GoalForDateResponse>('/api/goals/change', {
+    method: 'POST',
     body: JSON.stringify(data),
+  });
+}
+
+export async function getGoalProfiles(): Promise<GoalProfilesResponse> {
+  return request<GoalProfilesResponse>('/api/goal-profiles');
+}
+
+// --- Profile ---
+
+export async function getProfile(): Promise<UserProfile> {
+  return request<UserProfile>('/api/profile');
+}
+
+export async function updateProfile(profile: UserProfile): Promise<UserProfile> {
+  return request<UserProfile>('/api/profile', {
+    method: 'PUT',
+    body: JSON.stringify(profile),
   });
 }
 
@@ -148,6 +182,47 @@ export async function searchFoods(query: string): Promise<UnifiedSearchResponse>
   return request<UnifiedSearchResponse>(
     `/api/food/search?q=${encodeURIComponent(query)}`,
   );
+}
+
+// --- Per-food unit conversions ---
+
+export async function getFoodUnitConversionsForCustomFood(
+  customFoodId: string,
+): Promise<FoodUnitConversion[]> {
+  return request<FoodUnitConversion[]>(
+    `/api/food/units?customFoodId=${encodeURIComponent(customFoodId)}`,
+  );
+}
+
+export async function getFoodUnitConversionsForUsdaFood(
+  usdaFdcId: number,
+): Promise<FoodUnitConversion[]> {
+  return request<FoodUnitConversion[]>(
+    `/api/food/units?usdaFdcId=${encodeURIComponent(String(usdaFdcId))}`,
+  );
+}
+
+export async function createFoodUnitConversion(
+  data: CreateFoodUnitConversionRequest,
+): Promise<FoodUnitConversion> {
+  return request<FoodUnitConversion>('/api/food/units', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateFoodUnitConversion(
+  id: string,
+  data: UpdateFoodUnitConversionRequest,
+): Promise<FoodUnitConversion> {
+  return request<FoodUnitConversion>(`/api/food/units/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteFoodUnitConversion(id: string): Promise<void> {
+  return request<void>(`/api/food/units/${id}`, { method: 'DELETE' });
 }
 
 // --- Barcode (image upload for iOS) ---

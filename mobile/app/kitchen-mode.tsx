@@ -89,7 +89,7 @@ export default function KitchenModeScreen() {
 
   const selectedDate = useDateStore((s) => s.selectedDate);
   const { totals, fetch: fetchEntries } = useDailyLogStore();
-  const { goals, fetch: fetchGoals } = useGoalStore();
+  const { goalsByDate, fetch: fetchGoals } = useGoalStore();
   const { items, projectedTotals, initSession, applyServerMessage, reset } = useDraftStore();
 
   const [listeningState, setListeningState] = useState<ListeningState>('idle');
@@ -237,7 +237,7 @@ export default function KitchenModeScreen() {
     async function init() {
       // Load current day's entries so projected totals are accurate from the start
       await fetchEntries(selectedDate).catch(() => {});
-      await fetchGoals().catch(() => {});
+      await fetchGoals(selectedDate).catch(() => {});
 
       if (!mounted) return;
 
@@ -521,37 +521,37 @@ export default function KitchenModeScreen() {
       >
         <MacroRingProgress
           totals={projectedTotals}
-          goals={goals}
+          goals={goalsByDate[selectedDate] ?? null}
           variant="default"
           showCalorieSummary={!macroPreviewExpanded}
         />
-        {macroPreviewExpanded && goals && (
+        {macroPreviewExpanded && goalsByDate[selectedDate] && (
           <View style={[styles.macroPreviewDetails, { borderTopColor: colors.border }]}>
             <MacroPreviewRow
               label="Cal"
               current={projectedTotals.calories}
-              goal={goals.calories}
+              goal={goalsByDate[selectedDate]!.calories}
               unit=""
               colors={colors}
             />
             <MacroPreviewRow
               label="P"
               current={projectedTotals.proteinG}
-              goal={goals.proteinG}
+              goal={goalsByDate[selectedDate]!.proteinG}
               unit="g"
               colors={colors}
             />
             <MacroPreviewRow
               label="C"
               current={projectedTotals.carbsG}
-              goal={goals.carbsG}
+              goal={goalsByDate[selectedDate]!.carbsG}
               unit="g"
               colors={colors}
             />
             <MacroPreviewRow
               label="F"
               current={projectedTotals.fatG}
-              goal={goals.fatG}
+              goal={goalsByDate[selectedDate]!.fatG}
               unit="g"
               colors={colors}
             />

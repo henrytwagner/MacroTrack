@@ -20,7 +20,15 @@ export type NutritionUnit =
   | "pieces"
   | "ml"
   | "tbsp"
-  | "tsp";
+  | "tsp"
+  | "fl oz"
+  | "L"
+  | "portion"
+  | "can"
+  | "bottle"
+  | "packet"
+  | "clove"
+  | "scoop";
 
 // --- Core Domain Models ---
 
@@ -44,6 +52,36 @@ export interface DailyGoal extends Macros {
   id: string;
 }
 
+// --- User Profile & Goals ---
+
+export type Sex = "MALE" | "FEMALE" | "UNSPECIFIED";
+
+export type ActivityLevel =
+  | "SEDENTARY"
+  | "LIGHT"
+  | "MODERATE"
+  | "HIGH"
+  | "VERY_HIGH";
+
+export type UnitSystem = "METRIC" | "IMPERIAL";
+
+export type GoalType = "CUT" | "MAINTAIN" | "GAIN";
+
+export type GoalAggressiveness = "MILD" | "STANDARD" | "AGGRESSIVE";
+
+export interface UserProfile {
+  heightCm?: number;
+  weightKg?: number;
+  sex: Sex;
+  /** Full date of birth (YYYY-MM-DD). Canonical source; age is derived from this. */
+  dateOfBirth?: string;
+  /** Read-only: age in whole years, derived from dateOfBirth. Only present in API responses. */
+  ageYears?: number;
+  activityLevel?: ActivityLevel;
+  preferredUnits: UnitSystem;
+  currentGoalProfileId?: string;
+}
+
 export interface CustomFood extends Macros, ExtendedNutrition {
   id: string;
   name: string;
@@ -51,6 +89,41 @@ export interface CustomFood extends Macros, ExtendedNutrition {
   servingUnit: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Per-food unit configuration that maps a friendly unit name
+ * (e.g., "slice", "cup") back to the food's base serving
+ * (servingSize + servingUnit for custom foods, or the USDA
+ * serving size for database foods).
+ */
+export interface FoodUnitConversion {
+  id: string;
+  /**
+   * Display name of the unit (e.g., "slice", "cup").
+   */
+  unitName: string;
+  /**
+   * How many base servings this unit represents.
+   *
+   * Examples:
+   * - Base serving: 100 g, 1 slice = 30 g → quantityInBaseServings = 0.3
+   * - Base serving: 1 serving, 1 cup = 2 servings → quantityInBaseServings = 2
+   */
+  quantityInBaseServings: number;
+  customFoodId?: string;
+  usdaFdcId?: number;
+}
+
+export interface CreateFoodUnitConversionRequest {
+  unitName: string;
+  quantityInBaseServings: number;
+  customFoodId?: string;
+  usdaFdcId?: number;
+}
+
+export interface UpdateFoodUnitConversionRequest {
+  quantityInBaseServings?: number;
 }
 
 export interface FoodEntry extends Macros {
@@ -157,6 +230,41 @@ export interface UpdateGoalsRequest {
   proteinG: number;
   carbsG: number;
   fatG: number;
+}
+
+export interface GoalProfileSummary {
+  id: string;
+  name: string;
+  goalType: GoalType;
+  aggressiveness: GoalAggressiveness;
+  effectiveDate: string; // YYYY-MM-DD
+}
+
+export interface GoalForDateResponse {
+  date: string; // YYYY-MM-DD
+  goals: DailyGoal | null;
+  profile: GoalProfileSummary | null;
+}
+
+export interface UpdateGoalsForDateRequest {
+  effectiveDate: string; // YYYY-MM-DD
+  macros: Macros;
+  goalType: GoalType;
+  aggressiveness: GoalAggressiveness;
+  profileId?: string;
+  newProfileName?: string;
+}
+
+export interface GoalProfileListItem {
+  id: string;
+  name: string;
+  createdAt: string;
+  archivedAt: string | null;
+  lastEffectiveDate: string | null;
+}
+
+export interface GoalProfilesResponse {
+  profiles: GoalProfileListItem[];
 }
 
 // --- Daily Summary (Dashboard) ---

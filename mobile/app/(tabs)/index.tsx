@@ -21,8 +21,11 @@ import FrequentFoodRow from '@/components/FrequentFoodRow';
 import MacroInlineLine from '@/components/MacroInlineLine';
 import { useDailyLogStore } from '@/stores/dailyLogStore';
 import { useGoalStore } from '@/stores/goalStore';
+import { useDateStore } from '@/stores/dateStore';
 import { todayString } from '@/stores/dateStore';
-import type { FrequentFood, RecentFood, MealLabel } from '@shared/types';
+import { writeWidgetDataFromStores } from '@/services/widgetData';
+import UndoSnackbar from '@/components/UndoSnackbar';
+import type { FrequentFood, RecentFood, MealLabel, FoodEntry } from '@shared/types';
 import * as api from '@/services/api';
 
 const MEAL_ORDER: MealLabel[] = ['breakfast', 'lunch', 'dinner', 'snack'];
@@ -63,15 +66,20 @@ export default function DashboardScreen() {
     isLoading,
     error,
     fetch: fetchEntries,
+    addEntry,
+    removeEntry,
+    commitDelete,
   } = useDailyLogStore();
-  const { goals, fetch: fetchGoals } = useGoalStore();
+  const { goalsByDate, fetch: fetchGoals } = useGoalStore();
   const { layoutId } = useDashboardLayoutStore();
+  const selectedDate = useDateStore((s) => s.selectedDate);
 
   const [frequentFoods, setFrequentFoods] = useState<FrequentFood[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [lastAddedEntry, setLastAddedEntry] = useState<FoodEntry | null>(null);
 
   const fetchAll = useCallback(async () => {
-    await Promise.all([fetchEntries(today), fetchGoals()]);
+    await Promise.all([fetchEntries(today), fetchGoals(today)]);
   }, [today, fetchEntries, fetchGoals]);
 
   const fetchFrequent = useCallback(async () => {
@@ -84,9 +92,9 @@ export default function DashboardScreen() {
   }, []);
 
   useEffect(() => {
-    fetchGoals();
+    fetchGoals(today);
     fetchFrequent();
-  }, []);
+  }, [today, fetchGoals, fetchFrequent]);
 
   useFocusEffect(
     useCallback(() => {
@@ -112,7 +120,7 @@ export default function DashboardScreen() {
         : (food as RecentFood).unit;
 
       try {
-        await api.createEntry({
+        const entry = await api.createEntry({
           date: today,
           name: food.name,
           calories: food.macros.calories,
@@ -127,16 +135,41 @@ export default function DashboardScreen() {
           customFoodId: food.customFoodId,
         });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        fetchEntries(today);
+        addEntry(entry);
+        setLastAddedEntry(entry);
         fetchFrequent();
       } catch {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     },
-    [today, fetchEntries, fetchFrequent],
+    [today, addEntry, fetchFrequent],
   );
 
+  const handleAddedUndo = useCallback(() => {
+    if (lastAddedEntry) {
+      removeEntry(lastAddedEntry.id);
+      commitDelete(lastAddedEntry.id).catch(() => {});
+      setLastAddedEntry(null);
+      fetchFrequent();
+    }
+  }, [lastAddedEntry, removeEntry, commitDelete, fetchFrequent]);
+
+  const handleAddedDismiss = useCallback(() => {
+    setLastAddedEntry(null);
+  }, []);
+
+  const goals = goalsByDate[today] ?? null;
   const hasGoals = goals !== null;
+
+  useEffect(() => {
+    if (selectedDate !== today) return;
+    try {
+      writeWidgetDataFromStores();
+    } catch {
+      // Widget write must not crash the app (e.g. Expo Go, simulator, or extension not ready)
+    }
+  }, [today, selectedDate, totals, goals, layoutId]);
+
   const recentEntries = [...entries]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 3);
@@ -327,6 +360,13 @@ export default function DashboardScreen() {
           </ThemedText>
         </Pressable>
       </ScrollView>
+
+      <UndoSnackbar
+        message={lastAddedEntry ? `Added ${lastAddedEntry.name}.` : ''}
+        visible={!!lastAddedEntry}
+        onUndo={handleAddedUndo}
+        onDismiss={handleAddedDismiss}
+      />
     </SafeAreaView>
   );
 }

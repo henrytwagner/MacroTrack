@@ -12,6 +12,9 @@ import type {
   CustomFood,
   FoodSource,
   MealLabel,
+  FoodUnitConversion,
+  CreateFoodUnitConversionRequest,
+  UpdateFoodUnitConversionRequest,
 } from "../../../shared/types.js";
 
 // ---------------------------------------------------------------------------
@@ -87,6 +90,22 @@ function mapCustomFood(food: {
     transFatG: food.transFatG ?? undefined,
     createdAt: food.createdAt.toISOString(),
     updatedAt: food.updatedAt.toISOString(),
+  };
+}
+
+function mapFoodUnitConversion(conv: {
+  id: string;
+  unitName: string;
+  quantityInBaseServings: number;
+  customFoodId: string | null;
+  usdaFdcId: number | null;
+}): FoodUnitConversion {
+  return {
+    id: conv.id,
+    unitName: conv.unitName,
+    quantityInBaseServings: conv.quantityInBaseServings,
+    customFoodId: conv.customFoodId ?? undefined,
+    usdaFdcId: conv.usdaFdcId ?? undefined,
   };
 }
 
@@ -309,6 +328,144 @@ export async function foodRoutes(app: FastifyInstance) {
         database: usdaResults,
       };
       return reply.send(response);
+    },
+  );
+
+  // GET /api/food/units?customFoodId=...&usdaFdcId=...
+  app.get<{
+    Querystring: { customFoodId?: string; usdaFdcId?: string };
+  }>("/api/food/units", async (request, reply) => {
+    const userId = await getDefaultUserId();
+    const { customFoodId, usdaFdcId } = request.query;
+
+    if (!customFoodId && !usdaFdcId) {
+      return reply.code(400).send({
+        error:
+          "Either customFoodId or usdaFdcId query parameter is required to list unit conversions.",
+      });
+    }
+
+    const where: {
+      userId: string;
+      customFoodId?: string;
+      usdaFdcId?: number;
+    } = { userId };
+
+    if (customFoodId) {
+      where.customFoodId = customFoodId;
+    }
+    if (usdaFdcId) {
+      const parsed = Number.parseInt(usdaFdcId, 10);
+      if (!Number.isFinite(parsed)) {
+        return reply
+          .code(400)
+          .send({ error: "usdaFdcId must be a valid integer" });
+      }
+      where.usdaFdcId = parsed;
+    }
+
+    const conversions = await prisma.foodUnitConversion.findMany({
+      where,
+      orderBy: { unitName: "asc" },
+    });
+
+    return reply.send(conversions.map(mapFoodUnitConversion));
+  });
+
+  // POST /api/food/units — create or replace a unit conversion for a food
+  app.post<{ Body: CreateFoodUnitConversionRequest }>(
+    "/api/food/units",
+    async (request, reply) => {
+      const userId = await getDefaultUserId();
+      const body = request.body;
+
+      if (!body.unitName || body.quantityInBaseServings == null) {
+        return reply.code(400).send({
+          error: "unitName and quantityInBaseServings are required",
+        });
+      }
+
+      if (!body.customFoodId && !body.usdaFdcId) {
+        return reply.code(400).send({
+          error:
+            "Either customFoodId or usdaFdcId is required when creating a unit conversion.",
+        });
+      }
+
+      if (body.quantityInBaseServings <= 0) {
+        return reply.code(400).send({
+          error: "quantityInBaseServings must be greater than zero",
+        });
+      }
+
+      // Ensure we don't accumulate duplicates: remove any existing config
+      // for this (user, food, unitName) tuple, then recreate.
+      await prisma.foodUnitConversion.deleteMany({
+        where: {
+          userId,
+          unitName: body.unitName,
+          customFoodId: body.customFoodId ?? undefined,
+          usdaFdcId: body.usdaFdcId ?? undefined,
+        },
+      });
+
+      const created = await prisma.foodUnitConversion.create({
+        data: {
+          userId,
+          unitName: body.unitName,
+          quantityInBaseServings: body.quantityInBaseServings,
+          customFoodId: body.customFoodId,
+          usdaFdcId: body.usdaFdcId,
+        },
+      });
+
+      return reply.code(201).send(mapFoodUnitConversion(created));
+    },
+  );
+
+  // PUT /api/food/units/:id — update an existing conversion
+  app.put<{ Params: { id: string }; Body: UpdateFoodUnitConversionRequest }>(
+    "/api/food/units/:id",
+    async (request, reply) => {
+      const { id } = request.params;
+      const body = request.body;
+
+      const existing = await prisma.foodUnitConversion.findUnique({
+        where: { id },
+      });
+
+      if (!existing) {
+        return reply.code(404).send({ error: "Unit conversion not found" });
+      }
+
+      const updated = await prisma.foodUnitConversion.update({
+        where: { id },
+        data: {
+          ...(body.quantityInBaseServings != null && {
+            quantityInBaseServings: body.quantityInBaseServings,
+          }),
+        },
+      });
+
+      return reply.send(mapFoodUnitConversion(updated));
+    },
+  );
+
+  // DELETE /api/food/units/:id — delete a conversion
+  app.delete<{ Params: { id: string } }>(
+    "/api/food/units/:id",
+    async (request, reply) => {
+      const { id } = request.params;
+
+      const existing = await prisma.foodUnitConversion.findUnique({
+        where: { id },
+      });
+      if (!existing) {
+        return reply.code(404).send({ error: "Unit conversion not found" });
+      }
+
+      await prisma.foodUnitConversion.delete({ where: { id } });
+      return reply.code(204).send();
     },
   );
 }

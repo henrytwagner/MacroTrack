@@ -4,6 +4,7 @@ import { Colors, Spacing, Typography } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDraftStore } from '@/stores/draftStore';
 import { useGoalStore } from '@/stores/goalStore';
+import { useDateStore } from '@/stores/dateStore';
 
 function fmt(n: number): string {
   return Math.round(n).toString();
@@ -58,7 +59,9 @@ export default function MacroSummaryBar() {
   const colors = Colors[colorScheme ?? 'light'];
 
   const projected = useDraftStore((s) => s.projectedTotals);
-  const { goals } = useGoalStore();
+  const { selectedDate } = useDateStore();
+  const { goalsByDate } = useGoalStore();
+  const goals = goalsByDate[selectedDate] ?? null;
 
   const calRemaining = goals ? goals.calories - projected.calories : null;
   const isCalOver = calRemaining !== null && calRemaining < 0;

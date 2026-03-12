@@ -1,25 +1,39 @@
 import { create } from 'zustand';
-import type { DailyGoal, UpdateGoalsRequest } from '@shared/types';
+import type {
+  DailyGoal,
+  GoalForDateResponse,
+  GoalProfileListItem,
+  UpdateGoalsForDateRequest,
+} from '@shared/types';
 import * as api from '@/services/api';
 
 interface GoalState {
-  goals: DailyGoal | null;
+  goalsByDate: Record<string, DailyGoal | null>;
+  metaByDate: Record<string, GoalForDateResponse | null>;
+  profiles: GoalProfileListItem[];
   isLoading: boolean;
   error: string | null;
-  fetch: () => Promise<void>;
-  save: (data: UpdateGoalsRequest) => Promise<void>;
+  fetch: (date: string) => Promise<void>;
+  refreshProfiles: () => Promise<void>;
+  saveChange: (data: UpdateGoalsForDateRequest) => Promise<void>;
 }
 
-export const useGoalStore = create<GoalState>((set) => ({
-  goals: null,
+export const useGoalStore = create<GoalState>((set, get) => ({
+  goalsByDate: {},
+  metaByDate: {},
+  profiles: [],
   isLoading: false,
   error: null,
 
-  fetch: async () => {
+  fetch: async (date: string) => {
     set({ isLoading: true, error: null });
     try {
-      const goals = await api.getGoals();
-      set({ goals, isLoading: false });
+      const res = await api.getGoalsForDate(date);
+      set((state) => ({
+        goalsByDate: { ...state.goalsByDate, [date]: res.goals },
+        metaByDate: { ...state.metaByDate, [date]: res },
+        isLoading: false,
+      }));
     } catch (e) {
       set({
         isLoading: false,
@@ -28,11 +42,28 @@ export const useGoalStore = create<GoalState>((set) => ({
     }
   },
 
-  save: async (data: UpdateGoalsRequest) => {
+  refreshProfiles: async () => {
+    try {
+      const res = await api.getGoalProfiles();
+      set({ profiles: res.profiles });
+    } catch {
+      // swallow; profiles are non-critical
+    }
+  },
+
+  saveChange: async (data: UpdateGoalsForDateRequest) => {
     set({ isLoading: true, error: null });
     try {
-      const goals = await api.updateGoals(data);
-      set({ goals, isLoading: false });
+      const res = await api.changeGoals(data);
+      const date = res.date;
+      set((state) => ({
+        goalsByDate: { ...state.goalsByDate, [date]: res.goals },
+        metaByDate: { ...state.metaByDate, [date]: res },
+        isLoading: false,
+      }));
+      // Also refresh profiles so the list stays current
+      const { refreshProfiles } = get();
+      void refreshProfiles();
     } catch (e) {
       set({
         isLoading: false,

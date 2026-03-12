@@ -7,13 +7,27 @@ datasource db {
 }
 
 model User {
-  id           String         @id @default(uuid())
-  name         String         @default("Default User")
-  createdAt    DateTime       @default(now())
-  dailyGoal    DailyGoal?
-  foodEntries  FoodEntry[]
-  customFoods  CustomFood[]
-  voiceSessions VoiceSession[]
+  id                   String          @id @default(uuid())
+  name                 String          @default("Default User")
+  createdAt            DateTime        @default(now())
+  // Profile fields
+  heightCm             Float?
+  weightKg             Float?
+  sex                  Sex             @default(UNSPECIFIED)
+  dateOfBirth          DateTime?       @db.Date
+  activityLevel        ActivityLevel?
+  preferredUnits       UnitSystem      @default(METRIC)
+  currentGoalProfileId String?
+
+  // Relations
+  dailyGoal            DailyGoal?
+  foodEntries          FoodEntry[]
+  customFoods          CustomFood[]
+  voiceSessions        VoiceSession[]
+  goalProfiles         GoalProfile[]
+  currentGoalProfile   GoalProfile?    @relation("CurrentGoalProfile", fields: [currentGoalProfileId], references: [id])
+  goalTimelineEntries  GoalTimeline[]      @relation("UserGoalTimeline")
+  unitConversions      FoodUnitConversion[]
 }
 
 model DailyGoal {
@@ -51,7 +65,7 @@ model FoodEntry {
 }
 
 model CustomFood {
-  id             String   @id @default(uuid())
+  id             String               @id @default(uuid())
   userId         String
   name           String
   servingSize    Float
@@ -66,11 +80,12 @@ model CustomFood {
   sugarG         Float?
   saturatedFatG  Float?
   transFatG      Float?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
-  user        User        @relation(fields: [userId], references: [id])
+  user        User                  @relation(fields: [userId], references: [id])
   foodEntries FoodEntry[]
+  unitConfigs FoodUnitConversion[]
 
   @@index([userId, name])
 }
@@ -84,6 +99,63 @@ model VoiceSession {
   user      User          @relation(fields: [userId], references: [id])
 
   @@index([userId])
+}
+
+/// Per-food unit definitions that map friendly units (slice, cup, piece)
+/// to the food's base serving size (servingSize + servingUnit).
+/// Used to keep macros tied to a single canonical base while allowing
+/// users to log with alternative units.
+model FoodUnitConversion {
+  id                 String   @id @default(uuid())
+  userId             String
+  customFoodId       String?
+  usdaFdcId          Int?
+  /// Name of the user-facing unit (e.g. "slice", "cup").
+  unitName           String
+  /// How many base servings this unit represents.
+  /// For example, if the base serving is "100 g" and the user defines
+  /// 1 slice = 30 g, then quantityInBaseServings = 0.3.
+  quantityInBaseServings Float
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id])
+  customFood CustomFood? @relation(fields: [customFoodId], references: [id])
+
+  @@index([userId, customFoodId, unitName])
+  @@index([userId, usdaFdcId, unitName])
+}
+
+model GoalProfile {
+  id             String        @id @default(uuid())
+  userId         String
+  name           String
+  createdAt      DateTime      @default(now())
+  archivedAt     DateTime?
+
+  user           User          @relation(fields: [userId], references: [id])
+  goalEntries    GoalTimeline[]
+  currentForUsers User[]       @relation("CurrentGoalProfile")
+}
+
+model GoalTimeline {
+  id             String             @id @default(uuid())
+  userId         String
+  profileId      String?
+  effectiveDate  DateTime           @db.Date
+  calories       Int
+  proteinG       Float
+  carbsG         Float
+  fatG           Float
+  goalType       GoalType
+  aggressiveness GoalAggressiveness
+  createdAt      DateTime           @default(now())
+
+  user           User               @relation("UserGoalTimeline", fields: [userId], references: [id])
+  profile        GoalProfile?       @relation(fields: [profileId], references: [id])
+
+  @@index([userId, effectiveDate(sort: Desc)])
+  @@index([profileId, effectiveDate])
 }
 
 enum MealLabel {
@@ -102,4 +174,35 @@ enum SessionStatus {
   active
   completed
   cancelled
+}
+
+enum Sex {
+  MALE
+  FEMALE
+  UNSPECIFIED
+}
+
+enum ActivityLevel {
+  SEDENTARY
+  LIGHT
+  MODERATE
+  HIGH
+  VERY_HIGH
+}
+
+enum UnitSystem {
+  METRIC
+  IMPERIAL
+}
+
+enum GoalType {
+  CUT
+  MAINTAIN
+  GAIN
+}
+
+enum GoalAggressiveness {
+  MILD
+  STANDARD
+  AGGRESSIVE
 }

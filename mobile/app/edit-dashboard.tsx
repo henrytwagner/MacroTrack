@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors, Typography, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDashboardLayoutStore } from '@/stores/dashboardLayoutStore';
+import { writeWidgetDataFromStores } from '@/services/widgetData';
 import {
   LAYOUT_IDS,
   LAYOUT_LABELS,
@@ -23,6 +24,7 @@ export default function EditDashboardScreen() {
   const handleSelect = (id: MacroLayoutId) => {
     Haptics.selectionAsync();
     setLayoutId(id);
+    writeWidgetDataFromStores();
   };
 
   return (

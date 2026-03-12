@@ -101,7 +101,7 @@ export default function LogScreen() {
     restoreEntry,
     commitDelete,
   } = useDailyLogStore();
-  const { goals, fetch: fetchGoals } = useGoalStore();
+  const { goalsByDate, fetch: fetchGoals } = useGoalStore();
 
   const [deletedEntry, setDeletedEntry] = useState<FoodEntry | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -113,16 +113,18 @@ export default function LogScreen() {
     pagerRef.current?.scrollTo({ x: pageWidth, animated: false });
   }, [selectedDate, pageWidth]);
 
+  const goals = goalsByDate[selectedDate] ?? null;
+
   useFocusEffect(
     useCallback(() => {
       fetchEntries(selectedDate);
-      fetchGoals();
+      fetchGoals(selectedDate);
     }, [selectedDate, fetchEntries, fetchGoals]),
   );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([fetchEntries(selectedDate), fetchGoals()]);
+    await Promise.all([fetchEntries(selectedDate), fetchGoals(selectedDate)]);
     setRefreshing(false);
   }, [selectedDate, fetchEntries, fetchGoals]);
 
@@ -149,7 +151,7 @@ export default function LogScreen() {
 
   const handlePressEntry = (entry: FoodEntry) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push({ pathname: '/edit-entry', params: { id: entry.id } });
+    router.push({ pathname: '/add-food', params: { editEntryId: entry.id } });
   };
 
   const handleDeleteEntry = (entry: FoodEntry) => {
@@ -222,28 +224,28 @@ export default function LogScreen() {
             <MacroProgressBar
               label="Calories"
               current={totals.calories}
-              goal={goals!.calories}
+              goal={goals ? goals.calories : 0}
               accentColor={colors.caloriesAccent}
               unit=" cal"
             />
             <MacroProgressBar
               label="Protein"
               current={totals.proteinG}
-              goal={goals!.proteinG}
+              goal={goals ? goals.proteinG : 0}
               accentColor={colors.proteinAccent}
               unit="g"
             />
             <MacroProgressBar
               label="Carbs"
               current={totals.carbsG}
-              goal={goals!.carbsG}
+              goal={goals ? goals.carbsG : 0}
               accentColor={colors.carbsAccent}
               unit="g"
             />
             <MacroProgressBar
               label="Fat"
               current={totals.fatG}
-              goal={goals!.fatG}
+              goal={goals ? goals.fatG : 0}
               accentColor={colors.fatAccent}
               unit="g"
             />
@@ -344,8 +346,8 @@ export default function LogScreen() {
               styles.macroPreviewPill,
               {
                 backgroundColor: colorScheme === 'dark'
-                  ? 'rgba(28, 28, 30, 0.92)'
-                  : 'rgba(255, 255, 255, 0.92)',
+                  ? 'rgba(28, 28, 30, 0.98)'
+                  : 'rgba(255, 255, 255, 0.98)',
                 borderColor: colors.border,
                 shadowColor: '#000',
               },
