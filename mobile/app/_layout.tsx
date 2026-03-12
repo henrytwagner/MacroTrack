@@ -66,6 +66,24 @@ export default function RootLayout() {
               headerShown: false,
             }}
           />
+          <Stack.Screen
+            name="health-profile"
+            options={{
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen
+            name="goals-guided"
+            options={{
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen
+            name="goals-edit"
+            options={{
+              headerShown: false,
+            }}
+          />
         </Stack>
         <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       </ThemeProvider>

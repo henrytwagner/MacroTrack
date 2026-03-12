@@ -4,12 +4,18 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
+    "start:clear": "npm run kill:8081 && expo start --clear",
+    "predev": "rm -rf .expo 2>/dev/null; npm run clean:cache; echo ''; echo '► Metro will start below on port 8081. Leave this terminal open.'; echo '► If Metro asks \"Use port 8082?\", say No (n), then run: npm run kill:8081  and try again.'; echo '► In a second terminal (same folder): npx expo run:ios  (or  npx expo run:ios --device)'; echo '► Or press i here after Metro is ready to open the app.'; echo ''",
+    "start:dev": "npm run kill:8081 && npm run predev && expo start --clear",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "ios:device": "expo run:ios --device",
     "clean:cache": "rm -rf node_modules/.cache 2>/dev/null; rm -rf $TMPDIR/haste-map-* 2>/dev/null; rm -rf $TMPDIR/metro-cache 2>/dev/null; echo 'Bundler cache cleared.'",
+    "kill:8081": "lsof -ti :8081 | xargs kill -9 2>/dev/null; echo 'Freed port 8081 (if anything was using it).'",
     "ios:device:clean": "npm run clean:cache && expo run:ios --device --no-build-cache",
+    "ios:with-fresh-bundle": "npm run clean:cache && expo run:ios",
+    "ios:device:with-fresh-bundle": "npm run clean:cache && expo run:ios --device",
     "web": "expo start --web",
     "lint": "expo lint",
     "test": "jest"
