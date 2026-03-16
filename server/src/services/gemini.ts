@@ -10,6 +10,7 @@ import type {
   GeminiCreateFoodResponseIntent,
   GeminiSessionEndIntent,
   GeminiClarifyIntent,
+  GeminiOpenBarcodeScannerIntent,
 } from "../../../shared/types.js";
 
 const MODEL_NAME = "gemini-2.5-flash";
@@ -89,6 +90,9 @@ function coerceIntent(raw: GeminiIntent): GeminiIntent {
     case "REMOVE_ITEM":
     case "CLARIFY":
     case "SESSION_END":
+    case "CANCEL_OPERATION":
+    case "UNDO":
+    case "REDO":
       return raw;
 
     default:
@@ -125,6 +129,24 @@ function parseTranscriptMock(
   // Session end
   if (/\b(done|save that|that's it|i'm finished|save|all done|that's everything)\b/.test(t)) {
     return { action: "SESSION_END", payload: null } satisfies GeminiSessionEndIntent;
+  }
+
+  // Barcode scanner
+  if (/\b(scan|barcode|scan a barcode|scan the product|scan this)\b/.test(t)) {
+    return { action: "OPEN_BARCODE_SCANNER", payload: null } satisfies GeminiOpenBarcodeScannerIntent;
+  }
+
+  // Cancel operation (check before creating flow so it can escape)
+  if (/^(nevermind|never mind|cancel that|forget it|go back|stop)$/.test(t)) {
+    return { action: "CANCEL_OPERATION", payload: null };
+  }
+
+  // Undo / redo
+  if (/^(undo|undo that)$/.test(t)) {
+    return { action: "UNDO", payload: null };
+  }
+  if (/^(redo|redo that)$/.test(t)) {
+    return { action: "REDO", payload: null };
   }
 
   // Creating food flow — respond to creation questions

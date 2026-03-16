@@ -74,7 +74,16 @@ export const useDraftStore = create<DraftStoreState>((set, get) => ({
 
       switch (msg.type) {
         case 'items_added': {
-          items = [...items, ...msg.items];
+          // Merge by id so we don't duplicate when server sends items_added
+          // for an item we already have (e.g. after USDA confirm: choice → usda_pending → items_added).
+          for (const incoming of msg.items) {
+            const idx = items.findIndex((i) => i.id === incoming.id);
+            if (idx >= 0) {
+              items = [...items.slice(0, idx), { ...incoming }, ...items.slice(idx + 1)];
+            } else {
+              items = [...items, incoming];
+            }
+          }
           break;
         }
 
@@ -153,6 +162,66 @@ export const useDraftStore = create<DraftStoreState>((set, get) => ({
           items = items.map((item) =>
             item.id === msg.item.id ? { ...msg.item } : item,
           );
+          break;
+        }
+
+        case 'food_choice': {
+          const alreadyExists = items.some((i) => i.id === msg.itemId);
+          if (!alreadyExists) {
+            const now = new Date();
+            const h = now.getHours();
+            const mealLabel =
+              h >= 5 && h < 11
+                ? ('breakfast' as const)
+                : h >= 11 && h < 14
+                  ? ('lunch' as const)
+                  : h >= 17 && h < 22
+                    ? ('dinner' as const)
+                    : ('snack' as const);
+            items = [
+              ...items,
+              {
+                id: msg.itemId,
+                name: msg.foodName,
+                quantity: 1,
+                unit: 'servings',
+                calories: 0,
+                proteinG: 0,
+                carbsG: 0,
+                fatG: 0,
+                source: 'CUSTOM' as const,
+                mealLabel,
+                state: 'choice' as const,
+              },
+            ];
+          }
+          break;
+        }
+
+        case 'usda_confirm': {
+          const macros = msg.usdaResult.macros;
+          items = items.map((item) => {
+            if (item.id !== msg.itemId) return item;
+            return {
+              ...item,
+              name: msg.usdaDescription,
+              calories: macros.calories,
+              proteinG: macros.proteinG,
+              carbsG: macros.carbsG,
+              fatG: macros.fatG,
+              state: 'usda_pending' as const,
+            };
+          });
+          break;
+        }
+
+        case 'draft_replaced': {
+          items = [...msg.draft];
+          break;
+        }
+
+        case 'operation_cancelled': {
+          items = items.filter((item) => item.id !== msg.itemId);
           break;
         }
 

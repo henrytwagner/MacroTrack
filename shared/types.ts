@@ -5,7 +5,7 @@
 
 // --- Enums & Constants ---
 
-export type FoodSource = "DATABASE" | "CUSTOM";
+export type FoodSource = "DATABASE" | "CUSTOM" | "COMMUNITY";
 
 export type MealLabel = "breakfast" | "lunch" | "dinner" | "snack";
 
@@ -91,6 +91,26 @@ export interface CustomFood extends Macros, ExtendedNutrition {
   updatedAt: string;
 }
 
+export type CommunityFoodStatus = "ACTIVE" | "PENDING" | "RETIRED";
+
+export interface CommunityFood extends Macros, ExtendedNutrition {
+  id: string;
+  name: string;
+  brandName?: string;
+  description?: string;
+  defaultServingSize: number;
+  defaultServingUnit: string;
+  usdaFdcId?: number;
+  createdByUserId?: string;
+  status: CommunityFoodStatus;
+  usesCount: number;
+  reportsCount: number;
+  trustScore: number;
+  lastUsedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /**
  * Per-food unit configuration that maps a friendly unit name
  * (e.g., "slice", "cup") back to the food's base serving
@@ -136,6 +156,7 @@ export interface FoodEntry extends Macros {
   source: FoodSource;
   usdaFdcId?: number;
   customFoodId?: string;
+  communityFoodId?: string;
   createdAt: string;
 }
 
@@ -148,12 +169,18 @@ export interface USDASearchResult {
   servingSize?: number;
   servingSizeUnit?: string;
   macros: Macros;
+  usesCount?: number;
+}
+
+export interface UserPreferences {
+  suppressUsdaWarning: boolean;
 }
 
 // --- Search Response ---
 
 export interface UnifiedSearchResponse {
   myFoods: CustomFood[];
+  community: CommunityFood[];
   database: USDASearchResult[];
 }
 
@@ -167,6 +194,7 @@ export interface FrequentFood {
   macros: Macros;
   usdaFdcId?: number;
   customFoodId?: string;
+  communityFoodId?: string;
   logCount: number;
 }
 
@@ -178,6 +206,7 @@ export interface RecentFood {
   macros: Macros;
   usdaFdcId?: number;
   customFoodId?: string;
+  communityFoodId?: string;
   loggedAt: string;
 }
 
@@ -196,6 +225,7 @@ export interface CreateFoodEntryRequest {
   mealLabel: MealLabel;
   usdaFdcId?: number;
   customFoodId?: string;
+  communityFoodId?: string;
 }
 
 export interface UpdateFoodEntryRequest {
@@ -224,6 +254,32 @@ export interface CreateCustomFoodRequest {
 }
 
 export type UpdateCustomFoodRequest = Partial<CreateCustomFoodRequest>;
+
+export interface CreateCommunityFoodRequest {
+  name: string;
+  brandName?: string;
+  description?: string;
+  defaultServingSize: number;
+  defaultServingUnit: string;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  sodiumMg?: number;
+  cholesterolMg?: number;
+  fiberG?: number;
+  sugarG?: number;
+  saturatedFatG?: number;
+  transFatG?: number;
+  barcode?: string;
+  barcodeType?: string;
+}
+
+export interface PublishCustomFoodRequest {
+  brandName?: string;
+  barcode?: string;
+  barcodeType?: string;
+}
 
 export interface UpdateGoalsRequest {
   calories: number;
@@ -279,7 +335,7 @@ export interface DailySummary {
 
 // --- Kitchen Mode Draft State ---
 
-export type DraftCardState = "normal" | "clarifying" | "creating";
+export type DraftCardState = "normal" | "clarifying" | "creating" | "choice" | "usda_pending";
 
 export interface DraftItem extends Macros {
   id: string; // temporary client-side ID (e.g., "tmp-1")
@@ -289,6 +345,7 @@ export interface DraftItem extends Macros {
   source: FoodSource;
   usdaFdcId?: number;
   customFoodId?: string;
+  communityFoodId?: string;
   mealLabel: MealLabel;
   state: DraftCardState;
   clarifyQuestion?: string; // shown on card when state === "clarifying"
@@ -343,11 +400,17 @@ export interface WSCancelMessage {
   type: "cancel";
 }
 
+export interface WSBarcodeScanMessage {
+  type: "barcode_scan";
+  gtin: string;
+}
+
 export type WSClientMessage =
   | WSTranscriptMessage
   | WSAudioChunkMessage
   | WSSaveMessage
-  | WSCancelMessage;
+  | WSCancelMessage
+  | WSBarcodeScanMessage;
 
 // Server → Client
 
@@ -393,6 +456,30 @@ export interface WSCreateFoodCompleteMessage {
   item: DraftItem;
 }
 
+export interface WSFoodChoiceMessage {
+  type: "food_choice";
+  itemId: string;
+  foodName: string;
+  question: string;
+}
+
+export interface WSUsdaConfirmMessage {
+  type: "usda_confirm";
+  itemId: string;
+  usdaDescription: string;
+  question: string;
+  usdaResult: USDASearchResult;
+}
+
+export interface WSOpenBarcodeScannerMessage {
+  type: "open_barcode_scanner";
+}
+
+export interface WSAskMessage {
+  type: "ask";
+  question: string; // pure TTS — no card created
+}
+
 export interface WSErrorMessage {
   type: "error";
   message: string;
@@ -407,6 +494,18 @@ export interface WSSessionCancelledMessage {
   type: "session_cancelled";
 }
 
+export interface WSDraftReplacedMessage {
+  type: "draft_replaced";
+  draft: DraftItem[];
+  message: string;
+}
+
+export interface WSOperationCancelledMessage {
+  type: "operation_cancelled";
+  itemId: string;
+  message: string;
+}
+
 export type WSServerMessage =
   | WSItemsAddedMessage
   | WSItemEditedMessage
@@ -415,9 +514,15 @@ export type WSServerMessage =
   | WSCreateFoodPromptMessage
   | WSCreateFoodFieldMessage
   | WSCreateFoodCompleteMessage
+  | WSFoodChoiceMessage
+  | WSUsdaConfirmMessage
+  | WSOpenBarcodeScannerMessage
+  | WSAskMessage
   | WSErrorMessage
   | WSSessionSavedMessage
-  | WSSessionCancelledMessage;
+  | WSSessionCancelledMessage
+  | WSDraftReplacedMessage
+  | WSOperationCancelledMessage;
 
 // --- Gemini Intent Types ---
 
@@ -470,13 +575,37 @@ export interface GeminiSessionEndIntent {
   payload: null;
 }
 
+export interface GeminiOpenBarcodeScannerIntent {
+  action: "OPEN_BARCODE_SCANNER";
+  payload: null;
+}
+
+export interface GeminiCancelOperationIntent {
+  action: "CANCEL_OPERATION";
+  payload: null;
+}
+
+export interface GeminiUndoIntent {
+  action: "UNDO";
+  payload: null;
+}
+
+export interface GeminiRedoIntent {
+  action: "REDO";
+  payload: null;
+}
+
 export type GeminiIntent =
   | GeminiAddItemsIntent
   | GeminiEditItemIntent
   | GeminiRemoveItemIntent
   | GeminiClarifyIntent
   | GeminiCreateFoodResponseIntent
-  | GeminiSessionEndIntent;
+  | GeminiSessionEndIntent
+  | GeminiOpenBarcodeScannerIntent
+  | GeminiCancelOperationIntent
+  | GeminiUndoIntent
+  | GeminiRedoIntent;
 
 // --- Gemini Request Context ---
 
@@ -487,9 +616,14 @@ export interface GeminiRequestContext {
     name: string;
     quantity: number;
     unit: string;
+    /** Used by server to recompute macros when quantity/unit is edited. */
+    source?: FoodSource;
+    customFoodId?: string;
+    usdaFdcId?: number;
+    communityFoodId?: string;
   }>;
   timeOfDay: string; // HH:MM format
   date: string; // YYYY-MM-DD
-  sessionState: "normal" | `creating:${string}`; // "creating:tmp-3" when mid-creation
+  sessionState: "normal" | `creating:${string}` | `awaiting_choice:${string}` | `usda_pending:${string}`; // "creating:tmp-3" when mid-creation
   creatingFoodProgress?: CreatingFoodProgress;
 }

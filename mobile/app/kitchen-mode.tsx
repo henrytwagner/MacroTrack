@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
   LayoutAnimation,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -27,6 +29,8 @@ import { useGoalStore } from '@/stores/goalStore';
 import * as voiceSession from '@/services/voiceSession';
 import * as speech from '@/services/speech';
 import { createSTTStrategy, type STTCallbacks } from '@/services/sttStrategy';
+import { BarcodeCameraScreen } from '@/features/barcode/BarcodeCameraScreen';
+import type { BarcodeScanResult } from '@/features/barcode/types';
 import type { WSServerMessage } from '@shared/types';
 
 // ---------------------------------------------------------------------------
@@ -110,15 +114,20 @@ export default function KitchenModeScreen() {
   }, [items]);
 
   const [listeningState, setListeningState] = useState<ListeningState>('idle');
+  const [showBarcodeCamera, setShowBarcodeCamera] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [nativeModuleMissing, setNativeModuleMissing] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  // On-screen debug (dev only): last STT result, live interim, or error
-  const [debugSttLastResult, setDebugSttLastResult] = useState<string | null>(null);
-  const [debugSttInterim, setDebugSttInterim] = useState<string | null>(null);
-  const [debugSttLastError, setDebugSttLastError] = useState<string | null>(null);
-  const [debugInputText, setDebugInputText] = useState('');
   const [macroPreviewExpanded, setMacroPreviewExpanded] = useState(false);
+
+  type BottomBarVariant = 'classic' | 'pillsSpread' | 'pillsCenter';
+
+  const [bottomBarVariant, setBottomBarVariant] = useState<BottomBarVariant>('classic');
+
+  type TextDisplayMode = 'off' | 'captions' | 'editing';
+  const [textDisplayMode, setTextDisplayMode] = useState<TextDisplayMode>('off');
+  const [captionText, setCaptionText] = useState('');
+  const [editText, setEditText] = useState('');
 
   // Refs that don't need to trigger re-renders
   const sessionEndedRef = useRef(false);
@@ -135,27 +144,20 @@ export default function KitchenModeScreen() {
     const strategy = sttStrategyRef.current;
     const callbacks: STTCallbacks = {
       onResult: (transcript) => {
-        if (__DEV__) {
-          setDebugSttLastResult(transcript);
-          setDebugSttInterim(null);
-          setDebugSttLastError(null);
-        }
         setListeningState('processing');
-        voiceSession.sendTranscript(transcript);
+        voiceSession.sendTranscript(transcript); // always auto-submit
+        setCaptionText('');                       // clear caption after submit
       },
-      onError: (error) => {
-        if (__DEV__) {
-          setDebugSttLastError(error);
-        }
+      onError: () => {
         if (!sessionEndedRef.current) {
           setTimeout(() => {
             if (!sessionEndedRef.current) startListening();
           }, 1000);
         }
       },
-      onInterimResult: __DEV__
-        ? (transcript) => setDebugSttInterim(transcript)
-        : undefined,
+      onInterimResult: (transcript) => {
+        setCaptionText(transcript); // always track, shown only when captions on
+      },
       onEnd: () => {
         // STT ended (iOS silence timeout) — silently restart without
         // dropping to 'idle' so the animation doesn't flicker.
@@ -202,6 +204,13 @@ export default function KitchenModeScreen() {
   // WebSocket message handler
   // ---------------------------------------------------------------------------
 
+  const handleBarcodeButtonPress = useCallback(() => {
+    if (sessionEndedRef.current) return;
+    sttStrategyRef.current.stop();
+    speech.stopSpeaking();
+    setShowBarcodeCamera(true);
+  }, []);
+
   const handleServerMessage = useCallback(
     (msg: WSServerMessage) => {
       applyServerMessage(msg);
@@ -216,10 +225,18 @@ export default function KitchenModeScreen() {
         setListeningState('listening');
       }
 
-      if (msg.type === 'clarify') {
+      if (msg.type === 'draft_replaced') {
+        speakAndResume(msg.message);
+      } else if (msg.type === 'operation_cancelled') {
+        speakAndResume(msg.message);
+      } else if (msg.type === 'open_barcode_scanner') {
+        handleBarcodeButtonPress();
+      } else if (msg.type === 'ask') {
+        speakAndResume(msg.question);
+      } else if (msg.type === 'clarify') {
         speakAndResume(msg.question);
       } else if (msg.type === 'create_food_prompt') {
-        speakAndResume(msg.question);
+        if (msg.question) speakAndResume(msg.question);
       } else if (msg.type === 'create_food_field') {
         speakAndResume(msg.question);
       } else if (msg.type === 'create_food_complete') {
@@ -243,7 +260,7 @@ export default function KitchenModeScreen() {
         router.back();
       }
     },
-    [applyServerMessage, speakAndResume, endSession, fetchEntries, selectedDate, reset, router, from],
+    [applyServerMessage, speakAndResume, endSession, fetchEntries, selectedDate, reset, router, from, handleBarcodeButtonPress],
   );
 
   // ---------------------------------------------------------------------------
@@ -358,17 +375,45 @@ export default function KitchenModeScreen() {
   // Cancel
   // ---------------------------------------------------------------------------
 
-  // Dev/simulator: submit typed text as if it were a voice transcript
-  const handleDebugSubmit = useCallback(() => {
-    const trimmed = debugInputText.trim();
+  // Shared exit-edit helper (used by Discard, toggle button, and after Send)
+  const exitEditMode = useCallback(() => {
+    setEditText('');
+    setTextDisplayMode('captions');
+    listeningPausedByUserRef.current = false;
+    startListening(); // resume STT
+  }, [startListening]);
+
+  // Toggle button: off ↔ captions, or discard if currently editing
+  const handleCaptionToggle = useCallback(() => {
+    if (textDisplayMode === 'editing') {
+      exitEditMode();
+      return;
+    }
+    setTextDisplayMode((prev) => (prev === 'off' ? 'captions' : 'off'));
+    setCaptionText('');
+  }, [textDisplayMode, exitEditMode]);
+
+  // Tap the caption pill → pause voice, enter editing
+  const handleCaptionTap = useCallback(() => {
+    sttStrategyRef.current.stop();
+    speech.stopSpeaking();
+    listeningPausedByUserRef.current = true;
+    setListeningState('paused');
+    setEditText(captionText); // prefill with what was heard
+    setTextDisplayMode('editing');
+  }, [captionText]);
+
+  // Send from edit mode
+  const handleEditSubmit = useCallback(() => {
+    const trimmed = editText.trim();
     if (!trimmed || sessionEndedRef.current) return;
-    setDebugInputText('');
-    setDebugSttLastResult(trimmed);
-    setDebugSttInterim(null);
-    setDebugSttLastError(null);
-    setListeningState('processing');
+    setEditText('');
+    setCaptionText('');
+    setTextDisplayMode('captions');
+    listeningPausedByUserRef.current = false;
     voiceSession.sendTranscript(trimmed);
-  }, [debugInputText]);
+    startListening(); // restart STT immediately
+  }, [editText, startListening]);
 
   const performCancel = useCallback(() => {
     if (sessionEndedRef.current) return;
@@ -377,8 +422,19 @@ export default function KitchenModeScreen() {
     speech.stopListening();
     speech.stopSpeaking();
     voiceSession.sendCancel();
-    // Navigation triggered by session_cancelled message from server
-  }, []);
+
+    // Prefer server-driven navigation via session_cancelled, but if that
+    // never arrives (e.g., WS failure), fall back to a local navigation so
+    // the user is never stuck on this screen.
+    setTimeout(() => {
+      if (!sessionEndedRef.current) return;
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/(tabs)/log');
+      }
+    }, 1800);
+  }, [router]);
 
   // Tap listening icon: pause (stop STT/TTS) or resume
   const handleListeningIndicatorPress = useCallback(() => {
@@ -399,6 +455,17 @@ export default function KitchenModeScreen() {
       setListeningState('paused');
     }
   }, [listeningState, startListening]);
+
+  const handleBarcodeScanResult = useCallback((result: BarcodeScanResult) => {
+    setShowBarcodeCamera(false);
+    setListeningState('processing');
+    voiceSession.sendBarcodeScan(result.gtin);
+  }, []);
+
+  const handleBarcodeCameraCancel = useCallback(() => {
+    setShowBarcodeCamera(false);
+    if (!sessionEndedRef.current && !listeningPausedByUserRef.current) startListening();
+  }, [startListening]);
 
   const handleCancel = useCallback(() => {
     if (sessionEndedRef.current) return;
@@ -537,6 +604,20 @@ export default function KitchenModeScreen() {
   }
 
   // ---------------------------------------------------------------------------
+  // Fallback barcode camera (full-screen swap, same pattern as barcode-demo)
+  // ---------------------------------------------------------------------------
+
+  if (showBarcodeCamera) {
+    return (
+      <BarcodeCameraScreen
+        defaultFacing="front"
+        onScan={handleBarcodeScanResult}
+        onCancel={handleBarcodeCameraCancel}
+      />
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Main screen
   // ---------------------------------------------------------------------------
 
@@ -556,14 +637,49 @@ export default function KitchenModeScreen() {
     >
       {/* Top bar */}
       <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
-        <ThemedText style={[Typography.title3, { color: colors.text }]}>
-          Kitchen Mode
-        </ThemedText>
-        {dateLabel && (
-          <ThemedText style={[Typography.footnote, { color: colors.warning }]}>
-            {dateLabel}
+        <Pressable
+          onPress={handleCancel}
+          hitSlop={12}
+          style={({ pressed }) => [
+            styles.topBarIconLeft,
+            pressed && { opacity: 0.7 },
+          ]}
+        >
+          <Ionicons
+            name="chevron-back"
+            size={24}
+            color={colors.textSecondary}
+          />
+        </Pressable>
+
+        <View style={styles.topBarTitleContainer}>
+          <ThemedText style={[Typography.title3, { color: colors.text }]}>
+            Kitchen Mode
           </ThemedText>
-        )}
+          {dateLabel && (
+            <ThemedText style={[Typography.footnote, { color: colors.warning }]}>
+              {dateLabel}
+            </ThemedText>
+          )}
+        </View>
+
+        <Pressable
+          onPress={handleSave}
+          hitSlop={12}
+          style={({ pressed }) => [
+            styles.topBarIconRight,
+            pressed && { opacity: 0.8 },
+          ]}
+        >
+          <View
+            style={[
+              styles.topBarSaveIconPill,
+              { backgroundColor: colors.tint },
+            ]}
+          >
+            <Ionicons name="checkmark" size={18} color="#fff" />
+          </View>
+        </Pressable>
       </View>
 
       {/* Live macro rings (always visible); tap to toggle detail breakdown below */}
@@ -615,6 +731,76 @@ export default function KitchenModeScreen() {
       </Pressable>
       <View style={[styles.hairline, { backgroundColor: colors.border }]} />
 
+      {/* Dev-only: toggle between bottom bar layouts */}
+      {__DEV__ && (
+        <View style={styles.variantToggleRow}>
+          <Pressable
+            onPress={() => setBottomBarVariant('classic')}
+            style={[
+              styles.variantToggleChip,
+              bottomBarVariant === 'classic' && { backgroundColor: colors.surfaceSecondary },
+            ]}
+            hitSlop={8}
+          >
+            <ThemedText
+              style={[
+                Typography.caption2,
+                {
+                  color:
+                    bottomBarVariant === 'classic' ? colors.text : colors.textTertiary,
+                },
+              ]}
+            >
+              Classic
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            onPress={() => setBottomBarVariant('pillsSpread')}
+            style={[
+              styles.variantToggleChip,
+              bottomBarVariant === 'pillsSpread' && {
+                backgroundColor: colors.surfaceSecondary,
+              },
+            ]}
+            hitSlop={8}
+          >
+            <ThemedText
+              style={[
+                Typography.caption2,
+                {
+                  color:
+                    bottomBarVariant === 'pillsSpread'
+                      ? colors.text
+                      : colors.textTertiary,
+                },
+              ]}
+            >
+              Pills
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            onPress={() => setBottomBarVariant('pillsCenter')}
+            style={[
+              styles.variantToggleChip,
+              bottomBarVariant === 'pillsCenter' && { backgroundColor: colors.surfaceSecondary },
+            ]}
+            hitSlop={8}
+          >
+            <ThemedText
+              style={[
+                Typography.caption2,
+                {
+                  color:
+                    bottomBarVariant === 'pillsCenter' ? colors.text : colors.textTertiary,
+                },
+              ]}
+            >
+              Pills C
+            </ThemedText>
+          </Pressable>
+        </View>
+      )}
+
       {/* Draft cards */}
       <ScrollView
         ref={scrollRef}
@@ -653,90 +839,204 @@ export default function KitchenModeScreen() {
         )}
       </ScrollView>
 
-      {/* Bottom controls */}
-      <View
-        style={[styles.bottomSection, { borderTopColor: colors.border }]}
-      >
-        <ListeningIndicator
-          state={listeningState}
-          onPress={handleListeningIndicatorPress}
-        />
-        {__DEV__ && (
-          <>
-            <TextInput
+      {/* Floating caption / edit row — above the bottom controls; only edit row moves with keyboard */}
+      {textDisplayMode !== 'off' && textDisplayMode === 'editing' && (
+        <KeyboardAvoidingView
+          style={[
+            styles.floatingOverlay,
+            bottomBarVariant === 'classic'
+              ? styles.floatingAboveClassic
+              : styles.floatingAbovePills,
+          ]}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
+          pointerEvents="box-none"
+        >
+          <View style={styles.floatingInner}>
+            <View
               style={[
-                styles.debugInput,
-                {
-                  backgroundColor: colors.surfaceSecondary,
-                  color: colors.text,
-                  borderColor: colors.border,
-                },
+                styles.floatingEditRow,
+                { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
               ]}
-              placeholder="Type to simulate voice (simulator)"
-              placeholderTextColor={colors.textTertiary}
-              value={debugInputText}
-              onChangeText={setDebugInputText}
-              onSubmitEditing={handleDebugSubmit}
-              returnKeyType="send"
-              blurOnSubmit={false}
-            />
-            <View style={[styles.debugStrip, { backgroundColor: colors.surfaceSecondary }]}>
-              <ThemedText
-              style={[Typography.caption2, { color: colors.textSecondary }]}
-              numberOfLines={2}
             >
-              {debugSttLastError != null
-                ? `Error: ${debugSttLastError}`
-                : debugSttInterim != null
-                  ? `Live: «${debugSttInterim}»`
-                  : debugSttLastResult != null
-                    ? `Heard: «${debugSttLastResult}»`
-                    : listeningState === 'listening' || listeningState === 'processing'
-                      ? 'Listening…'
-                      : listeningState === 'speaking'
-                        ? 'Speaking…'
-                        : listeningState === 'paused'
-                          ? 'Paused'
-                          : '—'}
-              </ThemedText>
+              <TextInput
+                style={[styles.editingInput, { color: colors.text }]}
+                placeholder="Edit before sending…"
+                placeholderTextColor={colors.textTertiary}
+                value={editText}
+                onChangeText={setEditText}
+                onSubmitEditing={handleEditSubmit}
+                returnKeyType="send"
+                blurOnSubmit={false}
+                autoFocus
+              />
+              <Pressable onPress={handleEditSubmit} hitSlop={8}>
+                <Ionicons name="arrow-up-circle" size={28} color={colors.tint} />
+              </Pressable>
+              <Pressable onPress={exitEditMode} hitSlop={8} style={styles.discardButton}>
+                <ThemedText style={[Typography.footnote, { color: colors.destructive }]}>
+                  Discard
+                </ThemedText>
+              </Pressable>
             </View>
-          </>
-        )}
+          </View>
+        </KeyboardAvoidingView>
+      )}
 
-        <View style={styles.actionRow}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.actionButton,
-              styles.cancelButton,
-              { borderColor: colors.border },
-              pressed && { opacity: 0.7 },
-            ]}
-            onPress={handleCancel}
-          >
-            <Ionicons name="close" size={20} color={colors.textSecondary} />
-            <ThemedText
-              style={[Typography.headline, { color: colors.textSecondary }]}
+      {textDisplayMode !== 'off' && textDisplayMode !== 'editing' && (
+        <View
+          style={[
+            styles.floatingOverlay,
+            bottomBarVariant === 'classic'
+              ? styles.floatingAboveClassic
+              : styles.floatingAbovePills,
+          ]}
+          pointerEvents="box-none"
+        >
+          <View style={styles.floatingInner}>
+            <Pressable
+              onPress={handleCaptionTap}
+              style={[styles.floatingCaptionPill, { backgroundColor: colors.surfaceSecondary }]}
             >
-              Cancel
-            </ThemedText>
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.actionButton,
-              styles.saveButton,
-              { backgroundColor: colors.tint },
-              pressed && { opacity: 0.85 },
-            ]}
-            onPress={handleSave}
-          >
-            <Ionicons name="checkmark" size={20} color="#fff" />
-            <ThemedText style={[Typography.headline, { color: '#fff' }]}>
-              Save
-            </ThemedText>
-          </Pressable>
+              <View style={styles.captionTextContainer}>
+                <ThemedText
+                  style={[Typography.footnote, { color: colors.text, textAlign: 'center' }]}
+                  numberOfLines={2}
+                >
+                  {captionText || 'Listening for speech…'}
+                </ThemedText>
+              </View>
+              {captionText ? (
+                <Ionicons
+                  name="create-outline"
+                  size={18}
+                  color={colors.textTertiary}
+                  style={styles.captionEditIcon}
+                />
+              ) : null}
+            </Pressable>
+          </View>
         </View>
-      </View>
+      )}
+
+      {/* Floating bottom pills for variants 2 & 3 */}
+      {(bottomBarVariant === 'pillsSpread' || bottomBarVariant === 'pillsCenter') && (
+        <View pointerEvents="box-none" style={styles.bottomPillsFloatingContainer}>
+          {bottomBarVariant === 'pillsSpread' ? (
+            <View style={styles.bottomPillsRowSpread}>
+              <Pressable
+                onPress={handleCaptionToggle}
+                style={[styles.bottomPill, { backgroundColor: colors.surfaceSecondary }]}
+                hitSlop={8}
+              >
+                <Ionicons
+                  name="text-outline"
+                  size={22}
+                  color={textDisplayMode !== 'off' ? colors.tint : colors.textSecondary}
+                />
+              </Pressable>
+              <View
+                style={[
+                  styles.bottomPill,
+                  styles.bottomPillLarge,
+                  { backgroundColor: colors.surfaceSecondary },
+                ]}
+              >
+                <ListeningIndicator
+                  state={listeningState}
+                  onPress={handleListeningIndicatorPress}
+                  showLabel={false}
+                />
+              </View>
+              <Pressable
+                onPress={handleBarcodeButtonPress}
+                style={[styles.bottomPill, { backgroundColor: colors.surfaceSecondary }]}
+                hitSlop={8}
+              >
+                <Ionicons
+                  name="barcode-outline"
+                  size={22}
+                  color={colors.textSecondary}
+                />
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.bottomPillsRowCenter}>
+              <Pressable
+                onPress={handleCaptionToggle}
+                style={[styles.bottomPill, { backgroundColor: colors.surfaceSecondary }]}
+                hitSlop={8}
+              >
+                <Ionicons
+                  name="text-outline"
+                  size={22}
+                  color={textDisplayMode !== 'off' ? colors.tint : colors.textSecondary}
+                />
+              </Pressable>
+              <View
+                style={[
+                  styles.bottomPill,
+                  styles.bottomPillLarge,
+                  { backgroundColor: colors.surfaceSecondary },
+                ]}
+              >
+                <ListeningIndicator
+                  state={listeningState}
+                  onPress={handleListeningIndicatorPress}
+                  showLabel={false}
+                />
+              </View>
+              <Pressable
+                onPress={handleBarcodeButtonPress}
+                style={[styles.bottomPill, { backgroundColor: colors.surfaceSecondary }]}
+                hitSlop={8}
+              >
+                <Ionicons
+                  name="barcode-outline"
+                  size={22}
+                  color={colors.textSecondary}
+                />
+              </Pressable>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Fixed bottom bar (only renders in classic variant) */}
+      {bottomBarVariant === 'classic' && (
+        <View style={[styles.bottomSection, { borderTopColor: colors.border }]}>
+          <View style={styles.listeningRow}>
+            <Pressable
+              onPress={handleCaptionToggle}
+              style={styles.keyboardIconButton}
+              hitSlop={8}
+            >
+              <Ionicons
+                name="text-outline"
+                size={24}
+                color={textDisplayMode !== 'off' ? colors.tint : colors.textSecondary}
+              />
+            </Pressable>
+            <View style={styles.listeningIndicatorCenter}>
+              <ListeningIndicator
+                state={listeningState}
+                onPress={handleListeningIndicatorPress}
+              />
+            </View>
+            <Pressable
+              onPress={handleBarcodeButtonPress}
+              style={styles.barcodeIconButton}
+              hitSlop={8}
+            >
+              <Ionicons
+                name="barcode-outline"
+                size={26}
+                color={colors.textSecondary}
+              />
+            </Pressable>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -750,11 +1050,35 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   topBar: {
-    paddingHorizontal: Spacing.xl,
+    paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    justifyContent: 'center',
+  },
+  topBarTitleContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topBarIconLeft: {
+    position: 'absolute',
+    left: Spacing.lg,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
+  topBarIconRight: {
+    position: 'absolute',
+    right: Spacing.lg,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
+  topBarSaveIconPill: {
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
   },
   hairline: {
     height: StyleSheet.hairlineWidth,
@@ -787,7 +1111,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: Spacing.lg,
     gap: Spacing.md,
-    paddingBottom: Spacing.xxxl,
+    paddingBottom: Spacing.lg,
   },
   scrollContentEmpty: {
     flex: 1,
@@ -803,21 +1127,114 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.lg,
     gap: Spacing.lg,
+    alignItems: 'stretch',
+  },
+  variantToggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  variantToggleChip: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+  },
+  bottomPillsFloatingContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: Spacing.xxxl,
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
+  },
+  bottomPillsRowSpread: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '90%',
+    maxWidth: 360,
+    alignSelf: 'center',
+  },
+  bottomPillsRowCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.lg,
+  },
+  bottomPill: {
+    borderRadius: BorderRadius.full,
+    height: 44,
+    width: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bottomPillLarge: {
+    height: 72,
+    width: 72,
+  },
+  floatingOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    width: '100%',
+  },
+  floatingInner: {
+    paddingHorizontal: Spacing.xl,
+  },
+  floatingEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  floatingAbovePills: {
+    bottom: Spacing.xxxl * 2.75,
+  },
+  floatingAboveClassic: {
+    bottom: Spacing.xxxl,
+  },
+  floatingCaptionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  captionTextContainer: {
+    maxWidth: '80%',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  debugInput: {
-    alignSelf: 'stretch',
-    borderWidth: 1,
+  captionEditIcon: {
+    marginLeft: Spacing.xs,
+  },
+  editingInput: {
+    flex: 1,
     borderRadius: BorderRadius.sm,
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xs,
     ...Typography.body,
   },
-  debugStrip: {
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.sm,
+  discardButton: {
+    paddingHorizontal: Spacing.xs,
     paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.sm,
+  },
+  keyboardIconButton: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    padding: Spacing.xs,
   },
   actionRow: {
     flexDirection: 'row',
@@ -837,6 +1254,21 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   saveButton: {},
+  topBarCancel: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  topBarSave: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+  },
+  topBarPill: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   errorState: {
     flex: 1,
     alignItems: 'center',
@@ -849,5 +1281,24 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.lg,
     marginTop: Spacing.sm,
+  },
+  listeningRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  listeningIndicatorCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  barcodeIconButton: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    padding: Spacing.xs,
   },
 });

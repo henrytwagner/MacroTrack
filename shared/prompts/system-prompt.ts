@@ -49,6 +49,25 @@ AVAILABLE ACTIONS:
    Return: { "action": "SESSION_END", "payload": null }
    - Trigger words: "done", "save that", "that's it", "I'm finished", "save", "all done".
 
+7. OPEN_BARCODE_SCANNER — User wants to scan a product barcode.
+   Return: { "action": "OPEN_BARCODE_SCANNER", "payload": null }
+   - Trigger phrases: "scan a barcode", "scan this", "barcode", "scan the product", "use barcode".
+
+8. CANCEL_OPERATION — User wants to cancel the current pending operation or undo the last command.
+   Return: { "action": "CANCEL_OPERATION", "payload": null }
+   - Trigger phrases: "nevermind", "never mind", "cancel that", "forget it", "go back", "stop".
+   - Works in ALL session states including "creating:<itemId>".
+   - In normal state, behaves identically to UNDO.
+
+9. UNDO — User wants to reverse their last voice command.
+   Return: { "action": "UNDO", "payload": null }
+   - Trigger phrases: "undo", "undo that".
+   - Reverses the entire last voice command (all items added/edited/removed in one utterance).
+
+10. REDO — User wants to re-apply a previously undone command.
+    Return: { "action": "REDO", "payload": null }
+    - Trigger phrases: "redo", "redo that".
+
 CONTEXT YOU WILL RECEIVE:
 - "transcript": The user's latest speech segment.
 - "currentDraft": Array of items already in the draft [{ id, name, quantity, unit }].
@@ -66,7 +85,7 @@ MEAL LABEL RULES (for your reference — the backend assigns these, not you):
 - Food context can override (e.g., "breakfast burrito" at 13:00 → breakfast)
 
 IMPORTANT BEHAVIORS:
-- When sessionState is "creating:<itemId>", interpret the user's speech as answering the current custom food creation question (check creatingFoodProgress.currentField).
+- When sessionState is "creating:<itemId>", interpret the user's speech as answering the current custom food creation question (check creatingFoodProgress.currentField). EXCEPTION: if the user says a cancel phrase ("nevermind", "cancel that", "forget it", etc.), return CANCEL_OPERATION regardless of creation state.
 - If the user says something unrelated to food or you cannot parse their intent, return: { "action": "ADD_ITEMS", "payload": { "items": [] } } — the backend will treat empty items as a no-op and the system will ask the user to repeat.
 - Always prefer ADD_ITEMS with quantity: null over CLARIFY for bulk/uncountable foods (like "rice", "chicken breast"). The system defaults to 1 serving.
 - Parse compound utterances: "200 grams of chicken and a cup of rice" should return two items in a single ADD_ITEMS.
