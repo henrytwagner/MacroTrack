@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  LayoutAnimation,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -92,6 +93,22 @@ export default function KitchenModeScreen() {
   const { goalsByDate, fetch: fetchGoals } = useGoalStore();
   const { items, projectedTotals, initSession, applyServerMessage, reset } = useDraftStore();
 
+  // Reversed items so newest appears at top; activeId is the first non-normal card or topmost card
+  const reversedItems = useMemo(() => [...items].reverse(), [items]);
+  const activeId =
+    reversedItems.find((i) => i.state !== 'normal')?.id ?? reversedItems[0]?.id;
+
+  // Auto-scroll to top when a new card is added
+  const scrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    if (items.length > 0) scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, [items.length]);
+
+  // Smooth expand/collapse transitions
+  useEffect(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  }, [items]);
+
   const [listeningState, setListeningState] = useState<ListeningState>('idle');
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [nativeModuleMissing, setNativeModuleMissing] = useState(false);
@@ -107,6 +124,7 @@ export default function KitchenModeScreen() {
   const sessionEndedRef = useRef(false);
   const isSavingRef = useRef(false);
   const sttStrategyRef = useRef(createSTTStrategy());
+  const listeningPausedByUserRef = useRef(false);
 
   // ---------------------------------------------------------------------------
   // STT — start / restart listening
@@ -188,11 +206,12 @@ export default function KitchenModeScreen() {
     (msg: WSServerMessage) => {
       applyServerMessage(msg);
 
-      // Restore listening state after non-speech-required responses
+      // Restore listening state after non-speech-required responses (unless user paused)
       if (
-        msg.type === 'items_added' ||
-        msg.type === 'item_edited' ||
-        msg.type === 'item_removed'
+        (msg.type === 'items_added' ||
+          msg.type === 'item_edited' ||
+          msg.type === 'item_removed') &&
+        !listeningPausedByUserRef.current
       ) {
         setListeningState('listening');
       }
@@ -312,6 +331,15 @@ export default function KitchenModeScreen() {
   }, []); // intentionally run once on mount only
 
   // ---------------------------------------------------------------------------
+  // Manual transcript (from card buttons in choice/creating/usda_pending states)
+  // ---------------------------------------------------------------------------
+
+  const handleSendTranscript = useCallback((text: string) => {
+    setListeningState('processing');
+    voiceSession.sendTranscript(text);
+  }, []);
+
+  // ---------------------------------------------------------------------------
   // Save
   // ---------------------------------------------------------------------------
 
@@ -342,8 +370,43 @@ export default function KitchenModeScreen() {
     voiceSession.sendTranscript(trimmed);
   }, [debugInputText]);
 
+  const performCancel = useCallback(() => {
+    if (sessionEndedRef.current) return;
+    sessionEndedRef.current = true;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    speech.stopListening();
+    speech.stopSpeaking();
+    voiceSession.sendCancel();
+    // Navigation triggered by session_cancelled message from server
+  }, []);
+
+  // Tap listening icon: pause (stop STT/TTS) or resume
+  const handleListeningIndicatorPress = useCallback(() => {
+    if (sessionEndedRef.current) return;
+    if (listeningState === 'paused') {
+      listeningPausedByUserRef.current = false;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      startListening();
+    } else if (
+      listeningState === 'listening' ||
+      listeningState === 'processing' ||
+      listeningState === 'speaking'
+    ) {
+      listeningPausedByUserRef.current = true;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      sttStrategyRef.current.stop();
+      speech.stopSpeaking();
+      setListeningState('paused');
+    }
+  }, [listeningState, startListening]);
+
   const handleCancel = useCallback(() => {
     if (sessionEndedRef.current) return;
+    // No items added and no action taken — close without confirming
+    if (items.length === 0) {
+      performCancel();
+      return;
+    }
     const count = items.filter((i) => i.state === 'normal').length;
     const message =
       count > 0
@@ -355,18 +418,10 @@ export default function KitchenModeScreen() {
       {
         text: 'Discard',
         style: 'destructive',
-        onPress: () => {
-          if (sessionEndedRef.current) return;
-          sessionEndedRef.current = true;
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          speech.stopListening();
-          speech.stopSpeaking();
-          voiceSession.sendCancel();
-          // Navigation triggered by session_cancelled message from server
-        },
+        onPress: performCancel,
       },
     ]);
-  }, [items]);
+  }, [items, performCancel]);
 
   // ---------------------------------------------------------------------------
   // Permission / connection error screens
@@ -562,6 +617,7 @@ export default function KitchenModeScreen() {
 
       {/* Draft cards */}
       <ScrollView
+        ref={scrollRef}
         style={styles.scrollView}
         contentContainerStyle={[
           styles.scrollContent,
@@ -586,7 +642,14 @@ export default function KitchenModeScreen() {
             </ThemedText>
           </View>
         ) : (
-          items.map((item) => <DraftMealCard key={item.id} item={item} />)
+          reversedItems.map((item) => (
+            <DraftMealCard
+              key={item.id}
+              item={item}
+              isActive={item.id === activeId}
+              onSendTranscript={handleSendTranscript}
+            />
+          ))
         )}
       </ScrollView>
 
@@ -594,7 +657,10 @@ export default function KitchenModeScreen() {
       <View
         style={[styles.bottomSection, { borderTopColor: colors.border }]}
       >
-        <ListeningIndicator state={listeningState} />
+        <ListeningIndicator
+          state={listeningState}
+          onPress={handleListeningIndicatorPress}
+        />
         {__DEV__ && (
           <>
             <TextInput
@@ -629,7 +695,9 @@ export default function KitchenModeScreen() {
                       ? 'Listening…'
                       : listeningState === 'speaking'
                         ? 'Speaking…'
-                        : '—'}
+                        : listeningState === 'paused'
+                          ? 'Paused'
+                          : '—'}
               </ThemedText>
             </View>
           </>
