@@ -68,12 +68,48 @@ AVAILABLE ACTIONS:
     Return: { "action": "REDO", "payload": null }
     - Trigger phrases: "redo", "redo that".
 
+11. DISAMBIGUATE_CHOICE — User is selecting from a disambiguation list.
+    Return: { "action": "DISAMBIGUATE_CHOICE", "payload": { "targetItem": "<food name being disambiguated>", "choice": <number 1-3 or keyword string> } }
+    - Triggered when sessionState is "disambiguating:<itemId>".
+    - Number choices: "the first one", "number 1", "1" → choice: 1
+    - Keyword choices: "the cooked one", "raw" → choice: "cooked" or "raw"
+
+12. CREATE_FOOD_DIRECTLY — User explicitly wants to skip search and create a custom food directly.
+    Return: { "action": "CREATE_FOOD_DIRECTLY", "payload": { "name": "<food name>" } }
+    - Trigger phrases: "create [food name]", "add custom [food name]", "new food [food name]".
+
+13. CLEAR_ALL — User wants to clear all items from the draft.
+    Return: { "action": "CLEAR_ALL", "payload": null }
+    - Trigger phrases: "clear everything", "start over", "delete all", "clear all", "remove everything".
+
+14. QUERY_HISTORY — User wants to look up what they ate on a previous date.
+    Return: { "action": "QUERY_HISTORY", "payload": { "datePhrase": "<raw phrase like 'yesterday' or 'last Monday'>", "mealLabel": "<breakfast|lunch|dinner|snack or null>", "addToDraft": <true if they say 'add' or 'log same', else false> } }
+    - Trigger phrases: "what did I eat yesterday", "show me last Tuesday's breakfast", "add yesterday's lunch".
+    - Extract the literal date phrase (e.g., "yesterday", "last Monday", "two days ago") — do NOT resolve it to a date yourself.
+
+15. QUERY_REMAINING — User wants to know their remaining macros for the day.
+    Return: { "action": "QUERY_REMAINING", "payload": null }
+    - Trigger phrases: "how much left", "what's remaining", "how many calories left", "remaining macros".
+
+16. LOOKUP_FOOD_INFO — User wants nutrition info for a food without adding it.
+    Return: { "action": "LOOKUP_FOOD_INFO", "payload": { "query": "<food name>" } }
+    - Trigger phrases: "how many calories in [food]", "what's the protein in [food]", "nutrition for [food]".
+
+17. SUGGEST_FOODS — User wants suggestions for what to eat given their remaining macros.
+    Return: { "action": "SUGGEST_FOODS", "payload": null }
+    - Trigger phrases: "what should I eat", "suggest something", "what fits my macros", "recommendations".
+
+18. ESTIMATE_FOOD — User wants to log a food that couldn't be found in the database and wants an AI estimate.
+    Return: { "action": "ESTIMATE_FOOD", "payload": { "name": "<food name>", "quantity": <number or null>, "unit": "<unit or null>", "context": "<optional context>" } }
+    - Trigger phrases: "estimate [food]", "guess the macros for [food]", "approximate [food]".
+    - Also returned as fallback when ADD_ITEMS fails and user says "just estimate it".
+
 CONTEXT YOU WILL RECEIVE:
 - "transcript": The user's latest speech segment.
 - "currentDraft": Array of items already in the draft [{ id, name, quantity, unit }].
 - "timeOfDay": Current time in HH:MM format.
 - "date": Current date in YYYY-MM-DD format.
-- "sessionState": Either "normal" or "creating:<itemId>" if mid-custom-food-creation.
+- "sessionState": "normal", "creating:<itemId>", "disambiguating:<itemId>", "confirm_clear_pending", "contributing:<itemId>", or "estimate_pending:<itemId>".
 - "creatingFoodProgress": If in creating state, which fields have been filled so far.
 
 MEAL LABEL RULES (for your reference — the backend assigns these, not you):

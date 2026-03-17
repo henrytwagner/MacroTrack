@@ -1,4 +1,6 @@
 import type { FastifyInstance } from "fastify";
+import { prisma } from "../db/client.js";
+import { mapCommunityFood } from "./communityFood.js";
 import sharp from "sharp";
 import {
   MultiFormatReader,
@@ -203,4 +205,27 @@ export async function barcodeRoutes(app: FastifyInstance) {
       return reply.code(200).send({ gtin: null });
     }
   });
+
+  // GET /api/barcode/lookup?code=... — resolve barcode to a CommunityFood
+  app.get<{ Querystring: { code: string } }>(
+    "/api/barcode/lookup",
+    async (request, reply) => {
+      const { code } = request.query;
+      if (!code?.trim()) {
+        return reply.code(400).send({ error: "code query parameter is required" });
+      }
+
+      const normalized = code.replace(/\D/g, "");
+      const barcodeRecord = await prisma.communityFoodBarcode.findUnique({
+        where: { barcode: normalized },
+        include: { communityFood: true },
+      });
+
+      if (!barcodeRecord) {
+        return reply.send({ food: null });
+      }
+
+      return reply.send({ food: mapCommunityFood(barcodeRecord.communityFood) });
+    },
+  );
 }

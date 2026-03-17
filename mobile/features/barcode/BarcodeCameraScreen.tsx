@@ -1,7 +1,8 @@
 import { useRef, useCallback, useState } from "react";
-import { StyleSheet, View, TouchableOpacity, Text } from "react-native";
+import { StyleSheet, View, TouchableOpacity, Text, Pressable } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import type { BarcodeScanningResult } from "expo-camera";
+import { Ionicons } from "@expo/vector-icons";
 
 import type { BarcodeScanResult } from "./types";
 import { normalizeToGTIN } from "./gtin";
@@ -12,6 +13,7 @@ const THROTTLE_MS = 1500;
 export type BarcodeCameraScreenProps = {
   onScan: (result: BarcodeScanResult) => void;
   onCancel: () => void;
+  defaultFacing?: 'front' | 'back';
 };
 
 function toBarcodeScanResult(
@@ -27,10 +29,14 @@ function toBarcodeScanResult(
   }
 }
 
-export function BarcodeCameraScreen({ onScan, onCancel }: BarcodeCameraScreenProps) {
+const DOUBLE_TAP_MS = 400;
+
+export function BarcodeCameraScreen({ onScan, onCancel, defaultFacing = 'front' }: BarcodeCameraScreenProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const [requesting, setRequesting] = useState(false);
+  const [facing, setFacing] = useState<'front' | 'back'>(defaultFacing);
   const lastScannedRef = useRef<{ data: string; at: number } | null>(null);
+  const lastTapRef = useRef(0);
 
   const handleBarcodeScanned = useCallback(
     (event: BarcodeScanningResult) => {
@@ -56,6 +62,16 @@ export function BarcodeCameraScreen({ onScan, onCancel }: BarcodeCameraScreenPro
     await requestPermission();
     setRequesting(false);
   }, [requestPermission]);
+
+  const handleDoubleTapFlip = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTapRef.current < DOUBLE_TAP_MS) {
+      lastTapRef.current = 0;
+      setFacing((f) => (f === 'front' ? 'back' : 'front'));
+    } else {
+      lastTapRef.current = now;
+    }
+  }, []);
 
   if (permission == null) {
     return (
@@ -94,16 +110,27 @@ export function BarcodeCameraScreen({ onScan, onCancel }: BarcodeCameraScreenPro
     <View style={styles.container}>
       <CameraView
         style={StyleSheet.absoluteFillObject}
-        facing="back"
+        facing={facing}
         barcodeScannerSettings={{
           barcodeTypes: [...BARCODE_TYPES],
         }}
         onBarcodeScanned={handleBarcodeScanned}
       />
+      <Pressable
+        style={StyleSheet.absoluteFillObject}
+        onPress={handleDoubleTapFlip}
+      />
       <View style={styles.overlay} pointerEvents="none">
         <View style={styles.target} />
         <Text style={styles.hint}>Point at barcode.</Text>
       </View>
+      <TouchableOpacity
+        style={styles.flipButton}
+        onPress={() => setFacing((f) => (f === 'front' ? 'back' : 'front'))}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="camera-reverse-outline" size={26} color="#fff" />
+      </TouchableOpacity>
       <TouchableOpacity
         style={styles.cancelButtonOverlay}
         onPress={onCancel}
@@ -149,6 +176,17 @@ const styles = StyleSheet.create({
     padding: 16,
     alignSelf: "center",
     marginBottom: 24,
+  },
+  flipButton: {
+    position: "absolute",
+    top: 52,
+    right: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   cancelButtonOverlay: {
     position: "absolute",

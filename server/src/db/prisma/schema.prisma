@@ -28,6 +28,10 @@ model User {
   currentGoalProfile   GoalProfile?    @relation("CurrentGoalProfile", fields: [currentGoalProfileId], references: [id])
   goalTimelineEntries  GoalTimeline[]      @relation("UserGoalTimeline")
   unitConversions      FoodUnitConversion[]
+  createdCommunityFoods CommunityFood[]        @relation("CommunityFoodCreator")
+  createdBarcodes       CommunityFoodBarcode[] @relation("BarcodeCreator")
+  foodReports           CommunityFoodReport[]  @relation("FoodReporter")
+  suppressUsdaWarning   Boolean                @default(false)
 }
 
 model DailyGoal {
@@ -52,13 +56,15 @@ model FoodEntry {
   fatG         Float
   quantity     Float
   unit         String
-  source       FoodSource
-  usdaFdcId    Int?
-  customFoodId String?
-  createdAt    DateTime @default(now())
+  source          FoodSource
+  usdaFdcId       Int?
+  customFoodId    String?
+  communityFoodId String?
+  createdAt       DateTime @default(now())
 
-  user       User        @relation(fields: [userId], references: [id])
-  customFood CustomFood? @relation(fields: [customFoodId], references: [id])
+  user          User           @relation(fields: [userId], references: [id])
+  customFood    CustomFood?    @relation(fields: [customFoodId], references: [id])
+  communityFood CommunityFood? @relation(fields: [communityFoodId], references: [id])
 
   @@index([userId, date])
   @@index([userId, name])
@@ -116,6 +122,9 @@ model FoodUnitConversion {
   /// For example, if the base serving is "100 g" and the user defines
   /// 1 slice = 30 g, then quantityInBaseServings = 0.3.
   quantityInBaseServings Float
+  /// Measurement system for the unit: 'weight', 'volume', or 'abstract'.
+  /// Used for consistency checks and cascade updates.
+  measurementSystem  String   @default("abstract")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -158,6 +167,77 @@ model GoalTimeline {
   @@index([profileId, effectiveDate])
 }
 
+model CommunityFood {
+  id                 String              @id @default(uuid())
+  name               String
+  brandName          String?
+  description        String?
+  defaultServingSize Float
+  defaultServingUnit String
+  calories           Float
+  proteinG           Float
+  carbsG             Float
+  fatG               Float
+  sodiumMg           Float?
+  cholesterolMg      Float?
+  fiberG             Float?
+  sugarG             Float?
+  saturatedFatG      Float?
+  transFatG          Float?
+  usdaFdcId          Int?
+  createdByUserId    String?
+  status             CommunityFoodStatus @default(ACTIVE)
+  usesCount          Int                 @default(0)
+  reportsCount       Int                 @default(0)
+  trustScore         Float               @default(0.5)
+  lastUsedAt         DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  createdBy   User?                @relation("CommunityFoodCreator", fields: [createdByUserId], references: [id])
+  foodEntries FoodEntry[]
+  barcodes    CommunityFoodBarcode[]
+  reports     CommunityFoodReport[]
+
+  @@index([name])
+  @@index([status])
+  @@index([usdaFdcId])
+}
+
+model CommunityFoodBarcode {
+  id              String      @id @default(uuid())
+  barcode         String      @unique
+  type            BarcodeType @default(OTHER)
+  communityFoodId String
+  createdByUserId String?
+  createdAt       DateTime    @default(now())
+
+  communityFood CommunityFood @relation(fields: [communityFoodId], references: [id])
+  createdBy     User?         @relation("BarcodeCreator", fields: [createdByUserId], references: [id])
+}
+
+model CommunityFoodReport {
+  id              String   @id @default(uuid())
+  communityFoodId String
+  reporterUserId  String?
+  reason          String
+  details         String?
+  createdAt       DateTime @default(now())
+
+  communityFood CommunityFood @relation(fields: [communityFoodId], references: [id])
+  reporter      User?         @relation("FoodReporter", fields: [reporterUserId], references: [id])
+}
+
+model USDAFoodMetrics {
+  fdcId      Int       @id
+  usesCount  Int       @default(0)
+  trustScore Float     @default(0.5)
+  lastUsedAt DateTime?
+  updatedAt  DateTime  @updatedAt
+
+  @@index([usesCount(sort: Desc)])
+}
+
 enum MealLabel {
   breakfast
   lunch
@@ -168,6 +248,21 @@ enum MealLabel {
 enum FoodSource {
   DATABASE
   CUSTOM
+  COMMUNITY
+  AI_ESTIMATE
+}
+
+enum CommunityFoodStatus {
+  ACTIVE
+  PENDING
+  RETIRED
+}
+
+enum BarcodeType {
+  UPC_A
+  EAN_13
+  CODE_128
+  OTHER
 }
 
 enum SessionStatus {

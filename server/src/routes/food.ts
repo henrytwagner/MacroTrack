@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client.js";
 import { getDefaultUserId } from "../db/defaultUser.js";
 import { searchFoods } from "../services/usda.js";
+import { mapCommunityFood } from "./communityFood.js";
 import type {
   FoodEntry,
   CreateFoodEntryRequest,
@@ -15,6 +16,7 @@ import type {
   FoodUnitConversion,
   CreateFoodUnitConversionRequest,
   UpdateFoodUnitConversionRequest,
+  CascadeUnitConversionsRequest,
 } from "../../../shared/types.js";
 
 // ---------------------------------------------------------------------------
@@ -35,6 +37,7 @@ function mapEntry(entry: {
   source: string;
   usdaFdcId: number | null;
   customFoodId: string | null;
+  communityFoodId: string | null;
   createdAt: Date;
 }): FoodEntry {
   return {
@@ -51,6 +54,7 @@ function mapEntry(entry: {
     source: entry.source as FoodSource,
     usdaFdcId: entry.usdaFdcId ?? undefined,
     customFoodId: entry.customFoodId ?? undefined,
+    communityFoodId: entry.communityFoodId ?? undefined,
     createdAt: entry.createdAt.toISOString(),
   };
 }
@@ -97,6 +101,7 @@ function mapFoodUnitConversion(conv: {
   id: string;
   unitName: string;
   quantityInBaseServings: number;
+  measurementSystem: string;
   customFoodId: string | null;
   usdaFdcId: number | null;
 }): FoodUnitConversion {
@@ -104,6 +109,7 @@ function mapFoodUnitConversion(conv: {
     id: conv.id,
     unitName: conv.unitName,
     quantityInBaseServings: conv.quantityInBaseServings,
+    measurementSystem: conv.measurementSystem as 'weight' | 'volume' | 'abstract',
     customFoodId: conv.customFoodId ?? undefined,
     usdaFdcId: conv.usdaFdcId ?? undefined,
   };
@@ -141,7 +147,7 @@ export async function foodRoutes(app: FastifyInstance) {
     const userId = await getDefaultUserId();
 
     const groups = await prisma.foodEntry.groupBy({
-      by: ["name", "source", "usdaFdcId", "customFoodId"],
+      by: ["name", "source", "usdaFdcId", "customFoodId", "communityFoodId"],
       where: { userId },
       _count: { name: true },
       orderBy: { _count: { name: "desc" } },
@@ -170,6 +176,7 @@ export async function foodRoutes(app: FastifyInstance) {
           },
           usdaFdcId: group.usdaFdcId ?? undefined,
           customFoodId: group.customFoodId ?? undefined,
+          communityFoodId: group.communityFoodId ?? undefined,
           logCount: group._count.name,
         });
       }
@@ -192,7 +199,7 @@ export async function foodRoutes(app: FastifyInstance) {
     const recentFoods: RecentFood[] = [];
 
     for (const entry of recentEntries) {
-      const key = `${entry.name}::${entry.source}`;
+      const key = `${entry.name}::${entry.source}::${entry.communityFoodId ?? ""}`;
       if (seen.has(key)) continue;
       seen.add(key);
 
@@ -209,6 +216,7 @@ export async function foodRoutes(app: FastifyInstance) {
         },
         usdaFdcId: entry.usdaFdcId ?? undefined,
         customFoodId: entry.customFoodId ?? undefined,
+        communityFoodId: entry.communityFoodId ?? undefined,
         loggedAt: entry.createdAt.toISOString(),
       });
 
@@ -246,8 +254,18 @@ export async function foodRoutes(app: FastifyInstance) {
           source: body.source,
           usdaFdcId: body.usdaFdcId,
           customFoodId: body.customFoodId,
+          communityFoodId: body.communityFoodId,
         },
       });
+
+      // Fire-and-forget: track USDA food usage for ranking
+      if (body.source === "DATABASE" && body.usdaFdcId) {
+        prisma.uSDAFoodMetrics.upsert({
+          where: { fdcId: body.usdaFdcId },
+          create: { fdcId: body.usdaFdcId, usesCount: 1, lastUsedAt: new Date() },
+          update: { usesCount: { increment: 1 }, lastUsedAt: new Date() },
+        }).catch(() => {});
+      }
 
       return reply.code(201).send(mapEntry(entry));
     },
@@ -305,13 +323,13 @@ export async function foodRoutes(app: FastifyInstance) {
       const { q } = request.query;
 
       if (!q || q.trim().length < 2) {
-        const response: UnifiedSearchResponse = { myFoods: [], database: [] };
+        const response: UnifiedSearchResponse = { myFoods: [], community: [], database: [] };
         return reply.send(response);
       }
 
       const query = q.trim();
 
-      const [customFoods, usdaResults] = await Promise.all([
+      const [customFoods, communityFoods, usdaResults] = await Promise.all([
         prisma.customFood.findMany({
           where: {
             userId,
@@ -320,12 +338,34 @@ export async function foodRoutes(app: FastifyInstance) {
           take: 5,
           orderBy: { name: "asc" },
         }),
+        prisma.communityFood.findMany({
+          where: {
+            status: "ACTIVE",
+            OR: [
+              { name: { contains: query, mode: "insensitive" } },
+              { brandName: { contains: query, mode: "insensitive" } },
+            ],
+          },
+          take: 10,
+          orderBy: [{ trustScore: "desc" }, { usesCount: "desc" }, { name: "asc" }],
+        }),
         searchFoods(query),
       ]);
 
+      // Annotate USDA results with usage counts and sort by uses DESC
+      const usdaFdcIds = usdaResults.map((r) => r.fdcId);
+      const metricsRows = usdaFdcIds.length > 0
+        ? await prisma.uSDAFoodMetrics.findMany({ where: { fdcId: { in: usdaFdcIds } } })
+        : [];
+      const metricsMap = new Map(metricsRows.map((m) => [m.fdcId, m.usesCount]));
+      const annotatedUsda = usdaResults
+        .map((r) => ({ ...r, usesCount: metricsMap.get(r.fdcId) ?? 0 }))
+        .sort((a, b) => b.usesCount - a.usesCount);
+
       const response: UnifiedSearchResponse = {
         myFoods: customFoods.map(mapCustomFood),
-        database: usdaResults,
+        community: communityFoods.map(mapCommunityFood),
+        database: annotatedUsda,
       };
       return reply.send(response);
     },
@@ -414,6 +454,7 @@ export async function foodRoutes(app: FastifyInstance) {
           userId,
           unitName: body.unitName,
           quantityInBaseServings: body.quantityInBaseServings,
+          measurementSystem: body.measurementSystem ?? "abstract",
           customFoodId: body.customFoodId,
           usdaFdcId: body.usdaFdcId,
         },
@@ -465,6 +506,30 @@ export async function foodRoutes(app: FastifyInstance) {
       }
 
       await prisma.foodUnitConversion.delete({ where: { id } });
+      return reply.code(204).send();
+    },
+  );
+
+  // PATCH /api/food/units/cascade — atomically update multiple conversions (consistency cascade)
+  app.patch<{ Body: CascadeUnitConversionsRequest }>(
+    "/api/food/units/cascade",
+    async (request, reply) => {
+      const userId = await getDefaultUserId();
+      const { updates } = request.body;
+
+      if (!Array.isArray(updates) || updates.length === 0) {
+        return reply.code(400).send({ error: "updates array is required and must not be empty" });
+      }
+
+      await prisma.$transaction(
+        updates.map((u) =>
+          prisma.foodUnitConversion.update({
+            where: { id: u.id, userId },
+            data: { quantityInBaseServings: u.quantityInBaseServings },
+          }),
+        ),
+      );
+
       return reply.code(204).send();
     },
   );

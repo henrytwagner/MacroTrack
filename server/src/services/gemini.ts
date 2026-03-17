@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI, type GenerativeModel } from "@google/generative-ai";
 import { FOOD_PARSER_SYSTEM_PROMPT } from "../../../shared/prompts/system-prompt.js";
+import { FOOD_ESTIMATION_SYSTEM_PROMPT } from "../../../shared/prompts/estimation-prompt.js";
 import { buildGeminiUserMessage } from "../../../shared/prompts/build-request.js";
 import type {
   GeminiRequestContext,
@@ -11,6 +12,9 @@ import type {
   GeminiSessionEndIntent,
   GeminiClarifyIntent,
   GeminiOpenBarcodeScannerIntent,
+  GeminiDisambiguateChoiceIntent,
+  Macros,
+  USDASearchResult,
 } from "../../../shared/types.js";
 
 const MODEL_NAME = "gemini-2.5-flash";
@@ -93,6 +97,14 @@ function coerceIntent(raw: GeminiIntent): GeminiIntent {
     case "CANCEL_OPERATION":
     case "UNDO":
     case "REDO":
+    case "DISAMBIGUATE_CHOICE":
+    case "CREATE_FOOD_DIRECTLY":
+    case "CLEAR_ALL":
+    case "QUERY_HISTORY":
+    case "QUERY_REMAINING":
+    case "LOOKUP_FOOD_INFO":
+    case "SUGGEST_FOODS":
+    case "ESTIMATE_FOOD":
       return raw;
 
     default:
@@ -129,6 +141,68 @@ function parseTranscriptMock(
   // Session end
   if (/\b(done|save that|that's it|i'm finished|save|all done|that's everything)\b/.test(t)) {
     return { action: "SESSION_END", payload: null } satisfies GeminiSessionEndIntent;
+  }
+
+  // Disambiguation choice
+  if (context.sessionState.startsWith("disambiguating:")) {
+    const numMatch = t.match(/\b([123]|one|two|three|first|second|third)\b/);
+    if (numMatch) {
+      const wordToNum: Record<string, number> = { one: 1, first: 1, two: 2, second: 2, three: 3, third: 3 };
+      const choice = wordToNum[numMatch[1]] ?? Number(numMatch[1]);
+      return {
+        action: "DISAMBIGUATE_CHOICE",
+        payload: { targetItem: "", choice },
+      } satisfies GeminiDisambiguateChoiceIntent;
+    }
+    // Keyword choice
+    return {
+      action: "DISAMBIGUATE_CHOICE",
+      payload: { targetItem: "", choice: t },
+    } satisfies GeminiDisambiguateChoiceIntent;
+  }
+
+  // Clear all
+  if (/\b(clear all|clear everything|start over|delete all|remove everything)\b/.test(t)) {
+    return { action: "CLEAR_ALL", payload: null };
+  }
+
+  // Query remaining macros
+  if (/\b(how much left|remaining|what's left|calories left|macros left)\b/.test(t)) {
+    return { action: "QUERY_REMAINING", payload: null };
+  }
+
+  // Suggest foods
+  if (/\b(suggest|what should i eat|what fits|recommendations|what can i have)\b/.test(t)) {
+    return { action: "SUGGEST_FOODS", payload: null };
+  }
+
+  // Query history
+  const historyMatch = t.match(/(?:what did i (?:eat|have)|show me)\s+(.+?)(?:\s*(?:'s|for)\s+(\w+))?$/);
+  if (historyMatch) {
+    return {
+      action: "QUERY_HISTORY",
+      payload: { datePhrase: historyMatch[1].trim(), mealLabel: undefined, addToDraft: t.includes("add") || t.includes("log same") },
+    };
+  }
+
+  // Lookup food info
+  const foodInfoMatch = t.match(/(?:how (?:many|much)|what(?:'s| is) the|nutrition (?:for|in))\s+(?:calories|protein|carbs|fat|macros)?\s*(?:in|for)?\s*(.+)/);
+  if (foodInfoMatch) {
+    return { action: "LOOKUP_FOOD_INFO", payload: { query: foodInfoMatch[1].trim() } };
+  }
+
+  // Estimate food
+  if (/\b(estimate|guess|approximate)\b/.test(t)) {
+    const name = t.replace(/\b(estimate|guess|approximate)\s+(the macros for|macros for)?\s*/i, "").trim();
+    if (name.length > 0) {
+      return { action: "ESTIMATE_FOOD", payload: { name } };
+    }
+  }
+
+  // Create food directly
+  const createMatch = t.match(/^(?:create|add custom|new food)\s+(.+)/);
+  if (createMatch) {
+    return { action: "CREATE_FOOD_DIRECTLY", payload: { name: createMatch[1].trim() } };
   }
 
   // Barcode scanner
@@ -393,4 +467,100 @@ export async function parseTranscript(
   }
 
   return parseTranscriptReal(context);
+}
+
+// ---------------------------------------------------------------------------
+// Food estimation (Phase 6 — bounded AI estimates)
+// ---------------------------------------------------------------------------
+
+export async function estimateFood(
+  name: string,
+  qty?: number,
+  unit?: string,
+  context?: string,
+): Promise<{
+  estimatable: boolean;
+  name: string;
+  servingSize: number;
+  servingUnit: string;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  confidence: "high" | "medium" | "low";
+}> {
+  if (isMockEnabled()) {
+    // Mock: always return a simple estimate for testing
+    return {
+      estimatable: true,
+      name,
+      servingSize: qty ?? 1,
+      servingUnit: unit ?? "medium",
+      calories: 89,
+      proteinG: 1.1,
+      carbsG: 23,
+      fatG: 0.3,
+      confidence: "high",
+    };
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === "your-gemini-api-key-here") {
+    throw new Error("GEMINI_API_KEY is not configured.");
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const estimationModel = genAI.getGenerativeModel({
+    model: MODEL_NAME,
+    systemInstruction: FOOD_ESTIMATION_SYSTEM_PROMPT,
+    generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
+  });
+
+  const prompt = context
+    ? `Estimate: ${qty ?? 1} ${unit ?? "serving"} of ${name} (context: ${context})`
+    : `Estimate: ${qty ?? 1} ${unit ?? "serving"} of ${name}`;
+
+  const result = await estimationModel.generateContent(prompt);
+  return JSON.parse(result.response.text()) as Awaited<ReturnType<typeof estimateFood>>;
+}
+
+// ---------------------------------------------------------------------------
+// Food suggestions (Phase 5 — grounded AI suggestions)
+// ---------------------------------------------------------------------------
+
+export async function suggestFoodsFromCandidates(
+  remaining: Macros,
+  candidates: USDASearchResult[],
+): Promise<Array<{ name: string; macros: Macros; reason: string }>> {
+  if (isMockEnabled()) {
+    return candidates.slice(0, 3).map((c) => ({
+      name: c.description,
+      macros: c.macros,
+      reason: `Fits your remaining ${remaining.proteinG.toFixed(0)}g protein target.`,
+    }));
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === "your-gemini-api-key-here") {
+    throw new Error("GEMINI_API_KEY is not configured.");
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const suggestionModel = genAI.getGenerativeModel({
+    model: MODEL_NAME,
+    generationConfig: { responseMimeType: "application/json", temperature: 0.3 },
+  });
+
+  const prompt = `You are a nutrition assistant. Given the user's remaining daily macros and a list of food candidates, suggest the top 3 foods that best fit the remaining goals.
+
+Remaining macros: ${JSON.stringify(remaining)}
+
+Candidates (USDA foods):
+${candidates.slice(0, 10).map((c, i) => `${i + 1}. ${c.description} — cal: ${c.macros.calories}, P: ${c.macros.proteinG}g, C: ${c.macros.carbsG}g, F: ${c.macros.fatG}g`).join("\n")}
+
+Return ONLY valid JSON array: [{ "name": string, "macros": { "calories": number, "proteinG": number, "carbsG": number, "fatG": number }, "reason": string }]
+Pick from the candidates list only. Keep reasons short (< 15 words).`;
+
+  const result = await suggestionModel.generateContent(prompt);
+  return JSON.parse(result.response.text()) as Array<{ name: string; macros: Macros; reason: string }>;
 }

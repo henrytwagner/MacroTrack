@@ -134,6 +134,13 @@ export function sendCancel(): void {
 }
 
 /**
+ * Send a scanned barcode GTIN to the server for food lookup.
+ */
+export function sendBarcodeScan(gtin: string): void {
+  sendMessage({ type: 'barcode_scan', gtin });
+}
+
+/**
  * Close the WebSocket connection cleanly (code 1000).
  * Call this after save/cancel completes so the server's onclose
  * handler knows it was intentional.

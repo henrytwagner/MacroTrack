@@ -1,0 +1,1 @@
+ALTER TYPE "FoodSource" ADD VALUE 'AI_ESTIMATE';

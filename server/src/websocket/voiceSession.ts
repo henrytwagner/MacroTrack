@@ -2,8 +2,9 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "@fastify/websocket";
 import { prisma } from "../db/client.js";
 import { getDefaultUserId } from "../db/defaultUser.js";
-import { processTranscript, lookupItemInUsda } from "../services/foodParser.js";
-import { parseTranscript } from "../services/gemini.js";
+import { processTranscript, lookupItemInUsda, lookupFoodInfoOnly, shouldDisambiguate } from "../services/foodParser.js";
+import { parseTranscript, estimateFood, suggestFoodsFromCandidates } from "../services/gemini.js";
+import { searchFoods } from "../services/usda.js";
 
 import type {
   DraftItem,
@@ -24,10 +25,21 @@ import type {
   WSAskMessage,
   WSDraftReplacedMessage,
   WSOperationCancelledMessage,
+  WSDisambiguateMessage,
+  WSConfirmClearMessage,
+  WSCommunitySubmitPromptMessage,
+  WSHistoryResultsMessage,
+  WSMacroSummaryMessage,
+  WSFoodInfoMessage,
+  WSFoodSuggestionsMessage,
+  WSEstimateCardMessage,
   GeminiRequestContext,
   GeminiCreateFoodResponseIntent,
   MealLabel,
   USDASearchResult,
+  DisambiguationOption,
+  Macros,
+  HistoryFoodEntry,
 } from "../../../shared/types.js";
 import { createCloudSttSession, type CloudSttSession } from "../voice/sttCloudClient.js";
 
@@ -74,7 +86,11 @@ interface VoiceSessionState {
     | `awaiting_choice:${string}`
     | `usda_pending:${string}`
     | `barcode_pending:${string}`
-    | `barcode_naming:${string}`;
+    | `barcode_naming:${string}`
+    | `disambiguating:${string}`
+    | "confirm_clear_pending"
+    | `contributing:${string}`
+    | `estimate_pending:${string}`;
   creatingFoodName: string;
   creatingFoodProgress: CreatingFoodProgress | null;
   customFoodsCreatedThisSession: string[];
@@ -82,6 +98,8 @@ interface VoiceSessionState {
   pendingUsdaResult: USDASearchResult | null;
   pendingUsdaItemName: string;
   pendingBarcodeGtin: string;
+  pendingDisambiguationOptions: DisambiguationOption[];
+  pendingDisambiguationName: string;
   /** Undo history — snapshots of draft taken before each voice command. Max 10. */
   draftHistory: DraftItem[][];
   /** Redo stack — populated by UNDO, cleared on any new modification. */
@@ -359,13 +377,25 @@ async function handleCreatingTranscript(
           state: "normal",
           creatingProgress: undefined,
         };
+        const completedItem = session.draft[itemIdx];
         session.sessionState = "normal";
         session.creatingFoodProgress = null;
         session.creatingFoodName = "";
         send(socket, {
           type: "create_food_complete",
-          item: session.draft[itemIdx],
+          item: completedItem,
         } satisfies WSCreateFoodCompleteMessage);
+
+        // Phase 3: prompt to share with community if food was just created
+        if (session.customFoodsCreatedThisSession.includes(created.id)) {
+          session.sessionState = `contributing:${tmpId}`;
+          send(socket, {
+            type: "community_submit_prompt",
+            itemId: tmpId,
+            foodName: created.name,
+            question: `Want to share '${created.name}' with the MacroTrack community so others can use it?`,
+          } satisfies WSCommunitySubmitPromptMessage);
+        }
       }
     } catch (err) {
       console.error("[voiceSession] Failed to create custom food:", err);
@@ -416,6 +446,74 @@ async function handleNormalTranscript(
     }
     if (intent.action === "REDO") {
       handleRedo(session, socket);
+      return;
+    }
+    if (intent.action === "CLEAR_ALL") {
+      send(socket, {
+        type: "confirm_clear",
+        question: "Clear all items from your draft? Say 'yes' to confirm.",
+      } satisfies WSConfirmClearMessage);
+      session.sessionState = "confirm_clear_pending";
+      return;
+    }
+    if (intent.action === "QUERY_HISTORY") {
+      const { datePhrase, mealLabel, addToDraft } = intent.payload;
+      await handleQueryHistory(datePhrase, mealLabel, addToDraft ?? false, session, socket);
+      return;
+    }
+    if (intent.action === "QUERY_REMAINING") {
+      await handleQueryRemaining(session, socket);
+      return;
+    }
+    if (intent.action === "LOOKUP_FOOD_INFO") {
+      await handleLookupFoodInfo(intent.payload.query, socket);
+      return;
+    }
+    if (intent.action === "SUGGEST_FOODS") {
+      await handleSuggestFoods(session, socket);
+      return;
+    }
+    if (intent.action === "ESTIMATE_FOOD") {
+      const { name, quantity, unit, context: foodContext } = intent.payload;
+      await handleEstimateFood(name, quantity, unit, foodContext, session, socket);
+      return;
+    }
+    if (intent.action === "CREATE_FOOD_DIRECTLY") {
+      const { name } = intent.payload;
+      const tmpId = `direct-${Date.now()}`;
+      const timeOfDay = getTimeOfDay();
+      const mealLabel = getMealLabel(timeOfDay);
+      const creatingItem: DraftItem = {
+        id: tmpId,
+        name,
+        quantity: 1,
+        unit: "servings",
+        calories: 0,
+        proteinG: 0,
+        carbsG: 0,
+        fatG: 0,
+        source: "CUSTOM",
+        mealLabel,
+        state: "creating",
+        creatingProgress: { currentField: "servingSize" },
+      };
+      session.draft.push(creatingItem);
+      session.sessionState = `creating:${tmpId}`;
+      session.creatingFoodName = name;
+      session.creatingFoodProgress = { currentField: "servingSize" };
+      send(socket, {
+        type: "create_food_prompt",
+        itemId: tmpId,
+        foodName: name,
+        question: "",
+      } satisfies import("../../../shared/types.js").WSCreateFoodPromptMessage);
+      send(socket, {
+        type: "create_food_field",
+        itemId: tmpId,
+        foodName: name,
+        field: "servingSize",
+        question: CREATION_QUESTIONS.servingSize,
+      } satisfies WSCreateFoodFieldMessage);
       return;
     }
   } catch {
@@ -521,13 +619,8 @@ async function handleAwaitingChoiceTranscript(
   }
 
   if (wantsUsda) {
-    const usdaResult = await lookupItemInUsda(
-      session.pendingUsdaItemName,
-      undefined,
-      undefined,
-      getMealLabel(getTimeOfDay()),
-    );
-    if (!usdaResult.found) {
+    const usdaResults = await searchFoods(session.pendingUsdaItemName);
+    if (usdaResults.length === 0) {
       send(socket, {
         type: "error",
         message: `Couldn't find '${session.pendingUsdaItemName}' in the USDA database either. Say 'create it' to add it manually.`,
@@ -535,7 +628,30 @@ async function handleAwaitingChoiceTranscript(
       return;
     }
 
-    // Check suppressUsdaWarning preference
+    // If multiple meaningfully different results, show disambiguation card
+    if (shouldDisambiguate(session.pendingUsdaItemName, usdaResults)) {
+      const options = usdaResults.slice(0, 3).map((r) => ({ label: r.description, usdaResult: r }));
+      session.pendingDisambiguationOptions = options;
+      session.pendingDisambiguationName = session.pendingUsdaItemName;
+      session.sessionState = `disambiguating:${tmpId}`;
+      // Update the food_choice card to disambiguate state
+      const existing = session.draft.find((d) => d.id === tmpId);
+      if (existing) {
+        existing.state = "disambiguate";
+        (existing as DraftItem & { disambiguationOptions?: unknown }).disambiguationOptions = options;
+      }
+      send(socket, {
+        type: "disambiguate",
+        itemId: tmpId,
+        foodName: session.pendingUsdaItemName,
+        question: `Which '${session.pendingUsdaItemName}' did you mean?`,
+        options,
+      } satisfies WSDisambiguateMessage);
+      return;
+    }
+
+    // Single clear result — check suppressUsdaWarning preference
+    const best = usdaResults[0];
     const user = await prisma.user.findUnique({
       where: { id: session.userId },
       select: { suppressUsdaWarning: true },
@@ -543,31 +659,49 @@ async function handleAwaitingChoiceTranscript(
 
     if (user?.suppressUsdaWarning) {
       // Auto-add without confirmation
-      incrementUsdaMetrics(usdaResult.usdaResult.fdcId);
-      const item = usdaResult.draft;
+      incrementUsdaMetrics(best.fdcId);
+      const servingSize = best.servingSize ?? 100;
+      const macros = {
+        calories: Math.round(best.macros.calories),
+        proteinG: Math.round(best.macros.proteinG * 10) / 10,
+        carbsG: Math.round(best.macros.carbsG * 10) / 10,
+        fatG: Math.round(best.macros.fatG * 10) / 10,
+      };
+      const item: DraftItem = {
+        id: tmpId,
+        name: best.description,
+        quantity: 1,
+        unit: best.servingSizeUnit ?? "g",
+        ...macros,
+        source: "DATABASE",
+        usdaFdcId: best.fdcId,
+        mealLabel: getMealLabel(getTimeOfDay()),
+        state: "normal",
+        isAssumed: true,
+      };
       const existing = session.draft.find((d) => d.id === tmpId);
       if (existing) {
-        Object.assign(existing, { ...item, id: tmpId });
+        Object.assign(existing, item);
       } else {
-        session.draft.push({ ...item, id: tmpId });
+        session.draft.push(item);
       }
       session.sessionState = "normal";
       session.pendingUsdaResult = null;
       session.pendingUsdaItemName = "";
       send(socket, {
         type: "items_added",
-        items: [{ ...item, id: tmpId }],
+        items: [item],
       } satisfies WSItemsAddedMessage);
     } else {
       // Prompt confirmation
-      session.pendingUsdaResult = usdaResult.usdaResult;
+      session.pendingUsdaResult = best;
       session.sessionState = `usda_pending:${tmpId}`;
       send(socket, {
         type: "usda_confirm",
         itemId: tmpId,
-        usdaDescription: usdaResult.usdaResult.description,
-        question: `Found '${usdaResult.usdaResult.description}' in USDA. Note: USDA data quality may vary. Say 'confirm' to add, or 'cancel' to go back.`,
-        usdaResult: usdaResult.usdaResult,
+        usdaDescription: best.description,
+        question: `Found '${best.description}' in USDA. Note: USDA data quality may vary. Say 'confirm' to add, or 'cancel' to go back.`,
+        usdaResult: best,
       } satisfies WSUsdaConfirmMessage);
     }
     return;
@@ -656,6 +790,670 @@ async function handleUsdaPendingTranscript(
       question: `Say 'confirm' to add '${session.pendingUsdaResult.description}', or 'cancel' to go back.`,
       usdaResult: session.pendingUsdaResult,
     } satisfies WSUsdaConfirmMessage);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 — Disambiguation handler (keyword matching, no Gemini call)
+// ---------------------------------------------------------------------------
+
+async function handleDisambiguatingTranscript(
+  text: string,
+  session: VoiceSessionState,
+  socket: WebSocket,
+) {
+  const tmpId = (session.sessionState as string).replace("disambiguating:", "");
+  const lower = text.toLowerCase().trim();
+
+  const wantsCancel = /\b(nevermind|never mind|cancel|cancel that|forget it|go back|stop)\b/.test(lower);
+  if (wantsCancel) {
+    session.draft = session.draft.filter((d) => d.id !== tmpId);
+    session.sessionState = "normal";
+    session.pendingDisambiguationOptions = [];
+    session.pendingDisambiguationName = "";
+    send(socket, {
+      type: "operation_cancelled",
+      itemId: tmpId,
+      message: "Cancelled.",
+    } satisfies WSOperationCancelledMessage);
+    return;
+  }
+
+  const options = session.pendingDisambiguationOptions;
+  if (options.length === 0) {
+    session.sessionState = "normal";
+    return;
+  }
+
+  // Try number match first
+  const numMap: Record<string, number> = { "1": 0, "one": 0, "first": 0, "2": 1, "two": 1, "second": 1, "3": 2, "three": 2, "third": 2 };
+  let chosenOption: DisambiguationOption | null = null;
+
+  for (const [word, idx] of Object.entries(numMap)) {
+    if (lower.includes(word) && idx < options.length) {
+      chosenOption = options[idx];
+      break;
+    }
+  }
+
+  // Try keyword match against option labels
+  if (!chosenOption) {
+    for (const opt of options) {
+      if (lower.includes(opt.label.toLowerCase().split(",")[0].trim())) {
+        chosenOption = opt;
+        break;
+      }
+    }
+  }
+
+  // Fuzzy keyword match — check if any word in the transcript appears in an option label
+  if (!chosenOption) {
+    const words = lower.split(/\s+/);
+    for (const opt of options) {
+      const optLower = opt.label.toLowerCase();
+      if (words.some((w) => w.length > 3 && optLower.includes(w))) {
+        chosenOption = opt;
+        break;
+      }
+    }
+  }
+
+  if (!chosenOption) {
+    // Re-prompt
+    const optionLabels = options.map((o, i) => `${i + 1}. ${o.label}`).join(", ");
+    send(socket, {
+      type: "disambiguate",
+      itemId: tmpId,
+      foodName: session.pendingDisambiguationName,
+      question: `Which one? ${optionLabels}`,
+      options,
+    } satisfies WSDisambiguateMessage);
+    return;
+  }
+
+  // Build draft item from chosen USDA result
+  const best = chosenOption.usdaResult;
+  const servingSize = best.servingSize ?? 100;
+  const qty = 1;
+  const unit = best.servingSizeUnit ?? "g";
+  const ratio = 1; // 1 serving
+  const macros = {
+    calories: Math.round(best.macros.calories * ratio),
+    proteinG: Math.round(best.macros.proteinG * ratio * 10) / 10,
+    carbsG: Math.round(best.macros.carbsG * ratio * 10) / 10,
+    fatG: Math.round(best.macros.fatG * ratio * 10) / 10,
+  };
+
+  const item: DraftItem = {
+    id: tmpId,
+    name: best.description,
+    quantity: qty,
+    unit,
+    ...macros,
+    source: "DATABASE",
+    usdaFdcId: best.fdcId,
+    mealLabel: getMealLabel(getTimeOfDay()),
+    state: "normal",
+    isAssumed: true,
+  };
+
+  // Replace or add the item
+  const existing = session.draft.find((d) => d.id === tmpId);
+  if (existing) {
+    Object.assign(existing, item);
+  } else {
+    session.draft.push(item);
+  }
+
+  session.sessionState = "normal";
+  session.pendingDisambiguationOptions = [];
+  session.pendingDisambiguationName = "";
+
+  // Increment USDA metrics fire-and-forget
+  incrementUsdaMetrics(best.fdcId);
+
+  send(socket, {
+    type: "items_added",
+    items: [item],
+  } satisfies WSItemsAddedMessage);
+  send(socket, {
+    type: "ask",
+    question: `Added ${best.description} — ${qty} ${unit}. Say 'make that N' to adjust the amount.`,
+  } satisfies WSAskMessage);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 — Confirm clear handler
+// ---------------------------------------------------------------------------
+
+async function handleConfirmClearTranscript(
+  text: string,
+  session: VoiceSessionState,
+  socket: WebSocket,
+) {
+  const lower = text.toLowerCase().trim();
+  const isYes = /\b(yes|yeah|sure|go ahead|yep|ok|okay|clear|confirm)\b/.test(lower);
+  const isNo = /\b(no|nope|cancel|stop|nevermind|never mind|forget it)\b/.test(lower);
+
+  if (isYes) {
+    snapshotDraft(session);
+    session.draft = [];
+    session.sessionState = "normal";
+    send(socket, {
+      type: "draft_replaced",
+      draft: [],
+      message: "All items cleared.",
+    } satisfies WSDraftReplacedMessage);
+    return;
+  }
+
+  if (isNo) {
+    session.sessionState = "normal";
+    send(socket, { type: "ask", question: "OK, keeping everything." } satisfies WSAskMessage);
+    return;
+  }
+
+  // Re-prompt
+  send(socket, {
+    type: "confirm_clear",
+    question: "Say 'yes' to clear all items, or 'cancel' to keep them.",
+  } satisfies WSConfirmClearMessage);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 — Contributing (community submit prompt) handler
+// ---------------------------------------------------------------------------
+
+async function handleContributingTranscript(
+  text: string,
+  session: VoiceSessionState,
+  socket: WebSocket,
+) {
+  const itemId = (session.sessionState as string).replace("contributing:", "");
+  const lower = text.toLowerCase().trim();
+  const isYes = /\b(yes|yeah|sure|go ahead|yep|ok|okay|share|submit|contribute)\b/.test(lower);
+  const isNo = /\b(no|nope|cancel|stop|skip|keep private)\b/.test(lower);
+
+  if (isYes) {
+    // Find the custom food created this session
+    const item = session.draft.find((d) => d.id === itemId);
+    if (item?.customFoodId) {
+      const customFood = await prisma.customFood.findUnique({
+        where: { id: item.customFoodId },
+      });
+      if (customFood) {
+        // Fire-and-forget: submit to community
+        prisma.communityFood.create({
+          data: {
+            name: customFood.name,
+            defaultServingSize: customFood.servingSize,
+            defaultServingUnit: customFood.servingUnit,
+            calories: customFood.calories,
+            proteinG: customFood.proteinG,
+            carbsG: customFood.carbsG,
+            fatG: customFood.fatG,
+            sodiumMg: customFood.sodiumMg ?? undefined,
+            cholesterolMg: customFood.cholesterolMg ?? undefined,
+            fiberG: customFood.fiberG ?? undefined,
+            sugarG: customFood.sugarG ?? undefined,
+            saturatedFatG: customFood.saturatedFatG ?? undefined,
+            transFatG: customFood.transFatG ?? undefined,
+            createdByUserId: session.userId,
+            status: "PENDING",
+          },
+        }).catch((err: unknown) => {
+          console.error("[voiceSession] Community submit failed:", err);
+        });
+        send(socket, {
+          type: "ask",
+          question: `Thanks! ${customFood.name} has been submitted to the community.`,
+        } satisfies WSAskMessage);
+      }
+    }
+    session.sessionState = "normal";
+    return;
+  }
+
+  if (isNo) {
+    session.sessionState = "normal";
+    send(socket, { type: "ask", question: "OK, keeping it private." } satisfies WSAskMessage);
+    return;
+  }
+
+  // Re-prompt
+  send(socket, {
+    type: "community_submit_prompt",
+    itemId,
+    foodName: session.draft.find((d) => d.id === itemId)?.name ?? "",
+    question: "Say 'yes' to share with the community, or 'no' to keep it private.",
+  } satisfies WSCommunitySubmitPromptMessage);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 — History date resolver
+// ---------------------------------------------------------------------------
+
+function resolveDatePhrase(phrase: string, referenceDate: string): string {
+  const ref = new Date(referenceDate + "T12:00:00");
+  const lower = phrase.toLowerCase().trim();
+
+  if (lower === "yesterday") {
+    ref.setDate(ref.getDate() - 1);
+    return ref.toISOString().split("T")[0];
+  }
+  if (lower === "today") {
+    return referenceDate;
+  }
+
+  // "N days ago"
+  const daysAgo = lower.match(/(\d+)\s+days?\s+ago/);
+  if (daysAgo) {
+    ref.setDate(ref.getDate() - Number(daysAgo[1]));
+    return ref.toISOString().split("T")[0];
+  }
+
+  // "last Monday / Tuesday / ..."
+  const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const lastDayMatch = lower.match(/last\s+(\w+)/);
+  if (lastDayMatch) {
+    const targetDay = dayNames.indexOf(lastDayMatch[1]);
+    if (targetDay !== -1) {
+      const currentDay = ref.getDay();
+      let daysBack = currentDay - targetDay;
+      if (daysBack <= 0) daysBack += 7;
+      ref.setDate(ref.getDate() - daysBack);
+      return ref.toISOString().split("T")[0];
+    }
+  }
+
+  // Fall back to referenceDate if we can't resolve
+  return referenceDate;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 — Query history handler
+// ---------------------------------------------------------------------------
+
+async function handleQueryHistory(
+  datePhrase: string,
+  mealLabel: MealLabel | undefined,
+  addToDraft: boolean,
+  session: VoiceSessionState,
+  socket: WebSocket,
+) {
+  const targetDate = resolveDatePhrase(datePhrase, session.date);
+  const tmpId = `history-${Date.now()}`;
+
+  const entries = await prisma.foodEntry.findMany({
+    where: {
+      userId: session.userId,
+      date: new Date(targetDate + "T12:00:00"),
+      ...(mealLabel ? { mealLabel } : {}),
+    },
+    orderBy: { createdAt: "asc" },
+    select: {
+      name: true,
+      quantity: true,
+      unit: true,
+      calories: true,
+      proteinG: true,
+      carbsG: true,
+      fatG: true,
+      mealLabel: true,
+    },
+  });
+
+  const historyEntries: HistoryFoodEntry[] = entries.map((e) => ({
+    name: e.name,
+    quantity: e.quantity,
+    unit: e.unit,
+    macros: { calories: e.calories, proteinG: e.proteinG, carbsG: e.carbsG, fatG: e.fatG },
+  }));
+
+  const totals: Macros = historyEntries.reduce(
+    (acc, e) => ({
+      calories: acc.calories + e.macros.calories,
+      proteinG: acc.proteinG + e.macros.proteinG,
+      carbsG: acc.carbsG + e.macros.carbsG,
+      fatG: acc.fatG + e.macros.fatG,
+    }),
+    { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+  );
+
+  const dateLabel = datePhrase === "yesterday" ? "Yesterday" : targetDate;
+
+  if (addToDraft && historyEntries.length > 0) {
+    // Add entries as normal draft items
+    const now = getTimeOfDay();
+    const meal = getMealLabel(now);
+    const newItems: DraftItem[] = historyEntries.map((e, i) => ({
+      id: `history-item-${Date.now()}-${i}`,
+      name: e.name,
+      quantity: e.quantity,
+      unit: e.unit,
+      ...e.macros,
+      source: "DATABASE" as const,
+      mealLabel: meal,
+      state: "normal" as const,
+    }));
+    session.draft.push(...newItems);
+    send(socket, {
+      type: "items_added",
+      items: newItems,
+    } satisfies WSItemsAddedMessage);
+  }
+
+  send(socket, {
+    type: "history_results",
+    itemId: tmpId,
+    dateLabel,
+    mealLabel,
+    entries: historyEntries,
+    totals,
+    addedToDraft: addToDraft && historyEntries.length > 0,
+  } satisfies WSHistoryResultsMessage);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 — Query remaining macros handler
+// ---------------------------------------------------------------------------
+
+async function handleQueryRemaining(session: VoiceSessionState, socket: WebSocket) {
+  const tmpId = `macro-summary-${Date.now()}`;
+
+  // Fetch today's goal
+  const goalTimeline = await prisma.goalTimeline.findFirst({
+    where: {
+      userId: session.userId,
+      effectiveDate: { lte: new Date(session.date + "T23:59:59") },
+    },
+    orderBy: { effectiveDate: "desc" },
+    select: { calories: true, proteinG: true, carbsG: true, fatG: true },
+  });
+
+  const goals: Macros | null = goalTimeline
+    ? { calories: goalTimeline.calories, proteinG: goalTimeline.proteinG, carbsG: goalTimeline.carbsG, fatG: goalTimeline.fatG }
+    : null;
+
+  // Fetch already-saved totals for today
+  const savedEntries = await prisma.foodEntry.findMany({
+    where: {
+      userId: session.userId,
+      date: new Date(session.date + "T12:00:00"),
+    },
+    select: { calories: true, proteinG: true, carbsG: true, fatG: true },
+  });
+
+  const savedTotals = savedEntries.reduce(
+    (acc, e) => ({
+      calories: acc.calories + e.calories,
+      proteinG: acc.proteinG + e.proteinG,
+      carbsG: acc.carbsG + e.carbsG,
+      fatG: acc.fatG + e.fatG,
+    }),
+    { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+  );
+
+  // Add draft totals
+  const draftNormal = session.draft.filter((d) => d.state === "normal");
+  const draftTotals = draftNormal.reduce(
+    (acc, e) => ({
+      calories: acc.calories + e.calories,
+      proteinG: acc.proteinG + e.proteinG,
+      carbsG: acc.carbsG + e.carbsG,
+      fatG: acc.fatG + e.fatG,
+    }),
+    { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+  );
+
+  const combinedCalories = savedTotals.calories + draftTotals.calories;
+  const combinedProtein = savedTotals.proteinG + draftTotals.proteinG;
+  const combinedCarbs = savedTotals.carbsG + draftTotals.carbsG;
+  const combinedFat = savedTotals.fatG + draftTotals.fatG;
+
+  send(socket, {
+    type: "macro_summary",
+    itemId: tmpId,
+    summary: {
+      calories: combinedCalories,
+      proteinG: combinedProtein,
+      carbsG: combinedCarbs,
+      fatG: combinedFat,
+      goals,
+    },
+  } satisfies WSMacroSummaryMessage);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 — Lookup food info handler
+// ---------------------------------------------------------------------------
+
+async function handleLookupFoodInfo(query: string, socket: WebSocket) {
+  const tmpId = `food-info-${Date.now()}`;
+  const result = await lookupFoodInfoOnly(query);
+
+  if (!result.found) {
+    send(socket, {
+      type: "ask",
+      question: `I couldn't find nutrition info for '${query}' in the database.`,
+    } satisfies WSAskMessage);
+    return;
+  }
+
+  send(socket, {
+    type: "food_info",
+    itemId: tmpId,
+    foodName: query,
+    usdaResult: result.usdaResult,
+  } satisfies WSFoodInfoMessage);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 — Suggest foods handler
+// ---------------------------------------------------------------------------
+
+async function handleSuggestFoods(session: VoiceSessionState, socket: WebSocket) {
+  const tmpId = `food-suggestions-${Date.now()}`;
+
+  // Fetch remaining macros
+  const goalTimeline = await prisma.goalTimeline.findFirst({
+    where: {
+      userId: session.userId,
+      effectiveDate: { lte: new Date(session.date + "T23:59:59") },
+    },
+    orderBy: { effectiveDate: "desc" },
+    select: { calories: true, proteinG: true, carbsG: true, fatG: true },
+  });
+
+  const goals: Macros | null = goalTimeline
+    ? { calories: goalTimeline.calories, proteinG: goalTimeline.proteinG, carbsG: goalTimeline.carbsG, fatG: goalTimeline.fatG }
+    : null;
+
+  if (!goals) {
+    send(socket, {
+      type: "ask",
+      question: "Set your daily goals first to get food suggestions.",
+    } satisfies WSAskMessage);
+    return;
+  }
+
+  const savedEntries = await prisma.foodEntry.findMany({
+    where: { userId: session.userId, date: new Date(session.date + "T12:00:00") },
+    select: { calories: true, proteinG: true, carbsG: true, fatG: true },
+  });
+
+  const consumed = savedEntries.reduce(
+    (acc, e) => ({ calories: acc.calories + e.calories, proteinG: acc.proteinG + e.proteinG, carbsG: acc.carbsG + e.carbsG, fatG: acc.fatG + e.fatG }),
+    { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+  );
+
+  // Add draft
+  const draftNormal = session.draft.filter((d) => d.state === "normal");
+  draftNormal.forEach((d) => {
+    consumed.calories += d.calories;
+    consumed.proteinG += d.proteinG;
+    consumed.carbsG += d.carbsG;
+    consumed.fatG += d.fatG;
+  });
+
+  const remaining: Macros = {
+    calories: Math.max(0, goals.calories - consumed.calories),
+    proteinG: Math.max(0, goals.proteinG - consumed.proteinG),
+    carbsG: Math.max(0, goals.carbsG - consumed.carbsG),
+    fatG: Math.max(0, goals.fatG - consumed.fatG),
+  };
+
+  // Find USDA candidates based on highest remaining macro
+  const searchQuery = remaining.proteinG > 20 ? "high protein" : remaining.carbsG > 30 ? "complex carbs" : "healthy food";
+  const candidates = await searchFoods(searchQuery);
+
+  let suggestions: Array<{ name: string; macros: Macros; reason: string }> = [];
+  try {
+    suggestions = await suggestFoodsFromCandidates(remaining, candidates);
+  } catch (err) {
+    console.error("[voiceSession] suggestFoodsFromCandidates failed:", err);
+    suggestions = candidates.slice(0, 3).map((c) => ({
+      name: c.description,
+      macros: c.macros,
+      reason: "Matches your remaining macro budget.",
+    }));
+  }
+
+  send(socket, {
+    type: "food_suggestions",
+    itemId: tmpId,
+    suggestions,
+  } satisfies WSFoodSuggestionsMessage);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6 — Estimate food handler
+// ---------------------------------------------------------------------------
+
+async function handleEstimateFood(
+  name: string,
+  qty: number | undefined,
+  unit: string | undefined,
+  context: string | undefined,
+  session: VoiceSessionState,
+  socket: WebSocket,
+) {
+  const tmpId = `estimate-${Date.now()}`;
+  const timeOfDay = getTimeOfDay();
+  const mealLabel = getMealLabel(timeOfDay);
+
+  let estimate: Awaited<ReturnType<typeof estimateFood>>;
+  try {
+    estimate = await estimateFood(name, qty, unit, context);
+  } catch (err) {
+    console.error("[voiceSession] estimateFood failed:", err);
+    send(socket, {
+      type: "error",
+      message: "Could not estimate nutrition for that food. Try searching manually.",
+    } satisfies WSErrorMessage);
+    return;
+  }
+
+  if (!estimate.estimatable) {
+    send(socket, {
+      type: "ask",
+      question: `I can't reliably estimate nutrition for '${name}'. Try saying 'create it' to add it manually.`,
+    } satisfies WSAskMessage);
+    return;
+  }
+
+  const servingQty = qty ?? estimate.servingSize;
+  const servingUnit = unit ?? estimate.servingUnit;
+  // Scale macros to requested qty
+  const ratio = estimate.servingSize > 0 ? servingQty / estimate.servingSize : 1;
+
+  const item: DraftItem = {
+    id: tmpId,
+    name: estimate.name,
+    quantity: servingQty,
+    unit: servingUnit,
+    calories: Math.round(estimate.calories * ratio),
+    proteinG: Math.round(estimate.proteinG * ratio * 10) / 10,
+    carbsG: Math.round(estimate.carbsG * ratio * 10) / 10,
+    fatG: Math.round(estimate.fatG * ratio * 10) / 10,
+    source: "AI_ESTIMATE",
+    mealLabel,
+    state: "estimate_card",
+    isEstimate: true,
+    estimateConfidence: estimate.confidence,
+  };
+
+  session.draft.push(item);
+  session.sessionState = `estimate_pending:${tmpId}`;
+
+  send(socket, {
+    type: "estimate_card",
+    item,
+    canAddAnyway: true,
+  } satisfies WSEstimateCardMessage);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6 — Estimate pending handler (add anyway / search DB response)
+// ---------------------------------------------------------------------------
+
+async function handleEstimatePendingTranscript(
+  text: string,
+  session: VoiceSessionState,
+  socket: WebSocket,
+) {
+  const tmpId = (session.sessionState as string).replace("estimate_pending:", "");
+  const lower = text.toLowerCase().trim();
+
+  const wantsAdd = /\b(add|yes|ok|okay|add anyway|add it|sure|yep|yeah)\b/.test(lower);
+  const wantsSearch = /\b(search|search db|look it up|find it|usda|database)\b/.test(lower);
+  const wantsCancel = /\b(cancel|no|nevermind|never mind|forget it|stop)\b/.test(lower);
+
+  if (wantsAdd) {
+    const item = session.draft.find((d) => d.id === tmpId);
+    if (item) {
+      item.state = "normal";
+      send(socket, {
+        type: "items_added",
+        items: [{ ...item, state: "normal" }],
+      } satisfies WSItemsAddedMessage);
+      send(socket, {
+        type: "ask",
+        question: `Added ${item.name} (AI estimate, ${item.estimateConfidence ?? "medium"} confidence).`,
+      } satisfies WSAskMessage);
+    }
+    session.sessionState = "normal";
+    return;
+  }
+
+  if (wantsSearch) {
+    const item = session.draft.find((d) => d.id === tmpId);
+    const searchName = item?.name ?? "";
+    // Remove the estimate card, transition to lookup
+    session.draft = session.draft.filter((d) => d.id !== tmpId);
+    session.sessionState = "normal";
+    await handleLookupFoodInfo(searchName, socket);
+    return;
+  }
+
+  if (wantsCancel) {
+    session.draft = session.draft.filter((d) => d.id !== tmpId);
+    session.sessionState = "normal";
+    send(socket, {
+      type: "operation_cancelled",
+      itemId: tmpId,
+      message: "Estimate discarded.",
+    } satisfies WSOperationCancelledMessage);
+    return;
+  }
+
+  // Re-prompt
+  const item = session.draft.find((d) => d.id === tmpId);
+  if (item) {
+    send(socket, {
+      type: "ask",
+      question: `Say 'add' to log the estimate, 'search DB' to look it up, or 'cancel' to discard.`,
+    } satisfies WSAskMessage);
   }
 }
 
@@ -839,6 +1637,29 @@ function applyMessageToDraft(
     session.draft.push(choiceItem);
     session.sessionState = `awaiting_choice:${msg.itemId}`;
     session.pendingUsdaItemName = msg.foodName;
+  } else if (msg.type === "disambiguate") {
+    // Only handle one disambiguation at a time
+    if (session.sessionState !== "normal") return;
+
+    const timeOfDay = getTimeOfDay();
+    const disambiguateItem: DraftItem = {
+      id: msg.itemId,
+      name: msg.foodName,
+      quantity: 1,
+      unit: "servings",
+      calories: 0,
+      proteinG: 0,
+      carbsG: 0,
+      fatG: 0,
+      source: "DATABASE",
+      mealLabel: getMealLabel(timeOfDay),
+      state: "disambiguate",
+      disambiguationOptions: msg.options,
+    };
+    session.draft.push(disambiguateItem);
+    session.sessionState = `disambiguating:${msg.itemId}`;
+    session.pendingDisambiguationOptions = msg.options;
+    session.pendingDisambiguationName = msg.foodName;
   }
 }
 
@@ -873,6 +1694,8 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
         pendingUsdaResult: null,
         pendingUsdaItemName: "",
         pendingBarcodeGtin: "",
+        pendingDisambiguationOptions: [],
+        pendingDisambiguationName: "",
         draftHistory: [],
         redoStack: [],
       };
@@ -896,6 +1719,14 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
                 await handleBarcodePendingTranscript(text, session, socket);
               } else if (session.sessionState.startsWith("barcode_naming:")) {
                 await handleBarcodeNamingTranscript(text, session, socket);
+              } else if (session.sessionState.startsWith("disambiguating:")) {
+                await handleDisambiguatingTranscript(text, session, socket);
+              } else if (session.sessionState === "confirm_clear_pending") {
+                await handleConfirmClearTranscript(text, session, socket);
+              } else if (session.sessionState.startsWith("contributing:")) {
+                await handleContributingTranscript(text, session, socket);
+              } else if (session.sessionState.startsWith("estimate_pending:")) {
+                await handleEstimatePendingTranscript(text, session, socket);
               } else {
                 await handleNormalTranscript(text, session, socket);
               }
@@ -933,6 +1764,14 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
               await handleBarcodePendingTranscript(msg.text, session, socket);
             } else if (session.sessionState.startsWith("barcode_naming:")) {
               await handleBarcodeNamingTranscript(msg.text, session, socket);
+            } else if (session.sessionState.startsWith("disambiguating:")) {
+              await handleDisambiguatingTranscript(msg.text, session, socket);
+            } else if (session.sessionState === "confirm_clear_pending") {
+              await handleConfirmClearTranscript(msg.text, session, socket);
+            } else if (session.sessionState.startsWith("contributing:")) {
+              await handleContributingTranscript(msg.text, session, socket);
+            } else if (session.sessionState.startsWith("estimate_pending:")) {
+              await handleEstimatePendingTranscript(msg.text, session, socket);
             } else {
               await handleNormalTranscript(msg.text, session, socket);
             }

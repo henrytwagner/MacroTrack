@@ -7,16 +7,21 @@ import type {
   CustomFood,
   CreateCustomFoodRequest,
   UpdateCustomFoodRequest,
+  CommunityFood,
+  CreateCommunityFoodRequest,
+  PublishCustomFoodRequest,
   UnifiedSearchResponse,
   FrequentFood,
   RecentFood,
   UserProfile,
+  UserPreferences,
   GoalForDateResponse,
   GoalProfilesResponse,
   UpdateGoalsForDateRequest,
   FoodUnitConversion,
   CreateFoodUnitConversionRequest,
   UpdateFoodUnitConversionRequest,
+  CascadeUnitConversionsRequest,
 } from '@shared/types';
 import type { BarcodeScanResult } from '@/features/barcode/types';
 import { Platform } from 'react-native';
@@ -112,6 +117,21 @@ export async function updateProfile(profile: UserProfile): Promise<UserProfile> 
   });
 }
 
+// --- User Preferences ---
+
+export async function getUserPreferences(): Promise<UserPreferences> {
+  return request<UserPreferences>('/api/user/preferences');
+}
+
+export async function updateUserPreferences(
+  data: Partial<UserPreferences>,
+): Promise<UserPreferences> {
+  return request<UserPreferences>('/api/user/preferences', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
 // --- Food Entries ---
 
 export async function getEntries(date: string): Promise<FoodEntry[]> {
@@ -176,6 +196,34 @@ export async function deleteCustomFood(id: string): Promise<void> {
   return request<void>(`/api/food/custom/${id}`, { method: 'DELETE' });
 }
 
+// --- Community Foods ---
+
+export async function createCommunityFood(
+  data: CreateCommunityFoodRequest,
+): Promise<CommunityFood> {
+  return request<CommunityFood>('/api/food/community', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function publishCustomFood(
+  id: string,
+  data: PublishCustomFoodRequest,
+): Promise<CommunityFood> {
+  try {
+    return await request<CommunityFood>(`/api/food/custom/${id}/publish`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 429) {
+      throw new ApiError(429, "You've published too many foods today. Try again tomorrow.");
+    }
+    throw e;
+  }
+}
+
 // --- Search ---
 
 export async function searchFoods(query: string): Promise<UnifiedSearchResponse> {
@@ -223,6 +271,39 @@ export async function updateFoodUnitConversion(
 
 export async function deleteFoodUnitConversion(id: string): Promise<void> {
   return request<void>(`/api/food/units/${id}`, { method: 'DELETE' });
+}
+
+export async function cascadeUnitConversions(
+  data: CascadeUnitConversionsRequest,
+): Promise<void> {
+  return request<void>('/api/food/units/cascade', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+// --- Barcode lookup ---
+
+export async function lookupBarcode(
+  code: string,
+): Promise<CommunityFood | null> {
+  const result = await request<{ food: CommunityFood | null }>(
+    `/api/barcode/lookup?code=${encodeURIComponent(code)}`,
+  );
+  return result.food;
+}
+
+// --- Community Food Reporting ---
+
+export async function reportCommunityFood(
+  id: string,
+  reason: string,
+  details?: string,
+): Promise<void> {
+  await request<{ reported: boolean }>(`/api/food/community/${id}/report`, {
+    method: 'POST',
+    body: JSON.stringify({ reason, details }),
+  });
 }
 
 // --- Barcode (image upload for iOS) ---

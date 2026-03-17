@@ -23,14 +23,20 @@ interface CustomFoodListProps {
   visible: boolean;
   onClose: () => void;
   onEditFood: (food: CustomFood) => void;
+  onPublishFood?: (food: CustomFood) => void;
   refreshKey?: number;
+  embedded?: boolean;
+  filterQuery?: string;
 }
 
 export default function CustomFoodList({
   visible,
   onClose,
   onEditFood,
+  onPublishFood,
   refreshKey,
+  embedded = false,
+  filterQuery,
 }: CustomFoodListProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -54,6 +60,12 @@ export default function CustomFoodList({
   useEffect(() => {
     if (visible) fetchFoods();
   }, [visible, fetchFoods, refreshKey]);
+
+  const filteredFoods = filterQuery
+    ? foods.filter((f) =>
+        f.name.toLowerCase().includes(filterQuery.toLowerCase()),
+      )
+    : foods;
 
   const handleDelete = (food: CustomFood) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -115,6 +127,15 @@ export default function CustomFoodList({
             textStyle="footnote"
           />
         </Pressable>
+        {onPublishFood && (
+          <Pressable
+            onPress={() => onPublishFood(item)}
+            hitSlop={8}
+            style={({ pressed }) => [{ marginRight: Spacing.md }, pressed && { opacity: 0.5 }]}
+          >
+            <Ionicons name="globe-outline" size={18} color={colors.tint} />
+          </Pressable>
+        )}
         <Pressable
           onPress={() => confirmDelete(item)}
           hitSlop={8}
@@ -124,10 +145,59 @@ export default function CustomFoodList({
         </Pressable>
       </View>
     ),
-    [colors, onEditFood],
+    [colors, onEditFood, onPublishFood],
   );
 
   if (!visible) return null;
+
+  const listContent = isLoading ? (
+    <ActivityIndicator
+      style={styles.loader}
+      size="large"
+      color={colors.tint}
+    />
+  ) : filteredFoods.length === 0 ? (
+    <View style={styles.emptyState}>
+      <Ionicons
+        name="restaurant-outline"
+        size={48}
+        color={colors.textTertiary}
+      />
+      <ThemedText
+        style={[
+          Typography.body,
+          { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.md },
+        ]}
+      >
+        No custom foods yet. Create one from the Log tab.
+      </ThemedText>
+    </View>
+  ) : (
+    <FlatList
+      data={filteredFoods}
+      renderItem={renderItem}
+      keyExtractor={(item) => item.id}
+      contentContainerStyle={styles.list}
+      ItemSeparatorComponent={() => (
+        <View style={[styles.separator, { backgroundColor: colors.borderLight }]} />
+      )}
+      showsVerticalScrollIndicator={false}
+    />
+  );
+
+  if (embedded) {
+    return (
+      <View style={styles.embeddedContainer}>
+        {listContent}
+        <UndoSnackbar
+          message={deletedFood ? `${deletedFood.name} deleted.` : ''}
+          visible={!!deletedFood}
+          onUndo={handleUndo}
+          onDismiss={handleUndoDismiss}
+        />
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -141,40 +211,7 @@ export default function CustomFoodList({
         <View style={{ width: 24 }} />
       </View>
 
-      {isLoading ? (
-        <ActivityIndicator
-          style={styles.loader}
-          size="large"
-          color={colors.tint}
-        />
-      ) : foods.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons
-            name="restaurant-outline"
-            size={48}
-            color={colors.textTertiary}
-          />
-          <ThemedText
-            style={[
-              Typography.body,
-              { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.md },
-            ]}
-          >
-            No custom foods yet. Create one from the Log tab.
-          </ThemedText>
-        </View>
-      ) : (
-        <FlatList
-          data={foods}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-          ItemSeparatorComponent={() => (
-            <View style={[styles.separator, { backgroundColor: colors.borderLight }]} />
-          )}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+      {listContent}
 
       <UndoSnackbar
         message={deletedFood ? `${deletedFood.name} deleted.` : ''}
@@ -190,6 +227,9 @@ const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 10,
+  },
+  embeddedContainer: {
+    paddingTop: Spacing.lg,
   },
   header: {
     flexDirection: 'row',

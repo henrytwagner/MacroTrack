@@ -1,6 +1,6 @@
 import { prisma } from "../db/client.js";
 import { parseTranscript } from "./gemini.js";
-import { searchFoods } from "./usda.js";
+import { searchFoods, getFoodByFdcId } from "./usda.js";
 import type {
   GeminiRequestContext,
   GeminiIntent,
@@ -15,10 +15,14 @@ import type {
   WSItemRemovedMessage,
   WSClarifyMessage,
   WSCreateFoodPromptMessage,
+  WSFoodChoiceMessage,
   WSErrorMessage,
+  WSDisambiguateMessage,
   DraftItem,
   MealLabel,
   FoodSource,
+  USDASearchResult,
+  DisambiguationOption,
 } from "../../../shared/types.js";
 
 let tmpIdCounter = 0;
@@ -94,16 +98,169 @@ async function findCustomFood(
 }
 
 // ---------------------------------------------------------------------------
+// Community food fuzzy matching
+// ---------------------------------------------------------------------------
+
+async function findCommunityFood(
+  name: string,
+): Promise<{
+  id: string;
+  name: string;
+  brandName: string | null;
+  defaultServingSize: number;
+  defaultServingUnit: string;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+} | null> {
+  const normalized = name.toLowerCase().trim();
+
+  const result = await prisma.communityFood.findFirst({
+    where: {
+      status: "ACTIVE",
+      OR: [
+        { name: { contains: normalized, mode: "insensitive" } },
+        { brandName: { contains: normalized, mode: "insensitive" } },
+      ],
+    },
+    orderBy: [{ trustScore: "desc" }, { usesCount: "desc" }],
+    select: {
+      id: true,
+      name: true,
+      brandName: true,
+      defaultServingSize: true,
+      defaultServingUnit: true,
+      calories: true,
+      proteinG: true,
+      carbsG: true,
+      fatG: true,
+    },
+  });
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// User history lookup (Tier 1/2 for Phase 2 disambiguation)
+// ---------------------------------------------------------------------------
+
+async function lookupUserHistory(
+  name: string,
+  userId: string,
+): Promise<{
+  quantity: number;
+  unit: string;
+  logCount: number;
+  usdaFdcId?: number;
+  customFoodId?: string;
+  communityFoodId?: string;
+  source: FoodSource;
+  macros: { calories: number; proteinG: number; carbsG: number; fatG: number };
+} | null> {
+  const normalized = name.toLowerCase().trim();
+
+  const entries = await prisma.foodEntry.findMany({
+    where: {
+      userId,
+      OR: [
+        { name: { contains: normalized, mode: "insensitive" } },
+      ],
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+    select: {
+      name: true,
+      quantity: true,
+      unit: true,
+      source: true,
+      usdaFdcId: true,
+      customFoodId: true,
+      communityFoodId: true,
+      calories: true,
+      proteinG: true,
+      carbsG: true,
+      fatG: true,
+    },
+  });
+
+  if (entries.length === 0) return null;
+
+  // Group by food identity key
+  const groups = new Map<string, typeof entries>();
+  for (const entry of entries) {
+    const key = entry.usdaFdcId
+      ? `usda:${entry.usdaFdcId}`
+      : entry.customFoodId
+        ? `custom:${entry.customFoodId}`
+        : `name:${entry.name.toLowerCase()}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(entry);
+  }
+
+  // Pick the group with the highest count
+  let bestGroup: typeof entries = [];
+  for (const group of groups.values()) {
+    if (group.length > bestGroup.length) bestGroup = group;
+  }
+
+  const mostRecent = bestGroup[0];
+  return {
+    quantity: mostRecent.quantity,
+    unit: mostRecent.unit,
+    logCount: bestGroup.length,
+    usdaFdcId: mostRecent.usdaFdcId ?? undefined,
+    customFoodId: mostRecent.customFoodId ?? undefined,
+    communityFoodId: mostRecent.communityFoodId ?? undefined,
+    source: mostRecent.source as FoodSource,
+    macros: {
+      calories: mostRecent.calories,
+      proteinG: mostRecent.proteinG,
+      carbsG: mostRecent.carbsG,
+      fatG: mostRecent.fatG,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Disambiguation threshold check
+// ---------------------------------------------------------------------------
+
+export function shouldDisambiguate(query: string, results: USDASearchResult[]): boolean {
+  if (results.length < 2) return false;
+  const top = results[0];
+  const last = results[Math.min(results.length - 1, 2)];
+  const topCal = top.macros.calories;
+  const lastCal = last.macros.calories;
+  const maxCal = Math.max(topCal, lastCal);
+  if (maxCal === 0) return false;
+  const diff = Math.abs(topCal - lastCal) / maxCal;
+  // Suppress unused variable warning
+  void query;
+  return diff > 0.15;
+}
+
+// ---------------------------------------------------------------------------
 // Scale macros based on quantity relative to serving size
+// When unit is "servings", quantity is number of servings → ratio = quantity.
+// When unit matches base (e.g. "g"), quantity is in base units → ratio = quantity / baseServingSize.
 // ---------------------------------------------------------------------------
 
 function scaleMacros(
   baseMacros: { calories: number; proteinG: number; carbsG: number; fatG: number },
   baseServingSize: number,
   requestedQuantity: number,
+  requestedUnit?: string,
 ): { calories: number; proteinG: number; carbsG: number; fatG: number } {
-  if (baseServingSize <= 0) return baseMacros;
-  const ratio = requestedQuantity / baseServingSize;
+  const isServings =
+    !requestedUnit ||
+    requestedUnit.toLowerCase() === "servings" ||
+    requestedUnit.toLowerCase() === "serving";
+  const ratio = isServings
+    ? requestedQuantity
+    : baseServingSize <= 0
+      ? 1
+      : requestedQuantity / baseServingSize;
   return {
     calories: Math.round(baseMacros.calories * ratio),
     proteinG: Math.round(baseMacros.proteinG * ratio * 10) / 10,
@@ -113,7 +270,7 @@ function scaleMacros(
 }
 
 // ---------------------------------------------------------------------------
-// Lookup a single food item: custom foods → USDA → no match
+// Lookup a single food item: history → custom → community → USDA → no match
 // ---------------------------------------------------------------------------
 
 async function lookupItem(
@@ -122,17 +279,99 @@ async function lookupItem(
   mealLabel: MealLabel,
 ): Promise<{ found: true; draft: DraftItem } | { found: false; name: string; tmpId: string }> {
   const tmpId = nextTmpId();
+  const userSpecifiedQty = item.quantity != null;
   const quantity = item.quantity ?? 1;
   const unit = item.unit ?? "servings";
 
-  // 1. Check custom foods
+  // Tier 1/2: Check user history (custom or USDA foods previously logged)
+  const history = await lookupUserHistory(item.name, userId);
+  if (history && history.logCount >= 1) {
+    const histQty = userSpecifiedQty ? quantity : history.quantity;
+    const histUnit = userSpecifiedQty ? unit : history.unit;
+    const isAssumed = !userSpecifiedQty;
+
+    // If history points to a USDA food, reconstruct from USDA
+    if (history.source === "DATABASE" && history.usdaFdcId) {
+      const usdaResult = await getFoodByFdcId(history.usdaFdcId);
+      if (usdaResult) {
+        const servingSize = usdaResult.servingSize ?? 100;
+        const macros = scaleMacros(usdaResult.macros, servingSize, histQty, histUnit);
+        return {
+          found: true,
+          draft: {
+            id: tmpId,
+            name: usdaResult.description,
+            quantity: histQty,
+            unit: histUnit === "servings" ? (usdaResult.servingSizeUnit ?? "g") : histUnit,
+            ...macros,
+            source: "DATABASE" as FoodSource,
+            usdaFdcId: history.usdaFdcId,
+            mealLabel,
+            state: "normal",
+            isAssumed,
+          },
+        };
+      }
+    }
+
+    // If history points to a custom food
+    if (history.source === "CUSTOM" && history.customFoodId) {
+      const custom = await prisma.customFood.findUnique({
+        where: { id: history.customFoodId, userId },
+        select: { id: true, name: true, servingSize: true, servingUnit: true, calories: true, proteinG: true, carbsG: true, fatG: true },
+      });
+      if (custom) {
+        const macros = scaleMacros(custom, custom.servingSize, histQty, histUnit);
+        return {
+          found: true,
+          draft: {
+            id: tmpId,
+            name: custom.name,
+            quantity: histQty,
+            unit: histUnit,
+            ...macros,
+            source: "CUSTOM" as FoodSource,
+            customFoodId: custom.id,
+            mealLabel,
+            state: "normal",
+            isAssumed,
+          },
+        };
+      }
+    }
+
+    // Community food from history
+    if (history.source === "COMMUNITY" && history.communityFoodId) {
+      const community = await prisma.communityFood.findUnique({
+        where: { id: history.communityFoodId },
+        select: { id: true, name: true, brandName: true, defaultServingSize: true, defaultServingUnit: true, calories: true, proteinG: true, carbsG: true, fatG: true },
+      });
+      if (community) {
+        const macros = scaleMacros(community, community.defaultServingSize, histQty, histUnit);
+        const displayName = community.brandName ? `${community.brandName} — ${community.name}` : community.name;
+        return {
+          found: true,
+          draft: {
+            id: tmpId,
+            name: displayName,
+            quantity: histQty,
+            unit: histUnit === "servings" ? community.defaultServingUnit : histUnit,
+            ...macros,
+            source: "COMMUNITY" as FoodSource,
+            communityFoodId: community.id,
+            mealLabel,
+            state: "normal",
+            isAssumed,
+          },
+        };
+      }
+    }
+  }
+
+  // Tier 2: Check custom foods (name match)
   const custom = await findCustomFood(item.name, userId);
   if (custom) {
-    const macros = scaleMacros(
-      custom,
-      custom.servingSize,
-      quantity,
-    );
+    const macros = scaleMacros(custom, custom.servingSize, quantity, unit);
     return {
       found: true,
       draft: {
@@ -149,35 +388,87 @@ async function lookupItem(
     };
   }
 
-  // 2. Search USDA
-  const usdaResults = await searchFoods(item.name);
-  if (usdaResults.length > 0) {
-    const best = usdaResults[0]; // Auto-pick the most generic/common match
-    const servingSize = best.servingSize ?? 100;
-
-    const macros = scaleMacros(
-      best.macros,
-      servingSize,
-      quantity,
-    );
+  // Tier 2b: Check community foods
+  const community = await findCommunityFood(item.name);
+  if (community) {
+    const macros = scaleMacros(community, community.defaultServingSize, quantity, unit);
+    // Fire-and-forget: increment usage stats
+    prisma.communityFood.update({
+      where: { id: community.id },
+      data: { usesCount: { increment: 1 }, lastUsedAt: new Date() },
+    }).catch(() => {});
+    const displayName = community.brandName
+      ? `${community.brandName} — ${community.name}`
+      : community.name;
     return {
       found: true,
       draft: {
         id: tmpId,
-        name: best.description,
+        name: displayName,
         quantity,
-        unit: unit === "servings" ? (best.servingSizeUnit ?? "g") : unit,
+        unit: unit === "servings" ? community.defaultServingUnit : unit,
         ...macros,
-        source: "DATABASE" as FoodSource,
-        usdaFdcId: best.fdcId,
+        source: "COMMUNITY" as FoodSource,
+        communityFoodId: community.id,
         mealLabel,
         state: "normal",
       },
     };
   }
 
-  // 3. No match
+  // No match in custom or community — offer food_choice (USDA is opt-in via "try USDA")
   return { found: false, name: item.name, tmpId };
+}
+
+// ---------------------------------------------------------------------------
+// Explicit food info lookup (no draft add — for LOOKUP_FOOD_INFO intent)
+// ---------------------------------------------------------------------------
+
+export async function lookupFoodInfoOnly(
+  name: string,
+): Promise<{ found: false } | { found: true; usdaResult: USDASearchResult }> {
+  const usdaResults = await searchFoods(name);
+  if (usdaResults.length === 0) return { found: false };
+  return { found: true, usdaResult: usdaResults[0] };
+}
+
+// ---------------------------------------------------------------------------
+// Explicit USDA lookup (opt-in only — not called automatically)
+// ---------------------------------------------------------------------------
+
+export async function lookupItemInUsda(
+  name: string,
+  quantity?: number,
+  unit?: string,
+  mealLabel?: MealLabel,
+): Promise<{ found: false } | { found: true; draft: DraftItem; usdaResult: USDASearchResult }> {
+  const tmpId = nextTmpId();
+  const qty = quantity ?? 1;
+  const u = unit ?? "servings";
+  const meal = mealLabel ?? "snack";
+
+  const usdaResults = await searchFoods(name);
+  if (usdaResults.length === 0) return { found: false };
+
+  const best = usdaResults[0];
+  const servingSize = best.servingSize ?? 100;
+  const macros = scaleMacros(best.macros, servingSize, qty, u);
+
+  return {
+    found: true,
+    usdaResult: best,
+    draft: {
+      id: tmpId,
+      name: best.description,
+      quantity: qty,
+      unit: u === "servings" ? (best.servingSizeUnit ?? "g") : u,
+      ...macros,
+      source: "DATABASE" as FoodSource,
+      usdaFdcId: best.fdcId,
+      mealLabel: meal,
+      state: "normal",
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -202,12 +493,18 @@ async function handleAddItems(
   const mealLabel = getMealLabel(context.timeOfDay);
 
   const foundItems: DraftItem[] = [];
+  const assumedItems: DraftItem[] = [];
+
   for (const item of intent.payload.items) {
     const result = await lookupItem(item, userId, mealLabel);
-    if (result.found) {
+
+    if (result.found === true) {
       foundItems.push(result.draft);
+      if (result.draft.isAssumed) {
+        assumedItems.push(result.draft);
+      }
     } else {
-      // No match — prompt to create custom food
+      // No match in custom/community — offer choice: create custom food or try USDA
       if (foundItems.length > 0) {
         messages.push({
           type: "items_added",
@@ -215,11 +512,11 @@ async function handleAddItems(
         } satisfies WSItemsAddedMessage);
       }
       messages.push({
-        type: "create_food_prompt",
+        type: "food_choice",
         itemId: result.tmpId,
         foodName: result.name,
-        question: `I couldn't find '${result.name}'. Would you like to create it?`,
-      } satisfies WSCreateFoodPromptMessage);
+        question: `I couldn't find '${result.name}'. Say 'create it' to add it manually, or 'try USDA' to search the database.`,
+      } satisfies WSFoodChoiceMessage);
     }
   }
 
@@ -230,13 +527,84 @@ async function handleAddItems(
     } satisfies WSItemsAddedMessage);
   }
 
+  // Follow-up ask for assumed quantities
+  for (const assumed of assumedItems) {
+    messages.push({
+      type: "ask",
+      question: `Added ${assumed.name} — I used ${assumed.quantity} ${assumed.unit} based on your history. Say 'make that N' to adjust.`,
+    } satisfies import("../../../shared/types.js").WSAskMessage);
+  }
+
   return messages;
 }
 
-function handleEditItem(
+/** Fetch base macros and serving for an item so we can recompute totals when quantity/unit changes. */
+async function getBaseFoodForEdit(
+  source: FoodSource | undefined,
+  customFoodId: string | undefined,
+  usdaFdcId: number | undefined,
+  communityFoodId: string | undefined,
+  userId: string,
+): Promise<{
+  baseMacros: { calories: number; proteinG: number; carbsG: number; fatG: number };
+  baseServingSize: number;
+  baseServingUnit: string;
+} | null> {
+  if (source === "CUSTOM" && customFoodId) {
+    const row = await prisma.customFood.findUnique({
+      where: { id: customFoodId, userId },
+      select: {
+        servingSize: true,
+        servingUnit: true,
+        calories: true,
+        proteinG: true,
+        carbsG: true,
+        fatG: true,
+      },
+    });
+    if (!row) return null;
+    return {
+      baseMacros: row,
+      baseServingSize: row.servingSize,
+      baseServingUnit: row.servingUnit,
+    };
+  }
+  if (source === "COMMUNITY" && communityFoodId) {
+    const row = await prisma.communityFood.findUnique({
+      where: { id: communityFoodId },
+      select: {
+        defaultServingSize: true,
+        defaultServingUnit: true,
+        calories: true,
+        proteinG: true,
+        carbsG: true,
+        fatG: true,
+      },
+    });
+    if (!row) return null;
+    return {
+      baseMacros: row,
+      baseServingSize: row.defaultServingSize,
+      baseServingUnit: row.defaultServingUnit,
+    };
+  }
+  if (source === "DATABASE" && usdaFdcId) {
+    const result = await getFoodByFdcId(usdaFdcId);
+    if (!result) return null;
+    return {
+      baseMacros: result.macros,
+      baseServingSize: result.servingSize ?? 100,
+      baseServingUnit: result.servingSizeUnit ?? "g",
+    };
+  }
+  return null;
+}
+
+async function handleEditItem(
   intent: GeminiEditItemIntent,
   context: GeminiRequestContext,
-): WSServerMessage {
+  userId: string,
+): Promise<WSServerMessage> {
   const { targetItem, field, newValue } = intent.payload;
 
   // Find the matching draft item by name (case-insensitive fuzzy)
@@ -256,6 +624,34 @@ function handleEditItem(
 
   const changes: Record<string, unknown> = {};
   changes[field] = typeof newValue === "string" ? newValue : Number(newValue);
+
+  const newQuantity = field === "quantity" ? Number(newValue) : target.quantity;
+  const newUnit = field === "unit" ? String(newValue) : target.unit;
+  const quantityOrUnitChanged =
+    (field === "quantity" && newQuantity !== target.quantity) ||
+    (field === "unit" && newUnit !== target.unit);
+
+  if (quantityOrUnitChanged && target.source) {
+    const base = await getBaseFoodForEdit(
+      target.source,
+      target.customFoodId,
+      target.usdaFdcId,
+      target.communityFoodId,
+      userId,
+    );
+    if (base) {
+      const scaled = scaleMacros(
+        base.baseMacros,
+        base.baseServingSize,
+        newQuantity,
+        newUnit,
+      );
+      changes.calories = scaled.calories;
+      changes.proteinG = scaled.proteinG;
+      changes.carbsG = scaled.carbsG;
+      changes.fatG = scaled.fatG;
+    }
+  }
 
   return {
     type: "item_edited",
@@ -326,7 +722,7 @@ export async function processTranscript(
       return handleAddItems(intent, context, userId);
 
     case "EDIT_ITEM":
-      return [handleEditItem(intent, context)];
+      return [await handleEditItem(intent, context, userId)];
 
     case "REMOVE_ITEM":
       return [handleRemoveItem(intent, context)];

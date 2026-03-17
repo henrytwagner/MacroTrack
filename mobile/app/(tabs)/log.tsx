@@ -399,12 +399,12 @@ export default function LogScreen() {
         )}
       </View>
 
-      {/* Bottom right: mic (small, white, blue) above add (main FAB) */}
+      {/* Bottom right: mic (white, blue icon) above add (main FAB) */}
       <View style={styles.fabStack}>
         <Pressable
           style={({ pressed }) => [
             styles.micFabSmall,
-            { backgroundColor: colors.surface, borderColor: colors.border },
+            { backgroundColor: '#FFFFFF', borderColor: '#E5E5EA' },
             pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
           ]}
           onPress={handleMicPress}

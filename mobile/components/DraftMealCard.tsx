@@ -93,7 +93,7 @@ function SourceIcon({
   source,
   color,
 }: {
-  source: 'DATABASE' | 'CUSTOM' | 'COMMUNITY';
+  source: 'DATABASE' | 'CUSTOM' | 'COMMUNITY' | 'AI_ESTIMATE';
   color: string;
 }) {
   const iconName =
@@ -101,7 +101,9 @@ function SourceIcon({
       ? 'person-circle-outline'
       : source === 'COMMUNITY'
         ? 'people-outline'
-        : 'leaf-outline';
+        : source === 'AI_ESTIMATE'
+          ? 'flask-outline'
+          : 'leaf-outline';
   return <Ionicons name={iconName} size={14} color={color} />;
 }
 
@@ -127,7 +129,14 @@ function ExpandedNormalCard({
         >
           {item.name}
         </ThemedText>
-        <SourceIcon source={item.source} color={colors.textTertiary} />
+        <View style={styles.cardHeaderRight}>
+          {item.isAssumed && (
+            <ThemedText style={[Typography.caption2, { color: colors.textTertiary }]}>
+              ✦assumed
+            </ThemedText>
+          )}
+          <SourceIcon source={item.source} color={colors.textTertiary} />
+        </View>
       </View>
       <Animated.View
         style={{ transform: [{ scale: flashAnims.quantityScale }], alignSelf: 'flex-start' }}
@@ -188,7 +197,14 @@ function CompactNormalCard({
         >
           {item.name}
         </ThemedText>
-        <SourceIcon source={item.source} color={colors.textTertiary} />
+        <View style={styles.cardHeaderRight}>
+          {item.isAssumed && (
+            <ThemedText style={[Typography.caption2, { color: colors.textTertiary }]}>
+              ✦assumed
+            </ThemedText>
+          )}
+          <SourceIcon source={item.source} color={colors.textTertiary} />
+        </View>
       </View>
       <Animated.View
         style={{ transform: [{ scale: flashAnims.quantityScale }], alignSelf: 'flex-start' }}
@@ -510,6 +526,409 @@ function UsdaPendingCard({
 }
 
 // ---------------------------------------------------------------------------
+// Phase 2 — Disambiguate card
+// ---------------------------------------------------------------------------
+
+function DisambiguateCard({
+  item,
+  colors,
+  onSendTranscript,
+}: {
+  item: DraftItem;
+  colors: (typeof Colors)['light'];
+  onSendTranscript: (text: string) => void;
+}) {
+  const options = item.disambiguationOptions ?? [];
+  return (
+    <>
+      <View style={styles.cardHeader}>
+        <ThemedText
+          style={[Typography.headline, styles.foodName, { color: colors.text }]}
+          numberOfLines={1}
+        >
+          {item.name}
+        </ThemedText>
+        <Ionicons name="help-circle-outline" size={18} color={colors.tint} />
+      </View>
+      <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>
+        Which one did you mean?
+      </ThemedText>
+      {options.map((opt, i) => (
+        <Pressable
+          key={opt.usdaResult.fdcId}
+          onPress={() => onSendTranscript(`${i + 1}`)}
+          style={({ pressed }) => [
+            styles.choiceButton,
+            {
+              borderColor: colors.tint,
+              backgroundColor: pressed ? colors.tint : 'transparent',
+              marginTop: i === 0 ? Spacing.xs : 0,
+            },
+          ]}
+        >
+          {({ pressed }) => (
+            <ThemedText
+              style={[
+                Typography.footnote,
+                { color: pressed ? '#fff' : colors.tint, fontWeight: '600' },
+              ]}
+              numberOfLines={1}
+            >
+              {i + 1}. {opt.label}
+            </ThemedText>
+          )}
+        </Pressable>
+      ))}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 — Confirm clear card
+// ---------------------------------------------------------------------------
+
+function ConfirmClearCard({
+  item,
+  colors,
+  onSendTranscript,
+}: {
+  item: DraftItem;
+  colors: (typeof Colors)['light'];
+  onSendTranscript: (text: string) => void;
+}) {
+  return (
+    <>
+      <View style={styles.cardHeader}>
+        <ThemedText
+          style={[Typography.headline, styles.foodName, { color: colors.text }]}
+          numberOfLines={1}
+        >
+          Clear all items?
+        </ThemedText>
+        <Ionicons name="trash-outline" size={18} color={colors.warning} />
+      </View>
+      <ThemedText style={[Typography.subhead, { color: colors.textSecondary }]}>
+        {item.clarifyQuestion ?? 'Say yes to clear, or cancel to keep.'}
+      </ThemedText>
+      <View style={styles.choiceButtonRow}>
+        <Pressable
+          onPress={() => onSendTranscript('yes')}
+          style={({ pressed }) => [
+            styles.choiceButton,
+            { borderColor: colors.warning, backgroundColor: pressed ? colors.warning : 'transparent' },
+          ]}
+        >
+          {({ pressed }) => (
+            <ThemedText style={[Typography.footnote, { color: pressed ? '#fff' : colors.warning, fontWeight: '600' }]}>
+              Clear All
+            </ThemedText>
+          )}
+        </Pressable>
+        <Pressable
+          onPress={() => onSendTranscript('cancel')}
+          style={({ pressed }) => [
+            styles.choiceButton,
+            { borderColor: colors.border, backgroundColor: pressed ? colors.surfaceSecondary : 'transparent' },
+          ]}
+        >
+          {({ pressed }) => (
+            <ThemedText style={[Typography.footnote, { color: pressed ? colors.text : colors.textSecondary, fontWeight: '600' }]}>
+              Keep
+            </ThemedText>
+          )}
+        </Pressable>
+      </View>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 — Community submit prompt card
+// ---------------------------------------------------------------------------
+
+function CommunitySubmitPromptCard({
+  item,
+  colors,
+  onSendTranscript,
+}: {
+  item: DraftItem;
+  colors: (typeof Colors)['light'];
+  onSendTranscript: (text: string) => void;
+}) {
+  return (
+    <>
+      <View style={styles.cardHeader}>
+        <ThemedText
+          style={[Typography.headline, styles.foodName, { color: colors.text }]}
+          numberOfLines={1}
+        >
+          {item.name}
+        </ThemedText>
+        <Ionicons name="people-outline" size={18} color={colors.tint} />
+      </View>
+      <ThemedText style={[Typography.subhead, { color: colors.textSecondary }]}>
+        {item.clarifyQuestion ?? 'Share this food with the community?'}
+      </ThemedText>
+      <View style={styles.choiceButtonRow}>
+        <Pressable
+          onPress={() => onSendTranscript('yes')}
+          style={({ pressed }) => [
+            styles.choiceButton,
+            { borderColor: colors.tint, backgroundColor: pressed ? colors.tint : 'transparent' },
+          ]}
+        >
+          {({ pressed }) => (
+            <ThemedText style={[Typography.footnote, { color: pressed ? '#fff' : colors.tint, fontWeight: '600' }]}>
+              Share
+            </ThemedText>
+          )}
+        </Pressable>
+        <Pressable
+          onPress={() => onSendTranscript('no')}
+          style={({ pressed }) => [
+            styles.choiceButton,
+            { borderColor: colors.border, backgroundColor: pressed ? colors.surfaceSecondary : 'transparent' },
+          ]}
+        >
+          {({ pressed }) => (
+            <ThemedText style={[Typography.footnote, { color: pressed ? colors.text : colors.textSecondary, fontWeight: '600' }]}>
+              Keep Private
+            </ThemedText>
+          )}
+        </Pressable>
+      </View>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 — History results card
+// ---------------------------------------------------------------------------
+
+function HistoryResultsCard({
+  item,
+  colors,
+}: {
+  item: DraftItem;
+  colors: (typeof Colors)['light'];
+}) {
+  const data = item.historyData;
+  if (!data) return null;
+  return (
+    <>
+      <View style={styles.cardHeader}>
+        <ThemedText
+          style={[Typography.headline, styles.foodName, { color: colors.text }]}
+          numberOfLines={1}
+        >
+          {data.dateLabel}
+        </ThemedText>
+        <Ionicons name="calendar-outline" size={18} color={colors.tint} />
+      </View>
+      {data.addedToDraft && (
+        <ThemedText style={[Typography.caption1, { color: colors.tint }]}>
+          Added to draft
+        </ThemedText>
+      )}
+      {data.entries.slice(0, 5).map((entry, i) => (
+        <ThemedText key={i} style={[Typography.footnote, { color: colors.textSecondary }]} numberOfLines={1}>
+          • {entry.name} — {entry.quantity} {entry.unit} ({entry.macros.calories} cal)
+        </ThemedText>
+      ))}
+      {data.entries.length > 5 && (
+        <ThemedText style={[Typography.footnote, { color: colors.textTertiary }]}>
+          +{data.entries.length - 5} more
+        </ThemedText>
+      )}
+      <View style={styles.macroRow}>
+        <MacroChip label="cal" value={data.totals.calories} color={colors.caloriesAccent} />
+        <MacroChip label="P" value={data.totals.proteinG} color={colors.proteinAccent} />
+        <MacroChip label="C" value={data.totals.carbsG} color={colors.carbsAccent} />
+        <MacroChip label="F" value={data.totals.fatG} color={colors.fatAccent} />
+      </View>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 — Macro summary card
+// ---------------------------------------------------------------------------
+
+function MacroSummaryCard({
+  item,
+  colors,
+}: {
+  item: DraftItem;
+  colors: (typeof Colors)['light'];
+}) {
+  return (
+    <>
+      <View style={styles.cardHeader}>
+        <ThemedText
+          style={[Typography.headline, styles.foodName, { color: colors.text }]}
+          numberOfLines={1}
+        >
+          Today's Progress
+        </ThemedText>
+        <Ionicons name="analytics-outline" size={18} color={colors.tint} />
+      </View>
+      <View style={styles.macroRow}>
+        <MacroChip label="cal" value={item.calories} color={colors.caloriesAccent} />
+        <MacroChip label="P" value={item.proteinG} color={colors.proteinAccent} />
+        <MacroChip label="C" value={item.carbsG} color={colors.carbsAccent} />
+        <MacroChip label="F" value={item.fatG} color={colors.fatAccent} />
+      </View>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 — Food info card
+// ---------------------------------------------------------------------------
+
+function FoodInfoCard({
+  item,
+  colors,
+}: {
+  item: DraftItem;
+  colors: (typeof Colors)['light'];
+}) {
+  return (
+    <>
+      <View style={styles.cardHeader}>
+        <ThemedText
+          style={[Typography.headline, styles.foodName, { color: colors.text }]}
+          numberOfLines={1}
+        >
+          {item.name}
+        </ThemedText>
+        <Ionicons name="information-circle-outline" size={18} color={colors.tint} />
+      </View>
+      <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>
+        {item.quantity} {item.unit}
+      </ThemedText>
+      <View style={styles.macroRow}>
+        <MacroChip label="cal" value={item.calories} color={colors.caloriesAccent} />
+        <MacroChip label="P" value={item.proteinG} color={colors.proteinAccent} />
+        <MacroChip label="C" value={item.carbsG} color={colors.carbsAccent} />
+        <MacroChip label="F" value={item.fatG} color={colors.fatAccent} />
+      </View>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 — Food suggestions card
+// ---------------------------------------------------------------------------
+
+function FoodSuggestionsCard({
+  item,
+  colors,
+  onSendTranscript,
+}: {
+  item: DraftItem;
+  colors: (typeof Colors)['light'];
+  onSendTranscript: (text: string) => void;
+}) {
+  return (
+    <>
+      <View style={styles.cardHeader}>
+        <ThemedText
+          style={[Typography.headline, styles.foodName, { color: colors.text }]}
+          numberOfLines={1}
+        >
+          Suggestions
+        </ThemedText>
+        <Ionicons name="bulb-outline" size={18} color={colors.tint} />
+      </View>
+      <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>
+        Say the food name to add it.
+      </ThemedText>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6 — AI Estimate card
+// ---------------------------------------------------------------------------
+
+function EstimateCard({
+  item,
+  colors,
+  onSendTranscript,
+}: {
+  item: DraftItem;
+  colors: (typeof Colors)['light'];
+  onSendTranscript: (text: string) => void;
+}) {
+  const confidenceColor =
+    item.estimateConfidence === 'high'
+      ? colors.success
+      : item.estimateConfidence === 'low'
+        ? colors.warning
+        : colors.tint;
+
+  return (
+    <>
+      <View style={styles.cardHeader}>
+        <ThemedText
+          style={[Typography.headline, styles.foodName, { color: colors.text }]}
+          numberOfLines={1}
+        >
+          {item.name}
+        </ThemedText>
+        <View style={styles.estimateBadge}>
+          <Ionicons name="warning-outline" size={12} color={colors.warning} />
+          <ThemedText style={[Typography.caption2, { color: colors.warning }]}>
+            {' '}Est.
+          </ThemedText>
+        </View>
+      </View>
+      <ThemedText style={[Typography.caption1, { color: confidenceColor }]}>
+        Confidence: {item.estimateConfidence ?? 'medium'}
+      </ThemedText>
+      <ThemedText style={[Typography.subhead, { color: colors.textSecondary }]}>
+        ~{item.quantity} {item.unit}
+      </ThemedText>
+      <View style={styles.macroRow}>
+        <MacroChip label="cal" value={item.calories} color={colors.caloriesAccent} />
+        <MacroChip label="P" value={item.proteinG} color={colors.proteinAccent} />
+        <MacroChip label="C" value={item.carbsG} color={colors.carbsAccent} />
+        <MacroChip label="F" value={item.fatG} color={colors.fatAccent} />
+      </View>
+      <View style={styles.choiceButtonRow}>
+        <Pressable
+          onPress={() => onSendTranscript('add')}
+          style={({ pressed }) => [
+            styles.choiceButton,
+            { borderColor: colors.warning, backgroundColor: pressed ? colors.warning : 'transparent' },
+          ]}
+        >
+          {({ pressed }) => (
+            <ThemedText style={[Typography.footnote, { color: pressed ? '#fff' : colors.warning, fontWeight: '600' }]}>
+              Add anyway
+            </ThemedText>
+          )}
+        </Pressable>
+        <Pressable
+          onPress={() => onSendTranscript('search DB')}
+          style={({ pressed }) => [
+            styles.choiceButton,
+            { borderColor: colors.border, backgroundColor: pressed ? colors.surfaceSecondary : 'transparent' },
+          ]}
+        >
+          {({ pressed }) => (
+            <ThemedText style={[Typography.footnote, { color: pressed ? colors.text : colors.textSecondary, fontWeight: '600' }]}>
+              Search DB
+            </ThemedText>
+          )}
+        </Pressable>
+      </View>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -581,7 +1000,7 @@ export default function DraftMealCard({ item, isActive, onSendTranscript }: Draf
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    if (item.state === 'clarifying' || item.state === 'choice') {
+    if (item.state === 'clarifying' || item.state === 'choice' || item.state === 'disambiguate') {
       const loop = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
@@ -633,7 +1052,15 @@ export default function DraftMealCard({ item, isActive, onSendTranscript }: Draf
         ? colors.tint
         : item.state === 'usda_pending'
           ? colors.warning
-          : colors.border;
+          : item.state === 'disambiguate'
+            ? colors.tint
+            : item.state === 'confirm_clear'
+              ? colors.warning
+              : item.state === 'community_submit_prompt'
+                ? colors.tint
+                : item.state === 'estimate_card'
+                  ? colors.warning
+                  : colors.border;
 
   const isCompact = !isActive && item.state === 'normal';
 
@@ -664,6 +1091,30 @@ export default function DraftMealCard({ item, isActive, onSendTranscript }: Draf
       )}
       {item.state === 'usda_pending' && (
         <UsdaPendingCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
+      )}
+      {item.state === 'disambiguate' && (
+        <DisambiguateCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
+      )}
+      {item.state === 'confirm_clear' && (
+        <ConfirmClearCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
+      )}
+      {item.state === 'community_submit_prompt' && (
+        <CommunitySubmitPromptCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
+      )}
+      {item.state === 'history_results' && (
+        <HistoryResultsCard item={item} colors={colors} />
+      )}
+      {item.state === 'macro_summary' && (
+        <MacroSummaryCard item={item} colors={colors} />
+      )}
+      {item.state === 'food_info' && (
+        <FoodInfoCard item={item} colors={colors} />
+      )}
+      {item.state === 'food_suggestions' && (
+        <FoodSuggestionsCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
+      )}
+      {item.state === 'estimate_card' && (
+        <EstimateCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
       )}
     </Animated.View>
   );
@@ -759,5 +1210,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     borderRadius: BorderRadius.full,
     borderWidth: 1.5,
+  },
+  cardHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    flexShrink: 0,
+  },
+  estimateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+    backgroundColor: 'rgba(255,165,0,0.12)',
   },
 });

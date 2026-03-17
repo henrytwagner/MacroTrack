@@ -82,7 +82,13 @@ export default function FoodEntryRow({
           </View>
         </View>
         <MaterialIcons
-          name={entry.source === 'CUSTOM' ? 'person-outline' : 'cloud-queue'}
+          name={
+            entry.source === 'CUSTOM'
+              ? 'person-outline'
+              : entry.source === 'COMMUNITY'
+                ? 'people-outline'
+                : 'cloud-queue'
+          }
           size={16}
           color={colors.textTertiary}
         />

@@ -88,9 +88,15 @@ export const useDraftStore = create<DraftStoreState>((set, get) => ({
         }
 
         case 'item_edited': {
-          items = items.map((item) =>
-            item.id === msg.itemId ? { ...item, ...msg.changes } : item,
-          );
+          items = items.map((item) => {
+            if (item.id !== msg.itemId) return item;
+            const updated = { ...item, ...msg.changes };
+            // Clear isAssumed if the user explicitly changed quantity or unit
+            if ('quantity' in msg.changes || 'unit' in msg.changes) {
+              updated.isAssumed = false;
+            }
+            return updated;
+          });
           break;
         }
 
@@ -222,6 +228,242 @@ export const useDraftStore = create<DraftStoreState>((set, get) => ({
 
         case 'operation_cancelled': {
           items = items.filter((item) => item.id !== msg.itemId);
+          break;
+        }
+
+        // Phase 2 — Disambiguation
+        case 'disambiguate': {
+          const alreadyExists = items.some((i) => i.id === msg.itemId);
+          if (!alreadyExists) {
+            const now = new Date();
+            const h = now.getHours();
+            const mealLabel =
+              h >= 5 && h < 11
+                ? ('breakfast' as const)
+                : h >= 11 && h < 14
+                  ? ('lunch' as const)
+                  : h >= 17 && h < 22
+                    ? ('dinner' as const)
+                    : ('snack' as const);
+            items = [
+              ...items,
+              {
+                id: msg.itemId,
+                name: msg.foodName,
+                quantity: 1,
+                unit: 'servings',
+                calories: 0,
+                proteinG: 0,
+                carbsG: 0,
+                fatG: 0,
+                source: 'DATABASE' as const,
+                mealLabel,
+                state: 'disambiguate' as const,
+                disambiguationOptions: msg.options,
+              },
+            ];
+          }
+          break;
+        }
+
+        // Phase 3 — Confirm clear
+        case 'confirm_clear': {
+          // No draft item added — this is a UI-level card tracked separately
+          // The server manages the state; mobile just shows a global banner/card.
+          // We add a sentinel item so the card renders in the list.
+          const clearId = `confirm-clear-${Date.now()}`;
+          const alreadyHasClear = items.some((i) => i.state === 'confirm_clear');
+          if (!alreadyHasClear) {
+            const now = new Date();
+            const h = now.getHours();
+            const mealLabel =
+              h >= 5 && h < 11
+                ? ('breakfast' as const)
+                : h >= 11 && h < 14
+                  ? ('lunch' as const)
+                  : h >= 17 && h < 22
+                    ? ('dinner' as const)
+                    : ('snack' as const);
+            items = [
+              ...items,
+              {
+                id: clearId,
+                name: 'Clear all items?',
+                quantity: 0,
+                unit: '',
+                calories: 0,
+                proteinG: 0,
+                carbsG: 0,
+                fatG: 0,
+                source: 'CUSTOM' as const,
+                mealLabel,
+                state: 'confirm_clear' as const,
+                clarifyQuestion: msg.question,
+              },
+            ];
+          }
+          break;
+        }
+
+        // Phase 3 — Community submit prompt
+        case 'community_submit_prompt': {
+          items = items.map((item) =>
+            item.id === msg.itemId
+              ? { ...item, state: 'community_submit_prompt' as const, clarifyQuestion: msg.question }
+              : item,
+          );
+          break;
+        }
+
+        // Phase 4 — History results
+        case 'history_results': {
+          const alreadyExists = items.some((i) => i.id === msg.itemId);
+          if (!alreadyExists) {
+            const now = new Date();
+            const h = now.getHours();
+            const mealLabel =
+              h >= 5 && h < 11
+                ? ('breakfast' as const)
+                : h >= 11 && h < 14
+                  ? ('lunch' as const)
+                  : h >= 17 && h < 22
+                    ? ('dinner' as const)
+                    : ('snack' as const);
+            items = [
+              ...items,
+              {
+                id: msg.itemId,
+                name: `${msg.dateLabel} log`,
+                quantity: 0,
+                unit: '',
+                calories: msg.totals.calories,
+                proteinG: msg.totals.proteinG,
+                carbsG: msg.totals.carbsG,
+                fatG: msg.totals.fatG,
+                source: 'DATABASE' as const,
+                mealLabel,
+                state: 'history_results' as const,
+                historyData: {
+                  dateLabel: msg.dateLabel,
+                  entries: msg.entries,
+                  totals: msg.totals,
+                  addedToDraft: msg.addedToDraft,
+                },
+              },
+            ];
+          }
+          break;
+        }
+
+        // Phase 5 — Macro summary
+        case 'macro_summary': {
+          const alreadyExists = items.some((i) => i.id === msg.itemId);
+          if (!alreadyExists) {
+            const now = new Date();
+            const h = now.getHours();
+            const mealLabel =
+              h >= 5 && h < 11
+                ? ('breakfast' as const)
+                : h >= 11 && h < 14
+                  ? ('lunch' as const)
+                  : h >= 17 && h < 22
+                    ? ('dinner' as const)
+                    : ('snack' as const);
+            items = [
+              ...items,
+              {
+                id: msg.itemId,
+                name: 'Macro Summary',
+                quantity: 0,
+                unit: '',
+                calories: msg.summary.calories,
+                proteinG: msg.summary.proteinG,
+                carbsG: msg.summary.carbsG,
+                fatG: msg.summary.fatG,
+                source: 'DATABASE' as const,
+                mealLabel,
+                state: 'macro_summary' as const,
+              },
+            ];
+          }
+          break;
+        }
+
+        // Phase 5 — Food info
+        case 'food_info': {
+          const alreadyExists = items.some((i) => i.id === msg.itemId);
+          if (!alreadyExists) {
+            const now = new Date();
+            const h = now.getHours();
+            const mealLabel =
+              h >= 5 && h < 11
+                ? ('breakfast' as const)
+                : h >= 11 && h < 14
+                  ? ('lunch' as const)
+                  : h >= 17 && h < 22
+                    ? ('dinner' as const)
+                    : ('snack' as const);
+            items = [
+              ...items,
+              {
+                id: msg.itemId,
+                name: msg.foodName,
+                quantity: msg.usdaResult.servingSize ?? 1,
+                unit: msg.usdaResult.servingSizeUnit ?? 'g',
+                calories: msg.usdaResult.macros.calories,
+                proteinG: msg.usdaResult.macros.proteinG,
+                carbsG: msg.usdaResult.macros.carbsG,
+                fatG: msg.usdaResult.macros.fatG,
+                source: 'DATABASE' as const,
+                usdaFdcId: msg.usdaResult.fdcId,
+                mealLabel,
+                state: 'food_info' as const,
+              },
+            ];
+          }
+          break;
+        }
+
+        // Phase 5 — Food suggestions
+        case 'food_suggestions': {
+          const alreadyExists = items.some((i) => i.id === msg.itemId);
+          if (!alreadyExists) {
+            const now = new Date();
+            const h = now.getHours();
+            const mealLabel =
+              h >= 5 && h < 11
+                ? ('breakfast' as const)
+                : h >= 11 && h < 14
+                  ? ('lunch' as const)
+                  : h >= 17 && h < 22
+                    ? ('dinner' as const)
+                    : ('snack' as const);
+            items = [
+              ...items,
+              {
+                id: msg.itemId,
+                name: 'Food Suggestions',
+                quantity: 0,
+                unit: '',
+                calories: 0,
+                proteinG: 0,
+                carbsG: 0,
+                fatG: 0,
+                source: 'DATABASE' as const,
+                mealLabel,
+                state: 'food_suggestions' as const,
+              },
+            ];
+          }
+          break;
+        }
+
+        // Phase 6 — Estimate card
+        case 'estimate_card': {
+          const alreadyExists = items.some((i) => i.id === msg.item.id);
+          if (!alreadyExists) {
+            items = [...items, { ...msg.item }];
+          }
           break;
         }
 

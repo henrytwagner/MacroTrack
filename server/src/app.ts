@@ -5,8 +5,10 @@ import websocket from "@fastify/websocket";
 import { goalsRoutes } from "./routes/goals.js";
 import { foodRoutes } from "./routes/food.js";
 import { customFoodRoutes } from "./routes/customFood.js";
+import { communityFoodRoutes } from "./routes/communityFood.js";
 import { barcodeRoutes } from "./routes/barcode.js";
 import { profileRoutes } from "./routes/profile.js";
+import { userPreferencesRoutes } from "./routes/userPreferences.js";
 import { voiceSessionRoutes } from "./websocket/voiceSession.js";
 
 export async function buildApp() {
@@ -26,8 +28,10 @@ export async function buildApp() {
   await app.register(goalsRoutes);
   await app.register(foodRoutes);
   await app.register(customFoodRoutes);
+  await app.register(communityFoodRoutes);
   await app.register(barcodeRoutes);
   await app.register(profileRoutes);
+  await app.register(userPreferencesRoutes);
   await app.register(voiceSessionRoutes);
 
   return app;

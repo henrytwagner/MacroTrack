@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Alert,
   StyleSheet,
@@ -18,7 +18,7 @@ import * as Haptics from 'expo-haptics';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import type { CustomFood, FoodUnitConversion } from '@shared/types';
+import type { CustomFood, CommunityFood, FoodUnitConversion } from '@shared/types';
 import * as api from '@/services/api';
 import FoodUnitConversionsBlock from '@/components/FoodUnitConversionsBlock';
 import { SERVING_UNITS } from '@/constants/units';
@@ -30,8 +30,17 @@ interface CreateFoodSheetProps {
   visible: boolean;
   prefillName?: string;
   editingFood?: CustomFood;
+  intent?: 'custom' | 'community';
+  prefillCommunityFood?: CommunityFood;
+  prefillBarcode?: string;
+  /** When publishing, the ID of the CustomFood being converted. */
+  sourceCustomFoodId?: string;
   onDismiss: () => void;
-  onSaved?: (food: CustomFood) => void;
+  onSaved?: (food?: CustomFood) => void;
+  /** Called when user taps Publish (edit) or Create and share (create). Parent should open publish sheet. */
+  onPublishRequest?: (food: CustomFood) => void;
+  /** Called after deleting a custom food in edit mode so parent can refresh. */
+  onDeleted?: () => void;
 }
 
 interface FieldInputProps {
@@ -87,13 +96,22 @@ export default function CreateFoodSheet({
   visible,
   prefillName,
   editingFood,
+  intent = 'custom',
+  prefillCommunityFood,
+  prefillBarcode,
+  sourceCustomFoodId,
   onDismiss,
   onSaved,
+  onPublishRequest,
+  onDeleted,
 }: CreateFoodSheetProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
+  const isCommunity = intent === 'community';
+
   const [name, setName] = useState('');
+  const [brandName, setBrandName] = useState('');
   const [servingSize, setServingSize] = useState('');
   const [servingUnit, setServingUnit] = useState<string>('g');
   const [calories, setCalories] = useState('');
@@ -112,38 +130,48 @@ export default function CreateFoodSheet({
   const [isSaving, setIsSaving] = useState(false);
   /** Pending conversions when creating a new food; applied after the food is saved. */
   const [pendingUnitConversions, setPendingUnitConversions] = useState<
-    Array<{ unitName: string; quantityInBaseServings: number }>
+    { unitName: string; quantityInBaseServings: number }[]
   >([]);
   /** Saved conversions when editing; synced from block via onConversionsChange. */
   const [unitConfigs, setUnitConfigs] = useState<FoodUnitConversion[]>([]);
+  /** Overlay JSX lifted from FoodUnitConversionsBlock to avoid nested Modal artifacts. */
+  const [unitOverlay, setUnitOverlay] = useState<React.ReactNode>(null);
 
   useEffect(() => {
     if (!visible) return;
-    if (editingFood) {
-      setName(editingFood.name);
-      setServingSize(String(editingFood.servingSize));
-      setServingUnit(editingFood.servingUnit);
-      setCalories(String(editingFood.calories));
-      setProtein(String(editingFood.proteinG));
-      setCarbs(String(editingFood.carbsG));
-      setFat(String(editingFood.fatG));
-      if (editingFood.sodiumMg != null) setSodium(String(editingFood.sodiumMg));
-      if (editingFood.cholesterolMg != null) setCholesterol(String(editingFood.cholesterolMg));
-      if (editingFood.fiberG != null) setFiber(String(editingFood.fiberG));
-      if (editingFood.sugarG != null) setSugar(String(editingFood.sugarG));
-      if (editingFood.saturatedFatG != null) setSaturatedFat(String(editingFood.saturatedFatG));
-      if (editingFood.transFatG != null) setTransFat(String(editingFood.transFatG));
+
+    const prefill = editingFood ?? prefillCommunityFood;
+    if (prefill) {
+      setName(prefill.name);
+      setBrandName(
+        'brandName' in prefill && prefill.brandName ? prefill.brandName : '',
+      );
+      const ss = 'servingSize' in prefill ? prefill.servingSize : (prefill as CommunityFood).defaultServingSize;
+      const su = 'servingUnit' in prefill ? prefill.servingUnit : (prefill as CommunityFood).defaultServingUnit;
+      setServingSize(String(ss));
+      setServingUnit(su);
+      setCalories(String(prefill.calories));
+      setProtein(String(prefill.proteinG));
+      setCarbs(String(prefill.carbsG));
+      setFat(String(prefill.fatG));
+      if (prefill.sodiumMg != null) setSodium(String(prefill.sodiumMg));
+      if (prefill.cholesterolMg != null) setCholesterol(String(prefill.cholesterolMg));
+      if (prefill.fiberG != null) setFiber(String(prefill.fiberG));
+      if (prefill.sugarG != null) setSugar(String(prefill.sugarG));
+      if (prefill.saturatedFatG != null) setSaturatedFat(String(prefill.saturatedFatG));
+      if (prefill.transFatG != null) setTransFat(String(prefill.transFatG));
       const hasOptional =
-        editingFood.sodiumMg != null ||
-        editingFood.cholesterolMg != null ||
-        editingFood.fiberG != null ||
-        editingFood.sugarG != null ||
-        editingFood.saturatedFatG != null ||
-        editingFood.transFatG != null;
+        prefill.sodiumMg != null ||
+        prefill.cholesterolMg != null ||
+        prefill.fiberG != null ||
+        prefill.sugarG != null ||
+        prefill.saturatedFatG != null ||
+        prefill.transFatG != null;
       setShowOptional(hasOptional);
       setPendingUnitConversions([]);
     } else {
       setName(prefillName || '');
+      setBrandName('');
       setServingSize('100');
       setServingUnit('g');
       setCalories('');
@@ -159,22 +187,64 @@ export default function CreateFoodSheet({
       setShowOptional(false);
       setPendingUnitConversions([]);
     }
-  }, [editingFood, prefillName, visible]);
+  }, [editingFood, prefillCommunityFood, prefillName, visible]);
 
   const baseServingNum = Number(servingSize) || 1;
-  const allConversions = editingFood ? unitConfigs : pendingUnitConversions;
 
   const handleServingUnitChange = (newUnit: string) => {
     if (newUnit === servingUnit) return;
-    setPendingUnitConversions([]);
-    if (editingFood && unitConfigs.length > 0) {
-      Promise.all(unitConfigs.map((c) => api.deleteFoodUnitConversion(c.id)))
-        .then(() => setUnitConfigs([]))
-        .catch(() => setUnitConfigs([]));
-    } else if (editingFood) {
-      setUnitConfigs([]);
+
+    const adoptedPending = pendingUnitConversions.find((c) => c.unitName === newUnit);
+    const adoptedSaved = unitConfigs.find((c) => c.unitName === newUnit);
+    const adopted = adoptedPending ?? adoptedSaved;
+
+    if (adopted) {
+      // Adoption: new unit IS an existing conversion.
+      // Redefine base as "1 newUnit", recalculate remaining conversions.
+      const adoptedQIBS = adopted.quantityInBaseServings;
+
+      const newPending = pendingUnitConversions
+        .filter((c) => c.unitName !== newUnit)
+        .map((c) => ({ ...c, quantityInBaseServings: c.quantityInBaseServings / adoptedQIBS }));
+      setPendingUnitConversions(newPending);
+
+      if (editingFood) {
+        const newSaved = unitConfigs.filter((c) => c.unitName !== newUnit);
+        // Delete adopted, then update remaining
+        const deleteOp = adoptedSaved ? api.deleteFoodUnitConversion(adoptedSaved.id) : Promise.resolve();
+        deleteOp
+          .then(() =>
+            Promise.all(
+              newSaved.map((c) =>
+                api.updateFoodUnitConversion(c.id, {
+                  quantityInBaseServings: c.quantityInBaseServings / adoptedQIBS,
+                }),
+              ),
+            ),
+          )
+          .then((updated) => {
+            const next = updated.length > 0 ? updated : [];
+            setUnitConfigs(next);
+          })
+          .catch(() => {
+            setUnitConfigs(unitConfigs.filter((c) => c.unitName !== newUnit));
+          });
+      }
+
+      setServingSize('1');
+      setServingUnit(newUnit);
+    } else {
+      // New unit is not in conversions — clear all (ratios would be physically wrong)
+      setPendingUnitConversions([]);
+      if (editingFood && unitConfigs.length > 0) {
+        Promise.all(unitConfigs.map((c) => api.deleteFoodUnitConversion(c.id)))
+          .then(() => setUnitConfigs([]))
+          .catch(() => setUnitConfigs([]));
+      } else if (editingFood) {
+        setUnitConfigs([]);
+      }
+      setServingUnit(newUnit);
     }
-    setServingUnit(newUnit);
   };
 
   const isValid =
@@ -182,18 +252,11 @@ export default function CreateFoodSheet({
     Number(servingSize) > 0 &&
     calories.length > 0;
 
-  const handleSave = async () => {
+  const handleSave = async (openPublishAfter?: boolean) => {
     if (!isValid) return;
     setIsSaving(true);
 
-    const data = {
-      name: name.trim(),
-      servingSize: Number(servingSize) || 1,
-      servingUnit,
-      calories: Number(calories) || 0,
-      proteinG: Number(protein) || 0,
-      carbsG: Number(carbs) || 0,
-      fatG: Number(fat) || 0,
+    const optionalMacros = {
       ...(sodium ? { sodiumMg: Number(sodium) } : {}),
       ...(cholesterol ? { cholesterolMg: Number(cholesterol) } : {}),
       ...(fiber ? { fiberG: Number(fiber) } : {}),
@@ -203,32 +266,70 @@ export default function CreateFoodSheet({
     };
 
     try {
-      let result: CustomFood;
-      if (editingFood) {
-        result = await api.updateCustomFood(editingFood.id, data);
-      } else {
-        result = await api.createCustomFood(data);
-        // Apply pending unit conversions to the new food.
-        for (const pending of pendingUnitConversions) {
-          try {
-            await api.createFoodUnitConversion({
-              unitName: pending.unitName,
-              quantityInBaseServings: pending.quantityInBaseServings,
-              customFoodId: result.id,
-            });
-          } catch (unitErr) {
-            const msg =
-              unitErr instanceof api.ApiError ? unitErr.message : (unitErr as Error)?.message ?? 'Unknown error';
-            Alert.alert(
-              'Food created, some units could not be saved',
-              `"${pending.unitName}" could not be added: ${msg}. You can add it later by editing this food.`,
-            );
-          }
+      if (isCommunity) {
+        if (sourceCustomFoodId) {
+          await api.publishCustomFood(sourceCustomFoodId, {
+            brandName: brandName.trim() || undefined,
+            barcode: prefillBarcode || undefined,
+          });
+        } else {
+          await api.createCommunityFood({
+            name: name.trim(),
+            brandName: brandName.trim() || undefined,
+            defaultServingSize: Number(servingSize) || 1,
+            defaultServingUnit: servingUnit,
+            calories: Number(calories) || 0,
+            proteinG: Number(protein) || 0,
+            carbsG: Number(carbs) || 0,
+            fatG: Number(fat) || 0,
+            barcode: prefillBarcode || undefined,
+            ...optionalMacros,
+          });
         }
-        setPendingUnitConversions([]);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        onSaved?.();
+      } else {
+        const data = {
+          name: name.trim(),
+          servingSize: Number(servingSize) || 1,
+          servingUnit,
+          calories: Number(calories) || 0,
+          proteinG: Number(protein) || 0,
+          carbsG: Number(carbs) || 0,
+          fatG: Number(fat) || 0,
+          ...optionalMacros,
+        };
+
+        let result: CustomFood;
+        if (editingFood) {
+          result = await api.updateCustomFood(editingFood.id, data);
+        } else {
+          result = await api.createCustomFood(data);
+          for (const pending of pendingUnitConversions) {
+            try {
+              await api.createFoodUnitConversion({
+                unitName: pending.unitName,
+                quantityInBaseServings: pending.quantityInBaseServings,
+                customFoodId: result.id,
+              });
+            } catch (unitErr) {
+              const msg =
+                unitErr instanceof api.ApiError ? unitErr.message : (unitErr as Error)?.message ?? 'Unknown error';
+              Alert.alert(
+                'Food created, some units could not be saved',
+                `"${pending.unitName}" could not be added: ${msg}. You can add it later by editing this food.`,
+              );
+            }
+          }
+          setPendingUnitConversions([]);
+        }
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        if (openPublishAfter) {
+          onPublishRequest?.(result);
+        } else {
+          onSaved?.(result);
+        }
       }
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onSaved?.(result);
     } catch (e) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       const message =
@@ -239,7 +340,36 @@ export default function CreateFoodSheet({
     }
   };
 
+  const handleDelete = () => {
+    if (!editingFood) return;
+    Alert.alert(
+      'Delete this personal food?',
+      'It will be removed from My Foods. Existing log entries will keep their saved nutrition but will no longer link to this food.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.deleteCustomFood(editingFood.id);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              onDeleted?.();
+              onDismiss();
+            } catch (e) {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+              const message =
+                e instanceof api.ApiError ? e.message : (e as Error)?.message ?? 'Could not delete.';
+              Alert.alert('Could not delete', message);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const isEditing = !!editingFood;
+  const isCustomCreate = !isCommunity && !editingFood;
 
   return (
     <Modal
@@ -256,7 +386,7 @@ export default function CreateFoodSheet({
             </ThemedText>
           </Pressable>
           <ThemedText style={[Typography.headline, { color: colors.text }]}>
-            {isEditing ? 'Edit Custom Food' : 'Create Custom Food'}
+            {isEditing ? 'Edit Custom Food' : isCommunity ? 'Add to Community' : 'Create Custom Food'}
           </ThemedText>
           <View style={{ width: 50 }} />
         </View>
@@ -284,6 +414,16 @@ export default function CreateFoodSheet({
                 autoFocus={!isEditing}
                 returnKeyType="next"
               />
+              {isCommunity && (
+                <TextInput
+                  style={[styles.nameInput, { color: colors.text, borderColor: colors.border, marginTop: Spacing.sm }]}
+                  value={brandName}
+                  onChangeText={setBrandName}
+                  placeholder="Brand name (optional)"
+                  placeholderTextColor={colors.textTertiary}
+                  returnKeyType="next"
+                />
+              )}
             </View>
 
             {/* Serving Size — amount and base unit; conversions use this unit */}
@@ -349,11 +489,9 @@ export default function CreateFoodSheet({
                   customFoodId={editingFood.id}
                   servingSize={baseServingNum}
                   servingUnit={servingUnit}
-                  selectedUnit={servingUnit}
-                  onSelectUnit={(u) => {
-                    if (u !== 'servings') handleServingUnitChange(u);
-                  }}
+                  noUnitSelection
                   onConversionsChange={setUnitConfigs}
+                  onOverlayRender={setUnitOverlay}
                 />
               ) : (
                 <FoodUnitConversionsBlock
@@ -362,30 +500,9 @@ export default function CreateFoodSheet({
                   servingUnit={servingUnit}
                   pendingConversions={pendingUnitConversions}
                   onPendingConversionsChange={setPendingUnitConversions}
-                  selectedUnit={servingUnit}
-                  onSelectUnit={(u) => {
-                    if (u !== 'servings') handleServingUnitChange(u);
-                  }}
+                  noUnitSelection
+                  onOverlayRender={setUnitOverlay}
                 />
-              )}
-              {allConversions.some((c) => c.unitName !== 'servings') && (
-                <View style={[styles.conversionsList, { borderTopColor: colors.borderLight }]}>
-                  <ThemedText style={[Typography.caption1, { color: colors.textSecondary, marginBottom: Spacing.xs }]}>
-                    In place:
-                  </ThemedText>
-                  {allConversions
-                    .filter((c) => c.unitName !== 'servings')
-                    .map((c) => {
-                      const name = c.unitName;
-                      const q = c.quantityInBaseServings;
-                      const amount = (q * baseServingNum).toFixed(2);
-                      return (
-                        <ThemedText key={name} style={[Typography.subhead, { color: colors.text }]}>
-                          1 {name} = {amount} {servingUnit}
-                        </ThemedText>
-                      );
-                    })}
-                </View>
               )}
             </View>
 
@@ -432,19 +549,62 @@ export default function CreateFoodSheet({
                 { backgroundColor: colors.tint, opacity: pressed ? 0.8 : 1 },
                 (!isValid || isSaving) && styles.buttonDisabled,
               ]}
-              onPress={handleSave}
+              onPress={() => handleSave()}
               disabled={!isValid || isSaving}
             >
               {isSaving ? (
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
                 <ThemedText style={styles.saveButtonText}>
-                  {isEditing ? 'Save Changes' : 'Create Food'}
+                  {isEditing ? 'Save Changes' : isCommunity ? 'Publish to Community' : 'Create Food'}
                 </ThemedText>
               )}
             </Pressable>
+
+            {isEditing && onPublishRequest && (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  { borderColor: colors.tint, opacity: pressed ? 0.8 : 1 },
+                ]}
+                onPress={() => onPublishRequest(editingFood!)}
+              >
+                <Ionicons name="share-outline" size={20} color={colors.tint} style={{ marginRight: Spacing.xs }} />
+                <ThemedText style={[Typography.headline, { color: colors.tint }]}>Publish to community</ThemedText>
+              </Pressable>
+            )}
+
+            {isCustomCreate && onPublishRequest && (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  { borderColor: colors.tint, opacity: pressed ? 0.8 : 1 },
+                  (!isValid || isSaving) && styles.buttonDisabled,
+                ]}
+                onPress={() => handleSave(true)}
+                disabled={!isValid || isSaving}
+              >
+                <Ionicons name="share-outline" size={20} color={colors.tint} style={{ marginRight: Spacing.xs }} />
+                <ThemedText style={[Typography.headline, { color: colors.tint }]}>Create and share</ThemedText>
+              </Pressable>
+            )}
+
+            {isEditing && (
+              <Pressable
+                style={({ pressed }) => [styles.deleteButton, { borderColor: colors.destructive, opacity: pressed ? 0.8 : 1 }]}
+                onPress={handleDelete}
+              >
+                <Ionicons name="trash-outline" size={20} color={colors.destructive} style={{ marginRight: Spacing.xs }} />
+                <ThemedText style={[Typography.headline, { color: colors.destructive }]}>Delete</ThemedText>
+              </Pressable>
+            )}
           </ScrollView>
         </KeyboardAvoidingView>
+        {unitOverlay != null && (
+          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+            {unitOverlay}
+          </View>
+        )}
       </SafeAreaView>
     </Modal>
   );
@@ -511,12 +671,6 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
     borderWidth: 1,
   },
-  conversionsList: {
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: Spacing.xs,
-  },
   fieldRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -564,6 +718,26 @@ const styles = StyleSheet.create({
   saveButtonText: {
     ...Typography.headline,
     color: '#FFFFFF',
+  },
+  secondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.lg,
+    minHeight: 52,
+    marginTop: Spacing.md,
+    borderWidth: 1,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.lg,
+    minHeight: 52,
+    marginTop: Spacing.lg,
+    borderWidth: 1,
   },
   buttonDisabled: {
     opacity: 0.4,

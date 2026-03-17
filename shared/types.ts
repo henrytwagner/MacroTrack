@@ -5,7 +5,7 @@
 
 // --- Enums & Constants ---
 
-export type FoodSource = "DATABASE" | "CUSTOM" | "COMMUNITY";
+export type FoodSource = "DATABASE" | "CUSTOM" | "COMMUNITY" | "AI_ESTIMATE";
 
 export type MealLabel = "breakfast" | "lunch" | "dinner" | "snack";
 
@@ -133,6 +133,7 @@ export interface FoodUnitConversion {
   quantityInBaseServings: number;
   customFoodId?: string;
   usdaFdcId?: number;
+  measurementSystem: 'weight' | 'volume' | 'abstract';
 }
 
 export interface CreateFoodUnitConversionRequest {
@@ -140,10 +141,15 @@ export interface CreateFoodUnitConversionRequest {
   quantityInBaseServings: number;
   customFoodId?: string;
   usdaFdcId?: number;
+  measurementSystem?: 'weight' | 'volume' | 'abstract';
 }
 
 export interface UpdateFoodUnitConversionRequest {
   quantityInBaseServings?: number;
+}
+
+export interface CascadeUnitConversionsRequest {
+  updates: Array<{ id: string; quantityInBaseServings: number }>;
 }
 
 export interface FoodEntry extends Macros {
@@ -335,7 +341,20 @@ export interface DailySummary {
 
 // --- Kitchen Mode Draft State ---
 
-export type DraftCardState = "normal" | "clarifying" | "creating" | "choice" | "usda_pending";
+export type DraftCardState =
+  | "normal"
+  | "clarifying"
+  | "creating"
+  | "choice"
+  | "usda_pending"
+  | "disambiguate"
+  | "confirm_clear"
+  | "community_submit_prompt"
+  | "history_results"
+  | "macro_summary"
+  | "food_info"
+  | "food_suggestions"
+  | "estimate_card";
 
 export interface DraftItem extends Macros {
   id: string; // temporary client-side ID (e.g., "tmp-1")
@@ -350,6 +369,16 @@ export interface DraftItem extends Macros {
   state: DraftCardState;
   clarifyQuestion?: string; // shown on card when state === "clarifying"
   creatingProgress?: CreatingFoodProgress; // tracks fields filled so far
+  isAssumed?: boolean; // true when quantity/unit inferred from history
+  isEstimate?: boolean; // true when macros are AI-estimated
+  estimateConfidence?: "high" | "medium" | "low";
+  disambiguationOptions?: DisambiguationOption[]; // populated when state === "disambiguate"
+  historyData?: {
+    dateLabel: string;
+    entries: HistoryFoodEntry[];
+    totals: Macros;
+    addedToDraft: boolean;
+  };
 }
 
 export interface CreatingFoodProgress {
@@ -370,6 +399,32 @@ export type CreatingFoodField =
   | "carbs"
   | "fat"
   | "complete";
+
+// --- Disambiguation Types (Phase 2) ---
+
+export interface DisambiguationOption {
+  label: string;
+  usdaResult: USDASearchResult;
+}
+
+// --- History Types (Phase 4) ---
+
+export interface HistoryFoodEntry {
+  name: string;
+  quantity: number;
+  unit: string;
+  macros: Macros;
+}
+
+// --- Macro Summary (Phase 5) ---
+
+export interface MacroSummary {
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  goals: Macros | null;
+}
 
 // --- WebSocket Message Types ---
 
@@ -506,6 +561,67 @@ export interface WSOperationCancelledMessage {
   message: string;
 }
 
+// Phase 2 — Disambiguation
+export interface WSDisambiguateMessage {
+  type: "disambiguate";
+  itemId: string;
+  foodName: string;
+  question: string;
+  options: DisambiguationOption[];
+}
+
+// Phase 3 — Power User Flows
+export interface WSConfirmClearMessage {
+  type: "confirm_clear";
+  question: string;
+}
+
+export interface WSCommunitySubmitPromptMessage {
+  type: "community_submit_prompt";
+  itemId: string;
+  foodName: string;
+  question: string;
+}
+
+// Phase 4 — History
+export interface WSHistoryResultsMessage {
+  type: "history_results";
+  itemId: string;
+  dateLabel: string;
+  mealLabel?: MealLabel;
+  entries: HistoryFoodEntry[];
+  totals: Macros;
+  addedToDraft: boolean;
+}
+
+// Phase 5 — Grounded AI Information
+export interface WSMacroSummaryMessage {
+  type: "macro_summary";
+  itemId: string;
+  summary: MacroSummary;
+}
+
+export interface WSFoodInfoMessage {
+  type: "food_info";
+  itemId: string;
+  foodName: string;
+  usdaResult: USDASearchResult;
+  question?: string;
+}
+
+export interface WSFoodSuggestionsMessage {
+  type: "food_suggestions";
+  itemId: string;
+  suggestions: Array<{ name: string; macros: Macros; reason: string }>;
+}
+
+// Phase 6 — AI Estimates
+export interface WSEstimateCardMessage {
+  type: "estimate_card";
+  item: DraftItem;
+  canAddAnyway: boolean;
+}
+
 export type WSServerMessage =
   | WSItemsAddedMessage
   | WSItemEditedMessage
@@ -522,7 +638,15 @@ export type WSServerMessage =
   | WSSessionSavedMessage
   | WSSessionCancelledMessage
   | WSDraftReplacedMessage
-  | WSOperationCancelledMessage;
+  | WSOperationCancelledMessage
+  | WSDisambiguateMessage
+  | WSConfirmClearMessage
+  | WSCommunitySubmitPromptMessage
+  | WSHistoryResultsMessage
+  | WSMacroSummaryMessage
+  | WSFoodInfoMessage
+  | WSFoodSuggestionsMessage
+  | WSEstimateCardMessage;
 
 // --- Gemini Intent Types ---
 
@@ -595,6 +719,55 @@ export interface GeminiRedoIntent {
   payload: null;
 }
 
+// Phase 2 — Disambiguation
+export interface GeminiDisambiguateChoiceIntent {
+  action: "DISAMBIGUATE_CHOICE";
+  payload: { targetItem: string; choice: number | string };
+}
+
+// Phase 3 — Power User Flows
+export interface GeminiCreateFoodDirectlyIntent {
+  action: "CREATE_FOOD_DIRECTLY";
+  payload: { name: string };
+}
+
+export interface GeminiClearAllIntent {
+  action: "CLEAR_ALL";
+  payload: null;
+}
+
+// Phase 4 — History
+export interface GeminiQueryHistoryIntent {
+  action: "QUERY_HISTORY";
+  payload: {
+    datePhrase: string;
+    mealLabel?: MealLabel;
+    addToDraft?: boolean;
+  };
+}
+
+// Phase 5 — Grounded AI Information
+export interface GeminiQueryRemainingIntent {
+  action: "QUERY_REMAINING";
+  payload: null;
+}
+
+export interface GeminiLookupFoodInfoIntent {
+  action: "LOOKUP_FOOD_INFO";
+  payload: { query: string };
+}
+
+export interface GeminiSuggestFoodsIntent {
+  action: "SUGGEST_FOODS";
+  payload: null;
+}
+
+// Phase 6 — Bounded AI Estimates
+export interface GeminiEstimateFoodIntent {
+  action: "ESTIMATE_FOOD";
+  payload: { name: string; quantity?: number; unit?: string; context?: string };
+}
+
 export type GeminiIntent =
   | GeminiAddItemsIntent
   | GeminiEditItemIntent
@@ -605,7 +778,15 @@ export type GeminiIntent =
   | GeminiOpenBarcodeScannerIntent
   | GeminiCancelOperationIntent
   | GeminiUndoIntent
-  | GeminiRedoIntent;
+  | GeminiRedoIntent
+  | GeminiDisambiguateChoiceIntent
+  | GeminiCreateFoodDirectlyIntent
+  | GeminiClearAllIntent
+  | GeminiQueryHistoryIntent
+  | GeminiQueryRemainingIntent
+  | GeminiLookupFoodInfoIntent
+  | GeminiSuggestFoodsIntent
+  | GeminiEstimateFoodIntent;
 
 // --- Gemini Request Context ---
 
@@ -624,6 +805,14 @@ export interface GeminiRequestContext {
   }>;
   timeOfDay: string; // HH:MM format
   date: string; // YYYY-MM-DD
-  sessionState: "normal" | `creating:${string}` | `awaiting_choice:${string}` | `usda_pending:${string}`; // "creating:tmp-3" when mid-creation
+  sessionState:
+    | "normal"
+    | `creating:${string}`
+    | `awaiting_choice:${string}`
+    | `usda_pending:${string}`
+    | `disambiguating:${string}`
+    | `confirm_clear_pending`
+    | `contributing:${string}`
+    | `estimate_pending:${string}`; // "creating:tmp-3" when mid-creation
   creatingFoodProgress?: CreatingFoodProgress;
 }
