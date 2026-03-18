@@ -57,28 +57,35 @@ export default function MacroProgressBar({
     setTrackWidth(e.nativeEvent.layout.width);
   };
 
+  const valueText = `${Math.round(current)} / ${goal > 0 ? goal : '—'}`;
+
   return (
     <View style={styles.container}>
       <View style={styles.labelRow}>
         <ThemedText
           style={[
             Typography.subhead,
+            styles.labelText,
             { color: colors.text, fontWeight: '600' },
           ]}
+          numberOfLines={1}
+          ellipsizeMode="tail"
         >
           {label}
         </ThemedText>
         <ThemedText
           style={[
             Typography.subhead,
+            styles.valueText,
             {
               color: isOverflow
                 ? colors.progressOverflow
                 : colors.textSecondary,
             },
           ]}
+          numberOfLines={1}
         >
-          {Math.round(current)} / {goal > 0 ? goal : '—'}
+          {valueText}
         </ThemedText>
       </View>
 
@@ -149,24 +156,40 @@ export default function MacroProgressBar({
 const styles = StyleSheet.create({
   container: {
     gap: Spacing.xs,
+    width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
   },
   labelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.sm,
+    minWidth: 0,
+  },
+  labelText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  valueText: {
+    flexShrink: 0,
+    minWidth: 96,
+    textAlign: 'right',
   },
   barOuter: {
     height: 8,
+    width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
     position: 'relative',
     overflow: 'hidden',
-    marginRight: 40,
   },
   track: {
     position: 'absolute',
     left: 0,
-    right: 0,
     top: 0,
     bottom: 0,
+    width: '100%',
     borderRadius: BorderRadius.sm,
   },
   fill: {
@@ -179,15 +202,16 @@ const styles = StyleSheet.create({
   fillContainer: {
     position: 'absolute',
     left: 0,
-    right: 0,
     top: 0,
     bottom: 0,
+    right: 0,
     flexDirection: 'row',
     borderRadius: BorderRadius.sm,
     overflow: 'hidden',
   },
   segment: {
     height: '100%',
+    minWidth: 0,
   },
   divider: {
     width: 2,

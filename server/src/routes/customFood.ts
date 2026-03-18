@@ -1,11 +1,20 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client.js";
 import { getDefaultUserId } from "../db/defaultUser.js";
+import { mapCommunityFood } from "./communityFood.js";
 import type {
   CustomFood,
   CreateCustomFoodRequest,
   UpdateCustomFoodRequest,
 } from "../../../shared/types.js";
+
+const MAX_COMMUNITY_CREATIONS_PER_DAY = 20;
+
+interface PublishCustomFoodBody {
+  brandName?: string;
+  barcode?: string;
+  barcodeType?: string;
+}
 
 // ---------------------------------------------------------------------------
 // Prisma-to-shared-type mapper
@@ -167,6 +176,90 @@ export async function customFoodRoutes(app: FastifyInstance) {
 
       await prisma.customFood.delete({ where: { id } });
       return reply.code(204).send();
+    },
+  );
+
+  // POST /api/food/custom/:id/publish — atomically convert a custom food to a community food
+  app.post<{ Params: { id: string }; Body: PublishCustomFoodBody }>(
+    "/api/food/custom/:id/publish",
+    async (request, reply) => {
+      const { id } = request.params;
+      const userId = await getDefaultUserId();
+      const body = request.body ?? {};
+
+      const custom = await prisma.customFood.findUnique({ where: { id } });
+      if (!custom) {
+        return reply.code(404).send({ error: "Custom food not found" });
+      }
+
+      const dayStart = new Date();
+      dayStart.setHours(0, 0, 0, 0);
+      const todayCount = await prisma.communityFood.count({
+        where: { createdByUserId: userId, createdAt: { gte: dayStart } },
+      });
+      if (todayCount >= MAX_COMMUNITY_CREATIONS_PER_DAY) {
+        return reply.code(429).send({
+          error: `Rate limit: max ${MAX_COMMUNITY_CREATIONS_PER_DAY} community foods per day`,
+        });
+      }
+
+      if (body.barcode) {
+        const existingBarcode = await prisma.communityFoodBarcode.findUnique({
+          where: { barcode: body.barcode },
+        });
+        if (existingBarcode) {
+          return reply.code(409).send({
+            error: "A community food with this barcode already exists",
+            existingCommunityFoodId: existingBarcode.communityFoodId,
+          });
+        }
+      }
+
+      const communityFood = await prisma.$transaction(async (tx) => {
+        const cf = await tx.communityFood.create({
+          data: {
+            name: custom.name,
+            brandName: body.brandName?.trim() || null,
+            defaultServingSize: custom.servingSize,
+            defaultServingUnit: custom.servingUnit,
+            calories: custom.calories,
+            proteinG: custom.proteinG,
+            carbsG: custom.carbsG,
+            fatG: custom.fatG,
+            sodiumMg: custom.sodiumMg,
+            cholesterolMg: custom.cholesterolMg,
+            fiberG: custom.fiberG,
+            sugarG: custom.sugarG,
+            saturatedFatG: custom.saturatedFatG,
+            transFatG: custom.transFatG,
+            createdByUserId: userId,
+            ...(body.barcode && {
+              barcodes: {
+                create: {
+                  barcode: body.barcode,
+                  type: (body.barcodeType as "UPC_A" | "EAN_13" | "CODE_128" | "OTHER") ?? "OTHER",
+                  createdByUserId: userId,
+                },
+              },
+            }),
+          },
+        });
+
+        await tx.foodEntry.updateMany({
+          where: { customFoodId: id },
+          data: {
+            communityFoodId: cf.id,
+            source: "COMMUNITY",
+            customFoodId: null,
+          },
+        });
+
+        await tx.customFood.delete({ where: { id } });
+
+        return cf;
+      });
+
+      return reply.code(201).send(mapCommunityFood(communityFood));
     },
   );
 }

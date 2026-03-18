@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import {
+  Alert,
   StyleSheet,
   View,
   TextInput,
@@ -7,32 +8,63 @@ import {
   ScrollView,
   ActivityIndicator,
   Modal,
+  Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import type { USDASearchResult, CustomFood, NutritionUnit, FoodEntry, MealLabel } from '@shared/types';
+import type {
+  USDASearchResult,
+  CustomFood,
+  CommunityFood,
+  FoodEntry,
+  MealLabel,
+  FoodUnitConversion,
+  UpdateFoodEntryRequest,
+} from '@shared/types';
 import * as api from '@/services/api';
 
-const UNITS: NutritionUnit[] = ['g', 'oz', 'cups', 'servings', 'slices', 'pieces'];
+type DetailFoodType = USDASearchResult | CustomFood | CommunityFood;
+import { scaleFactorForQuantity } from '@/utils/servingScale';
+import { useDailyLogStore } from '@/stores/dailyLogStore';
+import { useGoalStore } from '@/stores/goalStore';
+import { useDateStore } from '@/stores/dateStore';
+import MacroRingProgress from '@/components/MacroRingProgress';
+import MacroSummaryBlock from '@/components/MacroSummaryBlock';
 
 type FoodDetailMode = 'add' | 'edit';
 
 interface FoodDetailSheetProps {
-  food: USDASearchResult | CustomFood | null;
+  food: DetailFoodType | null;
   mode: FoodDetailMode;
   existingEntry?: FoodEntry;
   selectedDate?: string;
   onDismiss: () => void;
-  onSaved?: () => void;
+  /** Called after add or edit. For add, the newly created entry is passed so the parent can show "Added" snackbar and update store without refetching. */
+  onSaved?: (entry?: FoodEntry) => void;
   onDeleted?: () => void;
+  /** Called after forking a community food into a private CustomFood copy. */
+  onFork?: (newCustomFood: CustomFood) => void;
+  /** When true, render as a full-screen page (no Modal). Use for edit flow so the list is not shown. */
+  asFullScreen?: boolean;
+  /** When viewing a custom (personal) food: open CreateFoodSheet to edit it. */
+  onEditCustomFood?: (food: CustomFood) => void;
+  /** When viewing a custom food: open publish flow to share as community food. */
+  onPublishCustomFood?: (food: CustomFood) => void;
+  /** When viewing a custom food: after deleting it from My Foods, called so parent can refresh lists. */
+  onDeleteCustomFood?: (food: CustomFood) => void;
 }
 
-function isCustomFood(food: USDASearchResult | CustomFood): food is CustomFood {
-  return 'servingSize' in food && 'servingUnit' in food;
+function isCustomFood(food: DetailFoodType): food is CustomFood {
+  return 'servingSize' in food && 'servingUnit' in food && !('defaultServingSize' in food);
+}
+
+function isCommunityFood(food: DetailFoodType): food is CommunityFood {
+  return 'defaultServingSize' in food && 'trustScore' in food;
 }
 
 function getMealLabel(): MealLabel {
@@ -44,6 +76,51 @@ function getMealLabel(): MealLabel {
   return 'snack';
 }
 
+function DayImpactRow({
+  label,
+  current,
+  goal,
+  unit,
+  colors,
+}: {
+  label: string;
+  current: number;
+  goal: number;
+  unit: string;
+  colors: Record<string, string>;
+}) {
+  const remaining = goal - current;
+  const isOver = remaining < 0;
+  const text =
+    remaining >= 0
+      ? `${Math.round(remaining)}${unit} left`
+      : `${Math.round(Math.abs(remaining))}${unit} over`;
+  return (
+    <View style={styles.dayImpactDetailRow}>
+      <ThemedText style={[Typography.caption2, { color: colors.textSecondary }]}>
+        {label}
+      </ThemedText>
+      <ThemedText
+        style={[
+          Typography.caption2,
+          { color: isOver ? colors.progressOverflow : colors.textSecondary },
+          styles.dayImpactDetailValue,
+        ]}
+      >
+        {Math.round(current)} / {goal}
+      </ThemedText>
+      <ThemedText
+        style={[
+          Typography.caption2,
+          { color: isOver ? colors.progressOverflow : colors.textTertiary },
+        ]}
+      >
+        {text}
+      </ThemedText>
+    </View>
+  );
+}
+
 export default function FoodDetailSheet({
   food,
   mode,
@@ -52,6 +129,11 @@ export default function FoodDetailSheet({
   onDismiss,
   onSaved,
   onDeleted,
+  onFork,
+  asFullScreen = false,
+  onEditCustomFood,
+  onPublishCustomFood,
+  onDeleteCustomFood,
 }: FoodDetailSheetProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -60,11 +142,25 @@ export default function FoodDetailSheet({
   const [unit, setUnit] = useState<string>('servings');
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [unitConfigs, setUnitConfigs] = useState<FoodUnitConversion[]>([]);
+  const [dayImpactExpanded, setDayImpactExpanded] = useState(false);
+  const [communityMenuVisible, setCommunityMenuVisible] = useState(false);
+  const [customMenuVisible, setCustomMenuVisible] = useState(false);
+  const [suppressUsdaWarning, setSuppressUsdaWarning] = useState<boolean | null>(null); // null = not yet fetched
+  const [usdaWarningVisible, setUsdaWarningVisible] = useState(false);
+  const [dontWarnAgain, setDontWarnAgain] = useState(false);
+
+  const { totals } = useDailyLogStore();
+  const { goalsByDate } = useGoalStore();
+  const { selectedDate: storeSelectedDate } = useDateStore();
 
   useEffect(() => {
     if (existingEntry) {
       setQuantity(String(existingEntry.quantity));
       setUnit(existingEntry.unit);
+    } else if (food && isCommunityFood(food)) {
+      setQuantity(String(food.defaultServingSize));
+      setUnit(food.defaultServingUnit);
     } else if (food && isCustomFood(food)) {
       setQuantity(String(food.servingSize));
       setUnit(food.servingUnit);
@@ -74,23 +170,80 @@ export default function FoodDetailSheet({
     }
   }, [food, existingEntry]);
 
+  useEffect(() => {
+    async function loadUnits() {
+      if (!food || isCommunityFood(food)) {
+        setUnitConfigs([]);
+        return;
+      }
+      try {
+        if (isCustomFood(food)) {
+          const configs = await api.getFoodUnitConversionsForCustomFood(food.id);
+          setUnitConfigs(configs);
+        } else {
+          const configs = await api.getFoodUnitConversionsForUsdaFood(food.fdcId);
+          setUnitConfigs(configs);
+        }
+      } catch {
+        setUnitConfigs([]);
+      }
+    }
+    loadUnits();
+  }, [food]);
+
   const baseMacros = useMemo(() => {
     if (!food) return null;
-    return isCustomFood(food)
-      ? { calories: food.calories, proteinG: food.proteinG, carbsG: food.carbsG, fatG: food.fatG }
-      : food.macros;
+    if (isCommunityFood(food) || isCustomFood(food)) {
+      return { calories: food.calories, proteinG: food.proteinG, carbsG: food.carbsG, fatG: food.fatG };
+    }
+    return food.macros;
   }, [food]);
 
   const baseServingSize = useMemo(() => {
     if (!food) return 1;
+    if (isCommunityFood(food)) return food.defaultServingSize || 1;
     if (isCustomFood(food)) return food.servingSize || 1;
     return food.servingSize || 100;
   }, [food]);
 
-  const scaleFactor = useMemo(() => {
-    const qty = Number(quantity) || 0;
-    return baseServingSize > 0 ? qty / baseServingSize : 1;
-  }, [quantity, baseServingSize]);
+  const baseServingUnit = useMemo(() => {
+    if (!food) return 'g';
+    if (isCommunityFood(food)) return food.defaultServingUnit || 'servings';
+    if (isCustomFood(food)) return food.servingUnit || 'servings';
+    return food.servingSizeUnit || 'g';
+  }, [food]);
+
+  /** Conversion for the currently selected unit, if defined. */
+  const conversionForSelectedUnit = useMemo(() => {
+    return unitConfigs.find((c) => c.unitName === unit) ?? null;
+  }, [unit, unitConfigs]);
+
+  /** Human-readable equivalent of one base serving in the currently selected unit, if applicable. */
+  const equivalentServingLabel =
+    conversionForSelectedUnit && unit !== baseServingUnit
+      ? (() => {
+          const qtyInBase = conversionForSelectedUnit.quantityInBaseServings;
+          if (!qtyInBase || !Number.isFinite(qtyInBase) || qtyInBase <= 0) return null;
+          const amountInSelected = 1 / qtyInBase;
+          if (!Number.isFinite(amountInSelected) || amountInSelected <= 0) return null;
+          const formatted =
+            amountInSelected >= 1
+              ? amountInSelected.toFixed(2).replace(/\.00$/, '')
+              : amountInSelected.toFixed(2);
+          return `${formatted} ${unit}`;
+        })()
+      : null;
+
+  const scaleFactor = useMemo(
+    () =>
+      scaleFactorForQuantity(
+        Number(quantity) || 0,
+        unit,
+        { size: baseServingSize, unit: baseServingUnit },
+        conversionForSelectedUnit,
+      ),
+    [quantity, unit, baseServingSize, baseServingUnit, conversionForSelectedUnit],
+  );
 
   const scaledMacros = useMemo(() => {
     if (!baseMacros) return null;
@@ -102,62 +255,210 @@ export default function FoodDetailSheet({
     };
   }, [baseMacros, scaleFactor]);
 
-  const extendedNutrition = useMemo(() => {
-    if (!food || !isCustomFood(food)) return null;
-    const fields = [
-      { label: 'Sodium', value: food.sodiumMg, unit: 'mg' },
-      { label: 'Cholesterol', value: food.cholesterolMg, unit: 'mg' },
-      { label: 'Fiber', value: food.fiberG, unit: 'g' },
-      { label: 'Sugar', value: food.sugarG, unit: 'g' },
-      { label: 'Saturated Fat', value: food.saturatedFatG, unit: 'g' },
-      { label: 'Trans Fat', value: food.transFatG, unit: 'g' },
-    ].filter((f) => f.value != null);
-    return fields.length > 0 ? fields : null;
-  }, [food]);
+  const dayKey = selectedDate ?? storeSelectedDate;
+  const goalsForDay = goalsByDate[dayKey] ?? null;
 
-  const handleAdd = async () => {
+  const projectedTotals = useMemo(() => {
+    if (!scaledMacros) return totals;
+
+    if (mode === 'add') {
+      return {
+        calories: totals.calories + scaledMacros.calories,
+        proteinG: totals.proteinG + scaledMacros.proteinG,
+        carbsG: totals.carbsG + scaledMacros.carbsG,
+        fatG: totals.fatG + scaledMacros.fatG,
+      };
+    }
+
+    if (mode === 'edit' && existingEntry) {
+      return {
+        calories:
+          totals.calories - existingEntry.calories + scaledMacros.calories,
+        proteinG:
+          totals.proteinG - existingEntry.proteinG + scaledMacros.proteinG,
+        carbsG:
+          totals.carbsG - existingEntry.carbsG + scaledMacros.carbsG,
+        fatG: totals.fatG - existingEntry.fatG + scaledMacros.fatG,
+      };
+    }
+
+    return totals;
+  }, [totals, scaledMacros, mode, existingEntry]);
+
+  const remainingAfter = useMemo(() => {
+    if (!goalsForDay) return null;
+    return {
+      calories: goalsForDay.calories - projectedTotals.calories,
+      proteinG: goalsForDay.proteinG - projectedTotals.proteinG,
+      carbsG: goalsForDay.carbsG - projectedTotals.carbsG,
+      fatG: goalsForDay.fatG - projectedTotals.fatG,
+    };
+  }, [goalsForDay, projectedTotals]);
+
+  const handleReport = async () => {
+    if (!food || !isCommunityFood(food)) return;
+    Alert.alert(
+      'Report Incorrect Data',
+      'Flag this community food as having incorrect nutrition information?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Report',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.reportCommunityFood(food.id, 'Incorrect nutrition data');
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              Alert.alert('Reported', 'Thank you for your feedback.');
+            } catch {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleCustomize = () => {
+    if (!food || !isCommunityFood(food)) return;
+    Alert.alert(
+      'Create a personal copy?',
+      'Customizing creates a private copy for you only. The community food stays unchanged.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Create Copy',
+          onPress: async () => {
+            try {
+              const newCustomFood = await api.createCustomFood({
+                name: food.name,
+                servingSize: food.defaultServingSize,
+                servingUnit: food.defaultServingUnit,
+                calories: food.calories,
+                proteinG: food.proteinG,
+                carbsG: food.carbsG,
+                fatG: food.fatG,
+                sodiumMg: food.sodiumMg,
+                cholesterolMg: food.cholesterolMg,
+                fiberG: food.fiberG,
+                sugarG: food.sugarG,
+                saturatedFatG: food.saturatedFatG,
+                transFatG: food.transFatG,
+              });
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              onFork?.(newCustomFood);
+            } catch (e) {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+              const message =
+                e instanceof api.ApiError ? e.message : (e as Error)?.message ?? 'Could not create copy.';
+              Alert.alert('Error', message);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const doAdd = async () => {
     if (!food || !scaledMacros) return;
     setIsSaving(true);
 
-    const custom = isCustomFood(food);
+    const community = isCommunityFood(food);
+    const custom = !community && isCustomFood(food);
     const date = selectedDate || new Date().toISOString().split('T')[0];
 
+    const foodName = community
+      ? (food.brandName ? `${food.brandName} — ${food.name}` : food.name)
+      : custom
+        ? (food as CustomFood).name
+        : (food as USDASearchResult).description;
+
     try {
-      await api.createEntry({
+      const created = await api.createEntry({
         date,
-        name: custom ? food.name : food.description,
+        name: foodName,
         calories: scaledMacros.calories,
         proteinG: scaledMacros.proteinG,
         carbsG: scaledMacros.carbsG,
         fatG: scaledMacros.fatG,
         quantity: Number(quantity) || 1,
         unit,
-        source: custom ? 'CUSTOM' : 'DATABASE',
+        source: community ? 'COMMUNITY' : custom ? 'CUSTOM' : 'DATABASE',
         mealLabel: getMealLabel(),
-        usdaFdcId: custom ? undefined : food.fdcId,
-        customFoodId: custom ? food.id : undefined,
+        usdaFdcId: community ? undefined : custom ? undefined : (food as USDASearchResult).fdcId,
+        customFoodId: custom ? (food as CustomFood).id : undefined,
+        communityFoodId: community ? food.id : undefined,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onSaved?.();
-    } catch {
+      onSaved?.(created);
+    } catch (e) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      const message =
+        e instanceof api.ApiError ? e.message : (e as Error)?.message ?? 'Could not save. Please try again.';
+      Alert.alert('Could not save', message);
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleAdd = async () => {
+    if (!food || !scaledMacros) return;
+    const community = isCommunityFood(food);
+    const custom = !community && isCustomFood(food);
+    const isUsda = !community && !custom;
+    if (isUsda) {
+      // Fetch preference lazily on first USDA add attempt
+      let suppress = suppressUsdaWarning;
+      if (suppress === null) {
+        try {
+          const prefs = await api.getUserPreferences();
+          suppress = prefs.suppressUsdaWarning;
+          setSuppressUsdaWarning(suppress);
+        } catch {
+          suppress = false;
+          setSuppressUsdaWarning(false);
+        }
+      }
+      if (!suppress) {
+        setDontWarnAgain(false);
+        setUsdaWarningVisible(true);
+        return;
+      }
+    }
+    doAdd();
+  };
+
+  const handleUsdaWarningConfirm = async () => {
+    setUsdaWarningVisible(false);
+    if (dontWarnAgain) {
+      setSuppressUsdaWarning(true);
+      api.updateUserPreferences({ suppressUsdaWarning: true }).catch(() => {});
+    }
+    doAdd();
   };
 
   const handleSave = async () => {
     if (!existingEntry) return;
     setIsSaving(true);
     try {
-      await api.updateEntry(existingEntry.id, {
+      const payload: UpdateFoodEntryRequest = {
         quantity: Number(quantity) || 1,
         unit,
-      });
+      };
+      if (scaledMacros) {
+        payload.calories = scaledMacros.calories;
+        payload.proteinG = scaledMacros.proteinG;
+        payload.carbsG = scaledMacros.carbsG;
+        payload.fatG = scaledMacros.fatG;
+      }
+      await api.updateEntry(existingEntry.id, payload);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onSaved?.();
-    } catch {
+      onSaved?.(); // edit: no entry passed
+    } catch (e) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      const message =
+        e instanceof api.ApiError ? e.message : (e as Error)?.message ?? 'Could not save. Please try again.';
+      Alert.alert('Could not save', message);
     } finally {
       setIsSaving(false);
     }
@@ -170,40 +471,251 @@ export default function FoodDetailSheet({
       await api.deleteEntry(existingEntry.id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onDeleted?.();
-    } catch {
+    } catch (e) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      const message =
+        e instanceof api.ApiError ? e.message : (e as Error)?.message ?? 'Could not delete. Please try again.';
+      Alert.alert('Could not delete', message);
     } finally {
       setIsDeleting(false);
     }
   };
 
-  const foodName = food ? (isCustomFood(food) ? food.name : food.description) : '';
-  const sourceLabel = food ? (isCustomFood(food) ? 'Custom Food' : 'USDA Database') : '';
+  const displayName = food
+    ? isCommunityFood(food)
+      ? (food.brandName ? `${food.brandName} — ${food.name}` : food.name)
+      : isCustomFood(food)
+        ? food.name
+        : food.description
+    : '';
+  const sourceLabel = food
+    ? isCommunityFood(food)
+      ? `Community · Used ${food.usesCount} times`
+      : isCustomFood(food)
+        ? 'Custom Food'
+        : 'USDA Database'
+    : '';
   const baseServingLabel = food
-    ? isCustomFood(food)
-      ? `${food.servingSize} ${food.servingUnit}`
-      : `${food.servingSize ?? 100}${food.servingSizeUnit ?? 'g'}`
+    ? isCommunityFood(food)
+      ? `${food.defaultServingSize} ${food.defaultServingUnit}`
+      : isCustomFood(food)
+        ? `${food.servingSize} ${food.servingUnit}`
+        : `${food.servingSize ?? 100}${food.servingSizeUnit ?? 'g'}`
     : '';
 
-  return (
-    <Modal
-      visible={!!food}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onDismiss}
-    >
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top']}>
-        <View style={[styles.header, { borderBottomColor: colors.borderLight }]}>
-          <Pressable onPress={onDismiss} hitSlop={8}>
-            <ThemedText style={[Typography.body, { color: colors.tint }]}>
-              Cancel
+  const unitTiles = useMemo(() => {
+    const active = [baseServingUnit, 'servings', ...unitConfigs.map((c) => c.unitName)];
+    return [...new Set(active)].filter(Boolean);
+  }, [baseServingUnit, unitConfigs]);
+
+  const formContent = (
+    <>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top']}>
+      {/* USDA warning overlay — rendered inside the sheet so it always appears on top */}
+      {usdaWarningVisible && (
+        <Pressable
+          style={[StyleSheet.absoluteFill, styles.warningOverlay, { backgroundColor: colors.overlay, zIndex: 100 }]}
+          onPress={() => setUsdaWarningVisible(false)}
+        >
+          <Pressable style={[styles.warningModal, { backgroundColor: colors.surface }]} onPress={() => {}}>
+            <Ionicons name="warning-outline" size={32} color={colors.warning} style={{ alignSelf: 'center', marginBottom: Spacing.sm }} />
+            <ThemedText style={[Typography.headline, { color: colors.text, textAlign: 'center', marginBottom: Spacing.sm }]}>
+              USDA Data Quality Notice
             </ThemedText>
+            <ThemedText style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginBottom: Spacing.lg }]}>
+              USDA database entries can have inconsistent serving sizes and nutrient values. Community and custom foods are generally more reliable.
+            </ThemedText>
+            <Pressable style={styles.warningCheckRow} onPress={() => setDontWarnAgain((v) => !v)}>
+              <Ionicons
+                name={dontWarnAgain ? 'checkbox' : 'square-outline'}
+                size={20}
+                color={dontWarnAgain ? colors.tint : colors.textSecondary}
+              />
+              <ThemedText style={[Typography.subhead, { color: colors.textSecondary, marginLeft: Spacing.sm }]}>
+                Don&apos;t warn again
+              </ThemedText>
+            </Pressable>
+            <View style={styles.warningActions}>
+              <Pressable
+                style={[styles.warningButton, { borderColor: colors.border }]}
+                onPress={() => setUsdaWarningVisible(false)}
+              >
+                <ThemedText style={[Typography.subhead, { color: colors.text }]}>Cancel</ThemedText>
+              </Pressable>
+              <Pressable
+                style={[styles.warningButton, { backgroundColor: colors.tint }]}
+                onPress={handleUsdaWarningConfirm}
+              >
+                <ThemedText style={[Typography.subhead, { color: '#FFFFFF' }]}>Add Food</ThemedText>
+              </Pressable>
+            </View>
           </Pressable>
-          <ThemedText style={[Typography.headline, { color: colors.text }]}>
-            {mode === 'add' ? 'Add Food' : 'Edit Entry'}
-          </ThemedText>
-          <View style={{ width: 50 }} />
-        </View>
+        </Pressable>
+      )}
+      <View style={[styles.header, { borderBottomColor: colors.borderLight }]}>
+        <Pressable onPress={onDismiss} hitSlop={12} style={({ pressed }) => [pressed && { opacity: 0.6 }]}>
+          {asFullScreen ? (
+            <Ionicons name="chevron-back" size={28} color={colors.tint} />
+          ) : (
+            <ThemedText style={[Typography.body, { color: colors.tint }]}>Cancel</ThemedText>
+          )}
+        </Pressable>
+        <ThemedText style={[Typography.headline, { color: colors.text }]}>
+          {mode === 'add' ? 'Add Food' : 'Edit Entry'}
+        </ThemedText>
+        {food && (isCommunityFood(food) || isCustomFood(food)) ? (
+          <Pressable
+            onPress={() => {
+              if (isCommunityFood(food)) setCommunityMenuVisible(true);
+              else setCustomMenuVisible(true);
+            }}
+            hitSlop={12}
+            style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+            accessibilityLabel={isCommunityFood(food) ? 'Community food options' : 'Personal food options'}
+          >
+            <Ionicons name="ellipsis-vertical" size={24} color={colors.text} />
+          </Pressable>
+        ) : (
+          <View style={{ width: asFullScreen ? 28 : 50 }} />
+        )}
+      </View>
+
+      {food && isCommunityFood(food) && (
+        <Modal
+          visible={communityMenuVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setCommunityMenuVisible(false)}
+        >
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setCommunityMenuVisible(false)}
+          >
+            <View style={[styles.menuBackdrop, { backgroundColor: colors.overlay }]} />
+          </Pressable>
+          <View style={[styles.menuAnchor, { paddingTop: 56 + Spacing.md }]}>
+            <View style={[styles.communityMenu, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              {onFork && (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.menuItem,
+                    { borderBottomColor: colors.border },
+                    pressed && { backgroundColor: colors.surfaceSecondary },
+                  ]}
+                  onPress={() => {
+                    setCommunityMenuVisible(false);
+                    handleCustomize();
+                  }}
+                >
+                  <Ionicons name="create-outline" size={20} color={colors.tint} style={{ marginRight: Spacing.sm }} />
+                  <ThemedText style={[Typography.body, { color: colors.text }]}>Customize</ThemedText>
+                </Pressable>
+              )}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.menuItem,
+                  styles.menuItemLast,
+                  pressed && { backgroundColor: colors.surfaceSecondary },
+                ]}
+                onPress={() => {
+                  setCommunityMenuVisible(false);
+                  handleReport();
+                }}
+              >
+                <Ionicons name="flag-outline" size={20} color={colors.destructive} style={{ marginRight: Spacing.sm }} />
+                <ThemedText style={[Typography.body, { color: colors.destructive }]}>Report</ThemedText>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {food && isCustomFood(food) && (
+        <Modal
+          visible={customMenuVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setCustomMenuVisible(false)}
+        >
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setCustomMenuVisible(false)}
+          >
+            <View style={[styles.menuBackdrop, { backgroundColor: colors.overlay }]} />
+          </Pressable>
+          <View style={[styles.menuAnchor, { paddingTop: 56 + Spacing.md }]}>
+            <View style={[styles.communityMenu, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              {onEditCustomFood && (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.menuItem,
+                    { borderBottomColor: colors.border },
+                    pressed && { backgroundColor: colors.surfaceSecondary },
+                  ]}
+                  onPress={() => {
+                    setCustomMenuVisible(false);
+                    onEditCustomFood(food);
+                  }}
+                >
+                  <Ionicons name="create-outline" size={20} color={colors.tint} style={{ marginRight: Spacing.sm }} />
+                  <ThemedText style={[Typography.body, { color: colors.text }]}>Edit</ThemedText>
+                </Pressable>
+              )}
+              {onPublishCustomFood && (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.menuItem,
+                    (onEditCustomFood || onDeleteCustomFood) && { borderBottomColor: colors.border },
+                    pressed && { backgroundColor: colors.surfaceSecondary },
+                  ]}
+                  onPress={() => {
+                    setCustomMenuVisible(false);
+                    onPublishCustomFood(food);
+                  }}
+                >
+                  <Ionicons name="share-outline" size={20} color={colors.tint} style={{ marginRight: Spacing.sm }} />
+                  <ThemedText style={[Typography.body, { color: colors.text }]}>Publish</ThemedText>
+                </Pressable>
+              )}
+              {onDeleteCustomFood && (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.menuItem,
+                    styles.menuItemLast,
+                    pressed && { backgroundColor: colors.surfaceSecondary },
+                  ]}
+                  onPress={() => {
+                    setCustomMenuVisible(false);
+                    Alert.alert(
+                      'Delete food',
+                      'This removes it from your My Foods library. Logged entries are not removed.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Delete',
+                          style: 'destructive',
+                          onPress: async () => {
+                            try {
+                              await api.deleteCustomFood(food.id);
+                              onDismiss();
+                              onDeleteCustomFood(food);
+                            } catch {
+                              // leave sheet open on error
+                            }
+                          },
+                        },
+                      ],
+                    );
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={20} color={colors.destructive} style={{ marginRight: Spacing.sm }} />
+                  <ThemedText style={[Typography.body, { color: colors.destructive }]}>Delete</ThemedText>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        </Modal>
+      )}
 
         <ScrollView
           style={styles.sheetContent}
@@ -212,54 +724,97 @@ export default function FoodDetailSheet({
         >
           <View style={styles.foodHeader}>
             <ThemedText style={[Typography.title2, { color: colors.text }]}>
-              {foodName}
+              {displayName}
             </ThemedText>
-            <View style={[styles.sourceBadge, { backgroundColor: colors.surfaceSecondary }]}>
-              <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>
-                {sourceLabel}
-              </ThemedText>
+            <View style={styles.sourceRow}>
+              <View style={[styles.sourceBadge, { backgroundColor: colors.surfaceSecondary }]}>
+                <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>
+                  {sourceLabel}
+                </ThemedText>
+              </View>
             </View>
           </View>
 
           {scaledMacros && (
-            <View style={[styles.nutritionCard, { backgroundColor: colors.surfaceSecondary }]}>
-              <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
-                Nutrition{scaleFactor !== 1 ? ` (${quantity} ${unit})` : ' per serving'}
-              </ThemedText>
-              <NutrientRow label="Calories" value={scaledMacros.calories} unit=" kcal" color={colors.caloriesAccent} textColor={colors.text} />
-              <NutrientRow label="Protein" value={scaledMacros.proteinG} unit="g" color={colors.proteinAccent} textColor={colors.text} />
-              <NutrientRow label="Carbs" value={scaledMacros.carbsG} unit="g" color={colors.carbsAccent} textColor={colors.text} />
-              <NutrientRow label="Fat" value={scaledMacros.fatG} unit="g" color={colors.fatAccent} textColor={colors.text} />
-
-              {scaleFactor !== 1 && baseMacros && (
-                <ThemedText
-                  style={[Typography.caption1, { color: colors.textSecondary, marginTop: Spacing.xs }]}
-                >
-                  Per {baseServingLabel}: {baseMacros.calories} cal · {baseMacros.proteinG}g P · {baseMacros.carbsG}g C · {baseMacros.fatG}g F
-                </ThemedText>
-              )}
-
-              {extendedNutrition && (
-                <View style={styles.extendedSection}>
-                  {extendedNutrition.map((n) => (
-                    <NutrientRow
-                      key={n.label}
-                      label={n.label}
-                      value={n.value!}
-                      unit={n.unit}
-                      color={colors.textSecondary}
-                      textColor={colors.text}
-                      compact
-                    />
-                  ))}
+            <Pressable
+              style={({ pressed }) => [
+                styles.dayImpactUnderTitle,
+                pressed && { opacity: 0.9 },
+              ]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setDayImpactExpanded((e) => !e);
+              }}
+            >
+              <MacroRingProgress
+                totals={projectedTotals}
+                goals={goalsForDay}
+                variant="default"
+                showCalorieSummary={!dayImpactExpanded}
+                tightSpacing
+              />
+              {dayImpactExpanded && goalsForDay && (
+                <View style={[styles.dayImpactDetails, { borderTopColor: colors.border }]}>
+                  <DayImpactRow
+                    label="Cal"
+                    current={projectedTotals.calories}
+                    goal={goalsForDay.calories}
+                    unit=""
+                    colors={colors}
+                  />
+                  <DayImpactRow
+                    label="P"
+                    current={projectedTotals.proteinG}
+                    goal={goalsForDay.proteinG}
+                    unit="g"
+                    colors={colors}
+                  />
+                  <DayImpactRow
+                    label="C"
+                    current={projectedTotals.carbsG}
+                    goal={goalsForDay.carbsG}
+                    unit="g"
+                    colors={colors}
+                  />
+                  <DayImpactRow
+                    label="F"
+                    current={projectedTotals.fatG}
+                    goal={goalsForDay.fatG}
+                    unit="g"
+                    colors={colors}
+                  />
                 </View>
               )}
+            </Pressable>
+          )}
+
+          {scaledMacros && (
+            <View style={styles.macroBlockWrap}>
+              <MacroSummaryBlock
+                calories={scaledMacros.calories}
+                proteinG={scaledMacros.proteinG}
+                carbsG={scaledMacros.carbsG}
+                fatG={scaledMacros.fatG}
+                colors={colors}
+                backgroundColor={colors.surfaceSecondary}
+              />
             </View>
           )}
 
           <View style={styles.quantitySection}>
-            <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
-              Quantity
+            {food && (
+              <View style={[styles.servingSizeBlock, { backgroundColor: colors.surfaceSecondary }]}>
+                <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>
+                  Serving size
+                </ThemedText>
+                <ThemedText style={[Typography.body, { color: colors.text, fontWeight: '600' }]}>
+                  {equivalentServingLabel ? `${baseServingLabel} (≈ ${equivalentServingLabel})` : baseServingLabel}
+                </ThemedText>
+              </View>
+            )}
+
+            <ThemedText style={[Typography.subhead, { color: colors.text, marginBottom: Spacing.xs }]}>
+              Amount
             </ThemedText>
             <TextInput
               style={[
@@ -268,39 +823,38 @@ export default function FoodDetailSheet({
               ]}
               value={quantity}
               onChangeText={setQuantity}
-              keyboardType="numeric"
-              placeholder="1"
+              keyboardType="decimal-pad"
+              placeholder=""
               placeholderTextColor={colors.textTertiary}
               returnKeyType="done"
             />
-
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.unitPills}
             >
-              {UNITS.map((u) => (
-                <Pressable
-                  key={u}
-                  style={[
-                    styles.unitPill,
-                    {
-                      backgroundColor: unit === u ? colors.tint : colors.surfaceSecondary,
-                      borderColor: unit === u ? colors.tint : colors.border,
-                    },
-                  ]}
-                  onPress={() => setUnit(u)}
-                >
-                  <ThemedText
+              {unitTiles.map((u) => {
+                const isSelected = unit === u;
+                return (
+                  <Pressable
+                    key={u}
                     style={[
-                      Typography.subhead,
-                      { color: unit === u ? '#FFFFFF' : colors.text },
+                      styles.unitPill,
+                      {
+                        backgroundColor: isSelected ? colors.tint : colors.surfaceSecondary,
+                        borderColor: isSelected ? colors.tint : colors.border,
+                      },
                     ]}
+                    onPress={() => setUnit(u)}
                   >
-                    {u}
-                  </ThemedText>
-                </Pressable>
-              ))}
+                    <ThemedText
+                      style={[Typography.subhead, { color: isSelected ? '#FFFFFF' : colors.text }]}
+                    >
+                      {u}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
             </ScrollView>
           </View>
 
@@ -312,7 +866,7 @@ export default function FoodDetailSheet({
                 isSaving && styles.buttonDisabled,
               ]}
               onPress={mode === 'add' ? handleAdd : handleSave}
-              disabled={isSaving}
+              disabled={isSaving || (mode === 'add' && (Number(quantity) || 0) <= 0)}
             >
               {isSaving ? (
                 <ActivityIndicator color="#fff" size="small" />
@@ -345,37 +899,19 @@ export default function FoodDetailSheet({
           </View>
         </ScrollView>
       </SafeAreaView>
-    </Modal>
+    </>
   );
-}
 
-function NutrientRow({
-  label,
-  value,
-  unit,
-  color,
-  textColor,
-  compact,
-}: {
-  label: string;
-  value: number;
-  unit: string;
-  color: string;
-  textColor: string;
-  compact?: boolean;
-}) {
+  if (asFullScreen) return formContent;
   return (
-    <View style={[styles.nutrientRow, compact && styles.nutrientRowCompact]}>
-      <View style={styles.nutrientLeft}>
-        <View style={[styles.nutrientDot, { backgroundColor: color }]} />
-        <ThemedText style={[compact ? Typography.subhead : Typography.body, { color: textColor }]}>
-          {label}
-        </ThemedText>
-      </View>
-      <ThemedText style={[compact ? Typography.subhead : Typography.headline, { color: textColor }]}>
-        {Math.round(value * 10) / 10}{unit}
-      </ThemedText>
-    </View>
+    <Modal
+      visible={!!food}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onDismiss}
+    >
+      {formContent}
+    </Modal>
   );
 }
 
@@ -400,46 +936,36 @@ const styles = StyleSheet.create({
   },
   foodHeader: {
     gap: Spacing.sm,
-    marginBottom: Spacing.xxl,
+    marginBottom: Spacing.sm,
+  },
+  sourceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
   },
   sourceBadge: {
-    alignSelf: 'flex-start',
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.full,
   },
-  nutritionCard: {
-    borderRadius: BorderRadius.md,
-    padding: Spacing.lg,
-    marginBottom: Spacing.xxl,
-  },
-  nutrientRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-  },
-  nutrientRowCompact: {
-    paddingVertical: Spacing.xs,
-  },
-  nutrientLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  nutrientDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  extendedSection: {
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(128, 128, 128, 0.2)',
+  macroBlockWrap: {
+    marginBottom: Spacing.lg,
   },
   quantitySection: {
     marginBottom: Spacing.xxl,
+  },
+  servingSizeBlock: {
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.lg,
+  },
+  quickChip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    marginRight: Spacing.sm,
   },
   quantityInput: {
     ...Typography.title2,
@@ -447,11 +973,12 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.md,
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
   },
   unitPills: {
     flexDirection: 'row',
     gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
   },
   unitPill: {
     paddingHorizontal: Spacing.lg,
@@ -486,5 +1013,89 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.4,
+  },
+  dayImpactUnderTitle: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.xs,
+    marginBottom: 0,
+  },
+  dayImpactDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: Spacing.xs,
+    paddingTop: Spacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  dayImpactDetailRow: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  dayImpactDetailValue: {
+    fontWeight: '600',
+  },
+  menuBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  menuAnchor: {
+    position: 'absolute',
+    top: 0,
+    right: Spacing.xl,
+    left: Spacing.xl,
+    alignItems: 'flex-end',
+  },
+  communityMenu: {
+    minWidth: 180,
+    borderRadius: BorderRadius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  menuItemLast: {
+    borderBottomWidth: 0,
+  },
+  warningOverlay: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  warningModal: {
+    width: 320,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.xl,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  warningCheckRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+  },
+  warningActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  warningButton: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
 });

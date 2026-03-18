@@ -20,15 +20,30 @@ function formatDisplayDate(dateStr: string): string {
   });
 }
 
+function formatMinimalDate(dateStr: string, isToday: boolean): { overline: string; date: string } {
+  const d = new Date(dateStr + 'T12:00:00');
+  const overline = isToday
+    ? 'Today'
+    : d.toLocaleDateString('en-US', { weekday: 'long' });
+  const date = d.toLocaleDateString('en-US', { day: 'numeric', month: 'long' });
+  return { overline, date };
+}
+
 function toDateString(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 interface DateHeaderProps {
   rightAction?: React.ReactNode;
+  showArrows?: boolean;
+  alignDate?: 'left' | 'center';
 }
 
-export default function DateHeader({ rightAction }: DateHeaderProps = {}) {
+export default function DateHeader({
+  rightAction,
+  showArrows = true,
+  alignDate = 'center',
+}: DateHeaderProps = {}) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const { selectedDate, setDate, goToPreviousDay, goToNextDay } =
@@ -36,6 +51,8 @@ export default function DateHeader({ rightAction }: DateHeaderProps = {}) {
   const [showPicker, setShowPicker] = useState(false);
 
   const isToday = selectedDate === todayString();
+  const isMinimal = !showArrows && alignDate === 'left';
+  const minimalParts = isMinimal ? formatMinimalDate(selectedDate, isToday) : null;
 
   const handlePrev = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -56,39 +73,79 @@ export default function DateHeader({ rightAction }: DateHeaderProps = {}) {
 
   return (
     <View style={styles.wrapper}>
-      <View style={[styles.container, { borderBottomColor: colors.borderLight }]}>
-        <View style={styles.dateRow}>
-          <Pressable
-            onPress={handlePrev}
-            hitSlop={12}
-            style={styles.arrowBtn}
-          >
-            <MaterialIcons name="chevron-left" size={28} color={colors.tint} />
-          </Pressable>
+      <View
+        style={[
+          styles.container,
+          { borderBottomColor: colors.borderLight },
+          isMinimal && styles.containerMinimal,
+        ]}
+      >
+        <View
+          style={[
+            styles.dateRow,
+            alignDate === 'left' && styles.dateRowLeft,
+            !showArrows && styles.dateRowNoArrows,
+          ]}
+        >
+          {showArrows && (
+            <Pressable
+              onPress={handlePrev}
+              hitSlop={12}
+              style={styles.arrowBtn}
+            >
+              <MaterialIcons name="chevron-left" size={22} color={colors.tint} />
+            </Pressable>
+          )}
 
           <Pressable
             onPress={() => setShowPicker(true)}
-            style={styles.dateBtn}
+            style={[
+              styles.dateBtn,
+              alignDate === 'left' && styles.dateBtnLeft,
+              isMinimal && styles.dateBtnMinimal,
+            ]}
           >
-            <ThemedText style={[Typography.headline, { color: colors.text }]}>
-              {isToday ? 'Today' : formatDisplayDate(selectedDate)}
-            </ThemedText>
-            {isToday && (
-              <ThemedText
-                style={[Typography.caption1, { color: colors.textSecondary }]}
-              >
-                {formatDisplayDate(selectedDate)}
-              </ThemedText>
+            {minimalParts ? (
+              <>
+                <ThemedText
+                  style={[
+                    styles.minimalOverline,
+                    { color: colors.textTertiary },
+                  ]}
+                >
+                  {minimalParts.overline}
+                </ThemedText>
+                <ThemedText
+                  style={[styles.minimalDate, { color: colors.text }]}
+                >
+                  {minimalParts.date}
+                </ThemedText>
+              </>
+            ) : (
+              <>
+                <ThemedText style={[Typography.title3, { color: colors.text }]}>
+                  {isToday ? 'Today' : formatDisplayDate(selectedDate)}
+                </ThemedText>
+                {isToday && (
+                  <ThemedText
+                    style={[Typography.caption1, { color: colors.textSecondary }]}
+                  >
+                    {formatDisplayDate(selectedDate)}
+                  </ThemedText>
+                )}
+              </>
             )}
           </Pressable>
 
-          <Pressable
-            onPress={handleNext}
-            hitSlop={12}
-            style={styles.arrowBtn}
-          >
-            <MaterialIcons name="chevron-right" size={28} color={colors.tint} />
-          </Pressable>
+          {showArrows && (
+            <Pressable
+              onPress={handleNext}
+              hitSlop={12}
+              style={styles.arrowBtn}
+            >
+              <MaterialIcons name="chevron-right" size={22} color={colors.tint} />
+            </Pressable>
+          )}
         </View>
 
         {rightAction != null && (
@@ -142,11 +199,21 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  containerMinimal: {
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 0,
+  },
   dateRow: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  dateRowLeft: {
+    justifyContent: 'flex-start',
+  },
+  dateRowNoArrows: {
+    justifyContent: 'flex-start',
   },
   arrowBtn: {
     padding: Spacing.xs,
@@ -154,6 +221,24 @@ const styles = StyleSheet.create({
   dateBtn: {
     alignItems: 'center',
     gap: 2,
+  },
+  dateBtnLeft: {
+    alignItems: 'flex-start',
+  },
+  dateBtnMinimal: {
+    gap: 4,
+  },
+  minimalOverline: {
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+  },
+  minimalDate: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '500',
+    letterSpacing: 0.2,
   },
   rightAction: {
     marginLeft: Spacing.md,

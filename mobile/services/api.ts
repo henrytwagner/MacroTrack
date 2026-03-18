@@ -7,9 +7,21 @@ import type {
   CustomFood,
   CreateCustomFoodRequest,
   UpdateCustomFoodRequest,
+  CommunityFood,
+  CreateCommunityFoodRequest,
+  PublishCustomFoodRequest,
   UnifiedSearchResponse,
   FrequentFood,
   RecentFood,
+  UserProfile,
+  UserPreferences,
+  GoalForDateResponse,
+  GoalProfilesResponse,
+  UpdateGoalsForDateRequest,
+  FoodUnitConversion,
+  CreateFoodUnitConversionRequest,
+  UpdateFoodUnitConversionRequest,
+  CascadeUnitConversionsRequest,
 } from '@shared/types';
 import type { BarcodeScanResult } from '@/features/barcode/types';
 import { Platform } from 'react-native';
@@ -27,7 +39,7 @@ export function getApiBaseUrl(): string {
   return BASE_URL;
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
     this.name = 'ApiError';
@@ -39,17 +51,33 @@ async function request<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const url = `${BASE_URL}${path}`;
+  const method = (options.method ?? 'GET').toUpperCase();
+  const hasBody = options.body != null && options.body !== '';
+  if (__DEV__) {
+    // eslint-disable-next-line no-console
+    console.log(`[API] ${method} ${url}`);
+  }
   const res = await fetch(url, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
       ...options.headers,
     },
   });
-
+  if (__DEV__) {
+    // eslint-disable-next-line no-console
+    console.log(`[API] ${method} ${path} → ${res.status}`);
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new ApiError(res.status, body || `Request failed: ${res.status}`);
+    let message = body || `Request failed: ${res.status}`;
+    try {
+      const parsed = body ? JSON.parse(body) : null;
+      if (parsed && typeof parsed.error === 'string') message = parsed.error;
+    } catch {
+      // use raw body as message
+    }
+    throw new ApiError(res.status, message);
   }
 
   const text = await res.text();
@@ -58,13 +86,48 @@ async function request<T>(
 
 // --- Goals ---
 
-export async function getGoals(): Promise<DailyGoal | null> {
-  return request<DailyGoal | null>('/api/goals');
+export async function getGoalsForDate(date: string): Promise<GoalForDateResponse> {
+  const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+  return request<GoalForDateResponse>(`/api/goals${qs}`);
 }
 
-export async function updateGoals(data: UpdateGoalsRequest): Promise<DailyGoal> {
-  return request<DailyGoal>('/api/goals', {
+export async function changeGoals(
+  data: UpdateGoalsForDateRequest,
+): Promise<GoalForDateResponse> {
+  return request<GoalForDateResponse>('/api/goals/change', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getGoalProfiles(): Promise<GoalProfilesResponse> {
+  return request<GoalProfilesResponse>('/api/goal-profiles');
+}
+
+// --- Profile ---
+
+export async function getProfile(): Promise<UserProfile> {
+  return request<UserProfile>('/api/profile');
+}
+
+export async function updateProfile(profile: UserProfile): Promise<UserProfile> {
+  return request<UserProfile>('/api/profile', {
     method: 'PUT',
+    body: JSON.stringify(profile),
+  });
+}
+
+// --- User Preferences ---
+
+export async function getUserPreferences(): Promise<UserPreferences> {
+  return request<UserPreferences>('/api/user/preferences');
+}
+
+export async function updateUserPreferences(
+  data: Partial<UserPreferences>,
+): Promise<UserPreferences> {
+  return request<UserPreferences>('/api/user/preferences', {
+    method: 'PATCH',
     body: JSON.stringify(data),
   });
 }
@@ -133,12 +196,114 @@ export async function deleteCustomFood(id: string): Promise<void> {
   return request<void>(`/api/food/custom/${id}`, { method: 'DELETE' });
 }
 
+// --- Community Foods ---
+
+export async function createCommunityFood(
+  data: CreateCommunityFoodRequest,
+): Promise<CommunityFood> {
+  return request<CommunityFood>('/api/food/community', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function publishCustomFood(
+  id: string,
+  data: PublishCustomFoodRequest,
+): Promise<CommunityFood> {
+  try {
+    return await request<CommunityFood>(`/api/food/custom/${id}/publish`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 429) {
+      throw new ApiError(429, "You've published too many foods today. Try again tomorrow.");
+    }
+    throw e;
+  }
+}
+
 // --- Search ---
 
 export async function searchFoods(query: string): Promise<UnifiedSearchResponse> {
   return request<UnifiedSearchResponse>(
     `/api/food/search?q=${encodeURIComponent(query)}`,
   );
+}
+
+// --- Per-food unit conversions ---
+
+export async function getFoodUnitConversionsForCustomFood(
+  customFoodId: string,
+): Promise<FoodUnitConversion[]> {
+  return request<FoodUnitConversion[]>(
+    `/api/food/units?customFoodId=${encodeURIComponent(customFoodId)}`,
+  );
+}
+
+export async function getFoodUnitConversionsForUsdaFood(
+  usdaFdcId: number,
+): Promise<FoodUnitConversion[]> {
+  return request<FoodUnitConversion[]>(
+    `/api/food/units?usdaFdcId=${encodeURIComponent(String(usdaFdcId))}`,
+  );
+}
+
+export async function createFoodUnitConversion(
+  data: CreateFoodUnitConversionRequest,
+): Promise<FoodUnitConversion> {
+  return request<FoodUnitConversion>('/api/food/units', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateFoodUnitConversion(
+  id: string,
+  data: UpdateFoodUnitConversionRequest,
+): Promise<FoodUnitConversion> {
+  return request<FoodUnitConversion>(`/api/food/units/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteFoodUnitConversion(id: string): Promise<void> {
+  return request<void>(`/api/food/units/${id}`, { method: 'DELETE' });
+}
+
+export async function cascadeUnitConversions(
+  data: CascadeUnitConversionsRequest,
+): Promise<void> {
+  return request<void>('/api/food/units/cascade', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+// --- Barcode lookup ---
+
+export async function lookupBarcode(
+  code: string,
+): Promise<CommunityFood | null> {
+  const result = await request<{ food: CommunityFood | null }>(
+    `/api/barcode/lookup?code=${encodeURIComponent(code)}`,
+  );
+  return result.food;
+}
+
+// --- Community Food Reporting ---
+
+export async function reportCommunityFood(
+  id: string,
+  reason: string,
+  details?: string,
+): Promise<void> {
+  await request<{ reported: boolean }>(`/api/food/community/${id}/report`, {
+    method: 'POST',
+    body: JSON.stringify({ reason, details }),
+  });
 }
 
 // --- Barcode (image upload for iOS) ---

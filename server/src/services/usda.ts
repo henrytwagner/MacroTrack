@@ -132,3 +132,62 @@ export async function searchFoods(query: string): Promise<USDASearchResult[]> {
     clearTimeout(timeout);
   }
 }
+
+/** Minimal type for GET /food/{id} response (may use "nutrients" instead of "foodNutrients"). */
+interface USDASingleFoodResponse {
+  fdcId: number;
+  description?: string;
+  brandOwner?: string;
+  brandName?: string;
+  servingSize?: number;
+  servingSizeUnit?: string;
+  foodNutrients?: USDAFoodNutrient[];
+  nutrients?: Array<{ nutrient?: { id?: number }; amount?: number }>;
+}
+
+function normalizeToSearchFood(raw: USDASingleFoodResponse): USDASearchFood {
+  const nutrients =
+    raw.foodNutrients ??
+    (raw.nutrients?.map((n) => ({
+      nutrientId: n.nutrient?.id,
+      value: n.amount,
+      amount: n.amount,
+    })) as USDAFoodNutrient[]);
+  return {
+    fdcId: raw.fdcId,
+    description: raw.description ?? "",
+    brandOwner: raw.brandOwner,
+    brandName: raw.brandName,
+    servingSize: raw.servingSize,
+    servingSizeUnit: raw.servingSizeUnit,
+    foodNutrients: nutrients ?? [],
+  };
+}
+
+/** Fetch a single food by FDC ID (e.g. for recomputing macros on quantity edit). */
+export async function getFoodByFdcId(fdcId: number): Promise<USDASearchResult | null> {
+  let apiKey: string;
+  try {
+    apiKey = getApiKey();
+  } catch {
+    return null;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(
+      `${USDA_BASE_URL}/food/${fdcId}?api_key=${apiKey}`,
+      { signal: controller.signal },
+    );
+    if (!response.ok) return null;
+    const raw = (await response.json()) as USDASingleFoodResponse;
+    const food = normalizeToSearchFood(raw);
+    return mapFoodToResult(food);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}

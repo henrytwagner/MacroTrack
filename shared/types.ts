@@ -5,7 +5,7 @@
 
 // --- Enums & Constants ---
 
-export type FoodSource = "DATABASE" | "CUSTOM";
+export type FoodSource = "DATABASE" | "CUSTOM" | "COMMUNITY" | "AI_ESTIMATE";
 
 export type MealLabel = "breakfast" | "lunch" | "dinner" | "snack";
 
@@ -20,7 +20,15 @@ export type NutritionUnit =
   | "pieces"
   | "ml"
   | "tbsp"
-  | "tsp";
+  | "tsp"
+  | "fl oz"
+  | "L"
+  | "portion"
+  | "can"
+  | "bottle"
+  | "packet"
+  | "clove"
+  | "scoop";
 
 // --- Core Domain Models ---
 
@@ -44,6 +52,36 @@ export interface DailyGoal extends Macros {
   id: string;
 }
 
+// --- User Profile & Goals ---
+
+export type Sex = "MALE" | "FEMALE" | "UNSPECIFIED";
+
+export type ActivityLevel =
+  | "SEDENTARY"
+  | "LIGHT"
+  | "MODERATE"
+  | "HIGH"
+  | "VERY_HIGH";
+
+export type UnitSystem = "METRIC" | "IMPERIAL";
+
+export type GoalType = "CUT" | "MAINTAIN" | "GAIN";
+
+export type GoalAggressiveness = "MILD" | "STANDARD" | "AGGRESSIVE";
+
+export interface UserProfile {
+  heightCm?: number;
+  weightKg?: number;
+  sex: Sex;
+  /** Full date of birth (YYYY-MM-DD). Canonical source; age is derived from this. */
+  dateOfBirth?: string;
+  /** Read-only: age in whole years, derived from dateOfBirth. Only present in API responses. */
+  ageYears?: number;
+  activityLevel?: ActivityLevel;
+  preferredUnits: UnitSystem;
+  currentGoalProfileId?: string;
+}
+
 export interface CustomFood extends Macros, ExtendedNutrition {
   id: string;
   name: string;
@@ -51,6 +89,67 @@ export interface CustomFood extends Macros, ExtendedNutrition {
   servingUnit: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export type CommunityFoodStatus = "ACTIVE" | "PENDING" | "RETIRED";
+
+export interface CommunityFood extends Macros, ExtendedNutrition {
+  id: string;
+  name: string;
+  brandName?: string;
+  description?: string;
+  defaultServingSize: number;
+  defaultServingUnit: string;
+  usdaFdcId?: number;
+  createdByUserId?: string;
+  status: CommunityFoodStatus;
+  usesCount: number;
+  reportsCount: number;
+  trustScore: number;
+  lastUsedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Per-food unit configuration that maps a friendly unit name
+ * (e.g., "slice", "cup") back to the food's base serving
+ * (servingSize + servingUnit for custom foods, or the USDA
+ * serving size for database foods).
+ */
+export interface FoodUnitConversion {
+  id: string;
+  /**
+   * Display name of the unit (e.g., "slice", "cup").
+   */
+  unitName: string;
+  /**
+   * How many base servings this unit represents.
+   *
+   * Examples:
+   * - Base serving: 100 g, 1 slice = 30 g → quantityInBaseServings = 0.3
+   * - Base serving: 1 serving, 1 cup = 2 servings → quantityInBaseServings = 2
+   */
+  quantityInBaseServings: number;
+  customFoodId?: string;
+  usdaFdcId?: number;
+  measurementSystem: 'weight' | 'volume' | 'abstract';
+}
+
+export interface CreateFoodUnitConversionRequest {
+  unitName: string;
+  quantityInBaseServings: number;
+  customFoodId?: string;
+  usdaFdcId?: number;
+  measurementSystem?: 'weight' | 'volume' | 'abstract';
+}
+
+export interface UpdateFoodUnitConversionRequest {
+  quantityInBaseServings?: number;
+}
+
+export interface CascadeUnitConversionsRequest {
+  updates: Array<{ id: string; quantityInBaseServings: number }>;
 }
 
 export interface FoodEntry extends Macros {
@@ -63,6 +162,7 @@ export interface FoodEntry extends Macros {
   source: FoodSource;
   usdaFdcId?: number;
   customFoodId?: string;
+  communityFoodId?: string;
   createdAt: string;
 }
 
@@ -75,12 +175,18 @@ export interface USDASearchResult {
   servingSize?: number;
   servingSizeUnit?: string;
   macros: Macros;
+  usesCount?: number;
+}
+
+export interface UserPreferences {
+  suppressUsdaWarning: boolean;
 }
 
 // --- Search Response ---
 
 export interface UnifiedSearchResponse {
   myFoods: CustomFood[];
+  community: CommunityFood[];
   database: USDASearchResult[];
 }
 
@@ -94,6 +200,7 @@ export interface FrequentFood {
   macros: Macros;
   usdaFdcId?: number;
   customFoodId?: string;
+  communityFoodId?: string;
   logCount: number;
 }
 
@@ -105,6 +212,7 @@ export interface RecentFood {
   macros: Macros;
   usdaFdcId?: number;
   customFoodId?: string;
+  communityFoodId?: string;
   loggedAt: string;
 }
 
@@ -123,6 +231,7 @@ export interface CreateFoodEntryRequest {
   mealLabel: MealLabel;
   usdaFdcId?: number;
   customFoodId?: string;
+  communityFoodId?: string;
 }
 
 export interface UpdateFoodEntryRequest {
@@ -152,11 +261,72 @@ export interface CreateCustomFoodRequest {
 
 export type UpdateCustomFoodRequest = Partial<CreateCustomFoodRequest>;
 
+export interface CreateCommunityFoodRequest {
+  name: string;
+  brandName?: string;
+  description?: string;
+  defaultServingSize: number;
+  defaultServingUnit: string;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  sodiumMg?: number;
+  cholesterolMg?: number;
+  fiberG?: number;
+  sugarG?: number;
+  saturatedFatG?: number;
+  transFatG?: number;
+  barcode?: string;
+  barcodeType?: string;
+}
+
+export interface PublishCustomFoodRequest {
+  brandName?: string;
+  barcode?: string;
+  barcodeType?: string;
+}
+
 export interface UpdateGoalsRequest {
   calories: number;
   proteinG: number;
   carbsG: number;
   fatG: number;
+}
+
+export interface GoalProfileSummary {
+  id: string;
+  name: string;
+  goalType: GoalType;
+  aggressiveness: GoalAggressiveness;
+  effectiveDate: string; // YYYY-MM-DD
+}
+
+export interface GoalForDateResponse {
+  date: string; // YYYY-MM-DD
+  goals: DailyGoal | null;
+  profile: GoalProfileSummary | null;
+}
+
+export interface UpdateGoalsForDateRequest {
+  effectiveDate: string; // YYYY-MM-DD
+  macros: Macros;
+  goalType: GoalType;
+  aggressiveness: GoalAggressiveness;
+  profileId?: string;
+  newProfileName?: string;
+}
+
+export interface GoalProfileListItem {
+  id: string;
+  name: string;
+  createdAt: string;
+  archivedAt: string | null;
+  lastEffectiveDate: string | null;
+}
+
+export interface GoalProfilesResponse {
+  profiles: GoalProfileListItem[];
 }
 
 // --- Daily Summary (Dashboard) ---
@@ -171,7 +341,20 @@ export interface DailySummary {
 
 // --- Kitchen Mode Draft State ---
 
-export type DraftCardState = "normal" | "clarifying" | "creating";
+export type DraftCardState =
+  | "normal"
+  | "clarifying"
+  | "creating"
+  | "choice"
+  | "usda_pending"
+  | "disambiguate"
+  | "confirm_clear"
+  | "community_submit_prompt"
+  | "history_results"
+  | "macro_summary"
+  | "food_info"
+  | "food_suggestions"
+  | "estimate_card";
 
 export interface DraftItem extends Macros {
   id: string; // temporary client-side ID (e.g., "tmp-1")
@@ -181,10 +364,21 @@ export interface DraftItem extends Macros {
   source: FoodSource;
   usdaFdcId?: number;
   customFoodId?: string;
+  communityFoodId?: string;
   mealLabel: MealLabel;
   state: DraftCardState;
   clarifyQuestion?: string; // shown on card when state === "clarifying"
   creatingProgress?: CreatingFoodProgress; // tracks fields filled so far
+  isAssumed?: boolean; // true when quantity/unit inferred from history
+  isEstimate?: boolean; // true when macros are AI-estimated
+  estimateConfidence?: "high" | "medium" | "low";
+  disambiguationOptions?: DisambiguationOption[]; // populated when state === "disambiguate"
+  historyData?: {
+    dateLabel: string;
+    entries: HistoryFoodEntry[];
+    totals: Macros;
+    addedToDraft: boolean;
+  };
 }
 
 export interface CreatingFoodProgress {
@@ -206,6 +400,32 @@ export type CreatingFoodField =
   | "fat"
   | "complete";
 
+// --- Disambiguation Types (Phase 2) ---
+
+export interface DisambiguationOption {
+  label: string;
+  usdaResult: USDASearchResult;
+}
+
+// --- History Types (Phase 4) ---
+
+export interface HistoryFoodEntry {
+  name: string;
+  quantity: number;
+  unit: string;
+  macros: Macros;
+}
+
+// --- Macro Summary (Phase 5) ---
+
+export interface MacroSummary {
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  goals: Macros | null;
+}
+
 // --- WebSocket Message Types ---
 
 // Client → Server
@@ -213,6 +433,18 @@ export type CreatingFoodField =
 export interface WSTranscriptMessage {
   type: "transcript";
   text: string;
+}
+
+export interface WSAudioChunkMessage {
+  type: "audio_chunk";
+  /**
+   * Base64-encoded audio data (e.g., 16 kHz mono PCM).
+   */
+  data: string;
+  /**
+   * Monotonic sequence number so the server can reassemble the stream.
+   */
+  sequence: number;
 }
 
 export interface WSSaveMessage {
@@ -223,10 +455,17 @@ export interface WSCancelMessage {
   type: "cancel";
 }
 
+export interface WSBarcodeScanMessage {
+  type: "barcode_scan";
+  gtin: string;
+}
+
 export type WSClientMessage =
   | WSTranscriptMessage
+  | WSAudioChunkMessage
   | WSSaveMessage
-  | WSCancelMessage;
+  | WSCancelMessage
+  | WSBarcodeScanMessage;
 
 // Server → Client
 
@@ -272,6 +511,30 @@ export interface WSCreateFoodCompleteMessage {
   item: DraftItem;
 }
 
+export interface WSFoodChoiceMessage {
+  type: "food_choice";
+  itemId: string;
+  foodName: string;
+  question: string;
+}
+
+export interface WSUsdaConfirmMessage {
+  type: "usda_confirm";
+  itemId: string;
+  usdaDescription: string;
+  question: string;
+  usdaResult: USDASearchResult;
+}
+
+export interface WSOpenBarcodeScannerMessage {
+  type: "open_barcode_scanner";
+}
+
+export interface WSAskMessage {
+  type: "ask";
+  question: string; // pure TTS — no card created
+}
+
 export interface WSErrorMessage {
   type: "error";
   message: string;
@@ -286,6 +549,79 @@ export interface WSSessionCancelledMessage {
   type: "session_cancelled";
 }
 
+export interface WSDraftReplacedMessage {
+  type: "draft_replaced";
+  draft: DraftItem[];
+  message: string;
+}
+
+export interface WSOperationCancelledMessage {
+  type: "operation_cancelled";
+  itemId: string;
+  message: string;
+}
+
+// Phase 2 — Disambiguation
+export interface WSDisambiguateMessage {
+  type: "disambiguate";
+  itemId: string;
+  foodName: string;
+  question: string;
+  options: DisambiguationOption[];
+}
+
+// Phase 3 — Power User Flows
+export interface WSConfirmClearMessage {
+  type: "confirm_clear";
+  question: string;
+}
+
+export interface WSCommunitySubmitPromptMessage {
+  type: "community_submit_prompt";
+  itemId: string;
+  foodName: string;
+  question: string;
+}
+
+// Phase 4 — History
+export interface WSHistoryResultsMessage {
+  type: "history_results";
+  itemId: string;
+  dateLabel: string;
+  mealLabel?: MealLabel;
+  entries: HistoryFoodEntry[];
+  totals: Macros;
+  addedToDraft: boolean;
+}
+
+// Phase 5 — Grounded AI Information
+export interface WSMacroSummaryMessage {
+  type: "macro_summary";
+  itemId: string;
+  summary: MacroSummary;
+}
+
+export interface WSFoodInfoMessage {
+  type: "food_info";
+  itemId: string;
+  foodName: string;
+  usdaResult: USDASearchResult;
+  question?: string;
+}
+
+export interface WSFoodSuggestionsMessage {
+  type: "food_suggestions";
+  itemId: string;
+  suggestions: Array<{ name: string; macros: Macros; reason: string }>;
+}
+
+// Phase 6 — AI Estimates
+export interface WSEstimateCardMessage {
+  type: "estimate_card";
+  item: DraftItem;
+  canAddAnyway: boolean;
+}
+
 export type WSServerMessage =
   | WSItemsAddedMessage
   | WSItemEditedMessage
@@ -294,9 +630,23 @@ export type WSServerMessage =
   | WSCreateFoodPromptMessage
   | WSCreateFoodFieldMessage
   | WSCreateFoodCompleteMessage
+  | WSFoodChoiceMessage
+  | WSUsdaConfirmMessage
+  | WSOpenBarcodeScannerMessage
+  | WSAskMessage
   | WSErrorMessage
   | WSSessionSavedMessage
-  | WSSessionCancelledMessage;
+  | WSSessionCancelledMessage
+  | WSDraftReplacedMessage
+  | WSOperationCancelledMessage
+  | WSDisambiguateMessage
+  | WSConfirmClearMessage
+  | WSCommunitySubmitPromptMessage
+  | WSHistoryResultsMessage
+  | WSMacroSummaryMessage
+  | WSFoodInfoMessage
+  | WSFoodSuggestionsMessage
+  | WSEstimateCardMessage;
 
 // --- Gemini Intent Types ---
 
@@ -349,13 +699,94 @@ export interface GeminiSessionEndIntent {
   payload: null;
 }
 
+export interface GeminiOpenBarcodeScannerIntent {
+  action: "OPEN_BARCODE_SCANNER";
+  payload: null;
+}
+
+export interface GeminiCancelOperationIntent {
+  action: "CANCEL_OPERATION";
+  payload: null;
+}
+
+export interface GeminiUndoIntent {
+  action: "UNDO";
+  payload: null;
+}
+
+export interface GeminiRedoIntent {
+  action: "REDO";
+  payload: null;
+}
+
+// Phase 2 — Disambiguation
+export interface GeminiDisambiguateChoiceIntent {
+  action: "DISAMBIGUATE_CHOICE";
+  payload: { targetItem: string; choice: number | string };
+}
+
+// Phase 3 — Power User Flows
+export interface GeminiCreateFoodDirectlyIntent {
+  action: "CREATE_FOOD_DIRECTLY";
+  payload: { name: string };
+}
+
+export interface GeminiClearAllIntent {
+  action: "CLEAR_ALL";
+  payload: null;
+}
+
+// Phase 4 — History
+export interface GeminiQueryHistoryIntent {
+  action: "QUERY_HISTORY";
+  payload: {
+    datePhrase: string;
+    mealLabel?: MealLabel;
+    addToDraft?: boolean;
+  };
+}
+
+// Phase 5 — Grounded AI Information
+export interface GeminiQueryRemainingIntent {
+  action: "QUERY_REMAINING";
+  payload: null;
+}
+
+export interface GeminiLookupFoodInfoIntent {
+  action: "LOOKUP_FOOD_INFO";
+  payload: { query: string };
+}
+
+export interface GeminiSuggestFoodsIntent {
+  action: "SUGGEST_FOODS";
+  payload: null;
+}
+
+// Phase 6 — Bounded AI Estimates
+export interface GeminiEstimateFoodIntent {
+  action: "ESTIMATE_FOOD";
+  payload: { name: string; quantity?: number; unit?: string; context?: string };
+}
+
 export type GeminiIntent =
   | GeminiAddItemsIntent
   | GeminiEditItemIntent
   | GeminiRemoveItemIntent
   | GeminiClarifyIntent
   | GeminiCreateFoodResponseIntent
-  | GeminiSessionEndIntent;
+  | GeminiSessionEndIntent
+  | GeminiOpenBarcodeScannerIntent
+  | GeminiCancelOperationIntent
+  | GeminiUndoIntent
+  | GeminiRedoIntent
+  | GeminiDisambiguateChoiceIntent
+  | GeminiCreateFoodDirectlyIntent
+  | GeminiClearAllIntent
+  | GeminiQueryHistoryIntent
+  | GeminiQueryRemainingIntent
+  | GeminiLookupFoodInfoIntent
+  | GeminiSuggestFoodsIntent
+  | GeminiEstimateFoodIntent;
 
 // --- Gemini Request Context ---
 
@@ -366,9 +797,22 @@ export interface GeminiRequestContext {
     name: string;
     quantity: number;
     unit: string;
+    /** Used by server to recompute macros when quantity/unit is edited. */
+    source?: FoodSource;
+    customFoodId?: string;
+    usdaFdcId?: number;
+    communityFoodId?: string;
   }>;
   timeOfDay: string; // HH:MM format
   date: string; // YYYY-MM-DD
-  sessionState: "normal" | `creating:${string}`; // "creating:tmp-3" when mid-creation
+  sessionState:
+    | "normal"
+    | `creating:${string}`
+    | `awaiting_choice:${string}`
+    | `usda_pending:${string}`
+    | `disambiguating:${string}`
+    | `confirm_clear_pending`
+    | `contributing:${string}`
+    | `estimate_pending:${string}`; // "creating:tmp-3" when mid-creation
   creatingFoodProgress?: CreatingFoodProgress;
 }

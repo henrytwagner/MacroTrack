@@ -15,12 +15,17 @@ import * as Haptics from 'expo-haptics';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import MacroProgressBar from '@/components/MacroProgressBar';
+import { DashboardMacroSingleLayout } from '@/components/DashboardMacroLayouts';
+import { useDashboardLayoutStore } from '@/stores/dashboardLayoutStore';
 import FrequentFoodRow from '@/components/FrequentFoodRow';
+import MacroInlineLine from '@/components/MacroInlineLine';
 import { useDailyLogStore } from '@/stores/dailyLogStore';
 import { useGoalStore } from '@/stores/goalStore';
+import { useDateStore } from '@/stores/dateStore';
 import { todayString } from '@/stores/dateStore';
-import type { FrequentFood, RecentFood, MealLabel } from '@shared/types';
+import { writeWidgetDataFromStores } from '@/services/widgetData';
+import UndoSnackbar from '@/components/UndoSnackbar';
+import type { FrequentFood, RecentFood, MealLabel, FoodEntry } from '@shared/types';
 import * as api from '@/services/api';
 
 const MEAL_ORDER: MealLabel[] = ['breakfast', 'lunch', 'dinner', 'snack'];
@@ -61,14 +66,20 @@ export default function DashboardScreen() {
     isLoading,
     error,
     fetch: fetchEntries,
+    addEntry,
+    removeEntry,
+    commitDelete,
   } = useDailyLogStore();
-  const { goals, fetch: fetchGoals } = useGoalStore();
+  const { goalsByDate, fetch: fetchGoals } = useGoalStore();
+  const { layoutId } = useDashboardLayoutStore();
+  const selectedDate = useDateStore((s) => s.selectedDate);
 
   const [frequentFoods, setFrequentFoods] = useState<FrequentFood[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [lastAddedEntry, setLastAddedEntry] = useState<FoodEntry | null>(null);
 
   const fetchAll = useCallback(async () => {
-    await Promise.all([fetchEntries(today), fetchGoals()]);
+    await Promise.all([fetchEntries(today), fetchGoals(today)]);
   }, [today, fetchEntries, fetchGoals]);
 
   const fetchFrequent = useCallback(async () => {
@@ -81,9 +92,9 @@ export default function DashboardScreen() {
   }, []);
 
   useEffect(() => {
-    fetchGoals();
+    fetchGoals(today);
     fetchFrequent();
-  }, []);
+  }, [today, fetchGoals, fetchFrequent]);
 
   useFocusEffect(
     useCallback(() => {
@@ -109,7 +120,7 @@ export default function DashboardScreen() {
         : (food as RecentFood).unit;
 
       try {
-        await api.createEntry({
+        const entry = await api.createEntry({
           date: today,
           name: food.name,
           calories: food.macros.calories,
@@ -124,16 +135,41 @@ export default function DashboardScreen() {
           customFoodId: food.customFoodId,
         });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        fetchEntries(today);
+        addEntry(entry);
+        setLastAddedEntry(entry);
         fetchFrequent();
       } catch {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     },
-    [today, fetchEntries, fetchFrequent],
+    [today, addEntry, fetchFrequent],
   );
 
+  const handleAddedUndo = useCallback(() => {
+    if (lastAddedEntry) {
+      removeEntry(lastAddedEntry.id);
+      commitDelete(lastAddedEntry.id).catch(() => {});
+      setLastAddedEntry(null);
+      fetchFrequent();
+    }
+  }, [lastAddedEntry, removeEntry, commitDelete, fetchFrequent]);
+
+  const handleAddedDismiss = useCallback(() => {
+    setLastAddedEntry(null);
+  }, []);
+
+  const goals = goalsByDate[today] ?? null;
   const hasGoals = goals !== null;
+
+  useEffect(() => {
+    if (selectedDate !== today) return;
+    try {
+      writeWidgetDataFromStores();
+    } catch {
+      // Widget write must not crash the app (e.g. Expo Go, simulator, or extension not ready)
+    }
+  }, [today, selectedDate, totals, goals, layoutId]);
+
   const recentEntries = [...entries]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 3);
@@ -165,41 +201,14 @@ export default function DashboardScreen() {
           </ThemedText>
         </View>
 
-        {/* Macro Progress */}
+        {/* Macro Progress — single layout (selector on Edit dashboard) */}
         <View style={[styles.card, { backgroundColor: colors.surface }]}>
           <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
             Today's Progress
           </ThemedText>
           {hasGoals ? (
-            <View style={styles.barsContainer}>
-              <MacroProgressBar
-                label="Calories"
-                current={totals.calories}
-                goal={goals!.calories}
-                accentColor={colors.caloriesAccent}
-                unit=" cal"
-              />
-              <MacroProgressBar
-                label="Protein"
-                current={totals.proteinG}
-                goal={goals!.proteinG}
-                accentColor={colors.proteinAccent}
-                unit="g"
-              />
-              <MacroProgressBar
-                label="Carbs"
-                current={totals.carbsG}
-                goal={goals!.carbsG}
-                accentColor={colors.carbsAccent}
-                unit="g"
-              />
-              <MacroProgressBar
-                label="Fat"
-                current={totals.fatG}
-                goal={goals!.fatG}
-                accentColor={colors.fatAccent}
-                unit="g"
-              />
+            <View style={styles.progressLayoutWrap}>
+              <DashboardMacroSingleLayout layoutId={layoutId} totals={totals} goals={goals} />
             </View>
           ) : (
             <Pressable
@@ -309,12 +318,18 @@ export default function DashboardScreen() {
                       >
                         {entry.name}
                       </ThemedText>
-                      <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>
-                        {entry.quantity}{entry.unit} · {MEAL_ORDER.includes(entry.mealLabel) ? entry.mealLabel.charAt(0).toUpperCase() + entry.mealLabel.slice(1) : entry.mealLabel}
-                      </ThemedText>
+                      <MacroInlineLine
+                        prefix={`${entry.quantity} ${entry.unit}`}
+                        macros={entry}
+                        colors={{
+                          ...colors,
+                          textSecondary: colors.textSecondary,
+                        }}
+                        textStyle="caption1"
+                      />
                     </View>
-                    <ThemedText style={[Typography.subhead, { color: colors.text, fontWeight: '500' }]}>
-                      {Math.round(entry.calories)} cal
+                    <ThemedText style={[Typography.caption1, { color: colors.textTertiary }]}>
+                      {MEAL_ORDER.includes(entry.mealLabel) ? entry.mealLabel.charAt(0).toUpperCase() + entry.mealLabel.slice(1) : entry.mealLabel}
                     </ThemedText>
                   </View>
                 </View>
@@ -332,7 +347,26 @@ export default function DashboardScreen() {
             </View>
           )}
         </View>
+
+        {/* Edit dashboard link — bottom of dashboard */}
+        <Pressable
+          onPress={() => router.push('/edit-dashboard')}
+          style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+        >
+          <ThemedText
+            style={[Typography.subhead, { color: colors.tint, textAlign: 'center' }]}
+          >
+            Edit dashboard
+          </ThemedText>
+        </Pressable>
       </ScrollView>
+
+      <UndoSnackbar
+        message={lastAddedEntry ? `Added ${lastAddedEntry.name}.` : ''}
+        visible={!!lastAddedEntry}
+        onUndo={handleAddedUndo}
+        onDismiss={handleAddedDismiss}
+      />
     </SafeAreaView>
   );
 }
@@ -358,8 +392,11 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     padding: Spacing.xl,
   },
-  barsContainer: {
-    gap: Spacing.lg,
+  progressLayoutWrap: {
+    width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
+    overflow: 'hidden',
   },
   section: {
     gap: Spacing.md,
@@ -404,7 +441,7 @@ const styles = StyleSheet.create({
   },
   entryInfo: {
     flex: 1,
-    gap: 2,
+    gap: 4,
   },
   seeMoreRow: {
     alignItems: 'center',

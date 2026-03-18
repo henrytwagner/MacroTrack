@@ -42,6 +42,7 @@ interface DailyLogState {
   isLoading: boolean;
   error: string | null;
   fetch: (date: string) => Promise<void>;
+  addEntry: (entry: FoodEntry) => void;
   removeEntry: (id: string) => FoodEntry | undefined;
   restoreEntry: (entry: FoodEntry) => void;
   commitDelete: (id: string) => Promise<void>;
@@ -65,6 +66,15 @@ export const useDailyLogStore = create<DailyLogState>((set, get) => ({
         error: e instanceof Error ? e.message : 'Failed to load entries',
       });
     }
+  },
+
+  addEntry: (entry: FoodEntry) => {
+    const { entries } = get();
+    const updated = [...entries, entry].sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+    set(recalculate(updated));
   },
 
   removeEntry: (id: string) => {

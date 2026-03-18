@@ -15,14 +15,13 @@ export type STTErrorCallback = (error: string) => void;
 // running in Expo Go, we resolve the module lazily on first use.
 // ---------------------------------------------------------------------------
 
-let _sttModule: typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule | null = null;
+let _sttModule: any | null = null;
 let _sttModuleChecked = false;
 
 function getSTTModule() {
   if (_sttModuleChecked) return _sttModule;
   _sttModuleChecked = true;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const mod = require('expo-speech-recognition');
     _sttModule = mod.ExpoSpeechRecognitionModule;
   } catch {
@@ -59,14 +58,24 @@ export async function requestSpeechPermission(): Promise<boolean> {
 }
 
 /**
+ * Optional callback for live partial transcripts (interim results).
+ * Used in dev to confirm the mic/recognizer is receiving audio.
+ */
+export type STTInterimCallback = (transcript: string) => void;
+
+/**
  * Start continuous on-device speech recognition.
- * Each final result segment fires onResult with the transcript text.
- * When recognition unexpectedly ends (e.g., long silence on iOS), onEnd fires.
+ *
+ * With interimResults: true we get partial transcripts; only final ones
+ * are passed to onResult and sent to the server. onInterimResult (optional)
+ * can be used to show live feedback (e.g. in dev).
+ * Auto-restarts when iOS ends the session (silence timeout).
  */
 export function startListening(
   onResult: STTResultCallback,
   onError: STTErrorCallback,
   onEnd?: () => void,
+  onInterimResult?: STTInterimCallback,
 ): void {
   const mod = getSTTModule();
   if (!mod) {
@@ -74,19 +83,22 @@ export function startListening(
     return;
   }
 
-  stopListening();
+  removeListeners();
 
   sttResultListener = mod.addListener('result', (event: any) => {
+    const transcript = event.results?.[0]?.transcript?.trim();
+    if (!transcript) return;
     if (event.isFinal) {
-      const transcript = event.results?.[0]?.transcript;
-      if (transcript?.trim()) {
-        onResult(transcript.trim());
-      }
+      onResult(transcript);
+    } else if (onInterimResult) {
+      onInterimResult(transcript);
     }
   });
 
   sttErrorListener = mod.addListener('error', (event: any) => {
-    if (event.error === 'no-speech') return;
+    const code = event.error;
+    // These are not real errors — silence or speech timeout, just let onEnd restart
+    if (code === 'no-speech' || code === 'speech-timeout') return;
     onError(event.message ?? event.error ?? 'Speech recognition error');
   });
 
@@ -96,9 +108,10 @@ export function startListening(
 
   mod.start({
     lang: 'en-US',
-    interimResults: false,
+    interimResults: true,
     continuous: true,
-    requiresOnDeviceRecognition: false,
+    // On-device can be more reliable on physical devices; off-device may not emit results in some configs
+    requiresOnDeviceRecognition: true,
   });
 }
 
@@ -107,7 +120,15 @@ export function startListening(
  */
 export function stopListening(): void {
   const mod = getSTTModule();
-  mod?.stop();
+  try {
+    mod?.stop();
+  } catch {
+    // ignore if not running
+  }
+  removeListeners();
+}
+
+function removeListeners(): void {
   sttResultListener?.remove();
   sttErrorListener?.remove();
   sttEndListener?.remove();
@@ -120,15 +141,21 @@ export function stopListening(): void {
  * Briefly pause recognition (e.g., while TTS is speaking).
  */
 export function pauseListening(): void {
-  getSTTModule()?.stop();
+  const mod = getSTTModule();
+  try {
+    mod?.stop();
+  } catch {
+    // ignore
+  }
 }
 
 export function resumeListening(
   onResult: STTResultCallback,
   onError: STTErrorCallback,
   onEnd?: () => void,
+  onInterimResult?: STTInterimCallback,
 ): void {
-  startListening(onResult, onError, onEnd);
+  startListening(onResult, onError, onEnd, onInterimResult);
 }
 
 // ---------------------------------------------------------------------------

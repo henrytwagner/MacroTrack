@@ -707,3 +707,30 @@ MacroTracker/
 | 11 | WebSocket voice session handler (backend) | Real-time pipeline ready |
 | 12 | Kitchen Mode (STT, WebSocket, draft cards, TTS, voice editing, custom food creation, save/cancel/auto-save) | Voice logging complete |
 | 13 | Polish (error states, loading indicators, empty states, visual refinement) | Production-quality feel |
+
+---
+
+## 13. Future Integrations (Garmin, Apple Health)
+
+- **Garmin (Garmin Connect / Garmin Health APIs)**:
+  - **Scope**: Treat Garmin as an authoritative source of **activity and energy expenditure**, not as a destination for detailed food logs.
+  - **Ingest** (read-only): daily summaries (active + resting calories), workouts (type, duration, calories, heart rate), steps, intensity minutes, sleep and stress metrics where available.
+  - **Use in MacroTrack**:
+    - Drive more accurate TDEE estimates and dynamic calorie/macro targets.
+    - Power “net calories” and “activity-aware” insights (e.g., “You’ve burned 650 active calories so far today.”).
+    - Inform Kitchen Mode macro summary and guidance without ever fabricating nutrition data.
+  - **Write-back**: No planned push of detailed nutrition data into Garmin; integration is primarily **Garmin → MacroTrack**.
+
+- **Apple Health (HealthKit)**:
+  - **Scope**: Two-way integration for **activity** and **nutrition**, with Health as a central hub that aggregates data from devices and apps.
+  - **Ingest** (read): workouts, active and basal energy burned, steps, distance, flights climbed, body metrics (e.g., weight, body fat), and nutrition summaries written by other apps (calories, macros, selected micronutrients).
+  - **Export** (write): MacroTrack food entries as HealthKit nutrition samples (dietary energy, protein, carbs, fat, and any additional nutrients we track), tagged by time and meal context.
+  - **Use in MacroTrack**:
+    - Adjust daily targets and insights based on Apple Watch and other Health data.
+    - Optionally surface combined intake (MacroTrack + other Health nutrition sources), with clear attribution and no double-counting.
+  - **User control**: Fine-grained, opt-in permissions for what is read/written, clear explanations in onboarding and settings.
+
+- **Design Constraints**:
+  - External data (Garmin/Health) is used to **inform goals and insights** (calorie budgets, net calories, trend analysis), but **never as a source of food-level nutrition values**. All per-food macros remain sourced from USDA or user-created custom foods.
+  - Integrations should be architected as optional, isolate-able modules so the core logging experience works fully offline and without any third-party connections.
+

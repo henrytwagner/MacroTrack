@@ -11,6 +11,9 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.henrywagner.macrotrack",
+      "entitlements": {
+        "com.apple.security.application-groups": ["group.com.henrywagner.macrotrack.widget"]
+      },
       "infoPlist": {
         "NSMicrophoneUsageDescription": "MacroTrack needs microphone access so you can log food by voice in Kitchen Mode.",
         "NSSpeechRecognitionUsageDescription": "MacroTrack uses speech recognition to understand your food logging commands."
@@ -38,6 +41,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "@bacons/apple-targets",
       "expo-router",
       [
         "expo-camera",

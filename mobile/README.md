@@ -35,6 +35,20 @@ npm run reset-project
 
 This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
 
+## iOS notes (run:ios, Metro, Podfile)
+
+- For daily development, use two terminals from the `mobile` folder:
+  - **Terminal 1**: `npm run start:dev` (kills anything on port 8081, clears caches, starts Metro on 8081)
+  - **Terminal 2**: `npx expo run:ios` (or `npx expo run:ios --device` for a physical device)
+- If Metro ever asks `Use port 8082 instead?`, answer **No (n)** and run `npm run kill:8081` before starting Metro again. The iOS dev build always expects Metro on **8081**.
+- If `pod install` fails with *\"Could not automatically select an Xcode project\"* because both `MacroTrack.xcodeproj` and `MacroTrack 2.xcodeproj` exist, add this line near the top of the Podfile's config section:
+
+  ```ruby
+  project 'MacroTrack 2.xcodeproj'
+  ```
+
+  The `ios/` folder is generated and gitignored, so you may need to re-apply this change after running `expo prebuild` or recreating the native iOS project.
+
 ## Learn more
 
 To learn more about developing your project with Expo, look at the following resources:

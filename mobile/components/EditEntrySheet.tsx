@@ -7,16 +7,20 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import BottomSheet, { BottomSheetBackdrop } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import MacroSummaryBlock from '@/components/MacroSummaryBlock';
 import type { FoodEntry, NutritionUnit } from '@shared/types';
 import * as api from '@/services/api';
 
-const UNITS: NutritionUnit[] = ['g', 'oz', 'cups', 'servings', 'slices', 'pieces'];
+const UNITS: NutritionUnit[] = [
+  'g', 'oz', 'cups', 'servings', 'ml', 'tbsp', 'tsp', 'L', 'fl oz',
+  'slices', 'pieces', 'portion', 'scoop', 'can', 'bottle', 'packet', 'clove',
+];
 
 interface EditEntrySheetProps {
   entry: FoodEntry | null;
@@ -33,7 +37,7 @@ export default function EditEntrySheet({
 }: EditEntrySheetProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const sheetRef = useRef<BottomSheet>(null);
+  const sheetRef = useRef<BottomSheetModal>(null);
   const snapPoints = useMemo(() => ['55%'], []);
 
   const [quantity, setQuantity] = useState('');
@@ -45,6 +49,7 @@ export default function EditEntrySheet({
     if (entry) {
       setQuantity(String(entry.quantity));
       setUnit(entry.unit);
+      sheetRef.current?.present();
     }
   }, [entry]);
 
@@ -110,12 +115,11 @@ export default function EditEntrySheet({
   if (!entry) return null;
 
   return (
-    <BottomSheet
+    <BottomSheetModal
       ref={sheetRef}
-      index={0}
       snapPoints={snapPoints}
       enablePanDownToClose
-      onClose={onDismiss}
+      onDismiss={onDismiss}
       backdropComponent={renderBackdrop}
       backgroundStyle={{ backgroundColor: colors.surface }}
       handleIndicatorStyle={{ backgroundColor: colors.sheetHandle }}
@@ -131,32 +135,14 @@ export default function EditEntrySheet({
         </View>
 
         {scaledMacros && (
-          <View style={[styles.macroSummary, { backgroundColor: colors.surfaceSecondary }]}>
-            <View style={styles.macroItem}>
-              <ThemedText style={[Typography.headline, { color: colors.caloriesAccent }]}>
-                {scaledMacros.calories}
-              </ThemedText>
-              <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>cal</ThemedText>
-            </View>
-            <View style={styles.macroItem}>
-              <ThemedText style={[Typography.headline, { color: colors.proteinAccent }]}>
-                {scaledMacros.proteinG}g
-              </ThemedText>
-              <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>protein</ThemedText>
-            </View>
-            <View style={styles.macroItem}>
-              <ThemedText style={[Typography.headline, { color: colors.carbsAccent }]}>
-                {scaledMacros.carbsG}g
-              </ThemedText>
-              <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>carbs</ThemedText>
-            </View>
-            <View style={styles.macroItem}>
-              <ThemedText style={[Typography.headline, { color: colors.fatAccent }]}>
-                {scaledMacros.fatG}g
-              </ThemedText>
-              <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>fat</ThemedText>
-            </View>
-          </View>
+          <MacroSummaryBlock
+            calories={scaledMacros.calories}
+            proteinG={scaledMacros.proteinG}
+            carbsG={scaledMacros.carbsG}
+            fatG={scaledMacros.fatG}
+            colors={colors}
+            backgroundColor={colors.surfaceSecondary}
+          />
         )}
 
         <View style={styles.quantityRow}>
@@ -235,7 +221,7 @@ export default function EditEntrySheet({
           </Pressable>
         </View>
       </View>
-    </BottomSheet>
+    </BottomSheetModal>
   );
 }
 
@@ -250,16 +236,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.full,
-  },
-  macroSummary: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    padding: Spacing.md,
-    borderRadius: BorderRadius.sm,
-  },
-  macroItem: {
-    alignItems: 'center',
-    gap: 2,
   },
   quantityRow: {
     gap: Spacing.md,

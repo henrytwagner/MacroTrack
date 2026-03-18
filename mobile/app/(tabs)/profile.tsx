@@ -2,6 +2,7 @@ import { StyleSheet, View, Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
@@ -10,6 +11,9 @@ import {
   useAppearanceStore,
   type AppearanceMode,
 } from '@/stores/appearanceStore';
+import { useEffect, useState } from 'react';
+import { useProfileStore } from '@/stores/profileStore';
+import type { UnitSystem } from '@shared/types';
 
 const APPEARANCE_OPTIONS: { label: string; value: AppearanceMode; icon: string }[] = [
   { label: 'System', value: 'system', icon: 'phone-portrait-outline' },
@@ -58,6 +62,33 @@ export default function ProfileScreen() {
   const colors = Colors[colorScheme ?? 'light'];
   const router = useRouter();
   const { appearance, setAppearance } = useAppearanceStore();
+  const { profile, fetch, save } = useProfileStore();
+
+  const [unitSystem, setUnitSystem] = useState<UnitSystem>('METRIC');
+
+  useEffect(() => {
+    fetch();
+  }, [fetch]);
+
+  useEffect(() => {
+    if (!profile) return;
+    setUnitSystem(profile.preferredUnits);
+  }, [profile]);
+
+  const appVersion =
+    Constants.expoConfig?.version ?? Constants.manifest2?.extra?.version ?? '1.0.0';
+  const buildNumber =
+    (Constants.expoConfig as any)?.ios?.buildNumber ??
+    (Constants.expoConfig as any)?.android?.versionCode ??
+    'dev';
+
+  const handleUnitsChange = (next: UnitSystem) => {
+    setUnitSystem(next);
+    void save({
+      preferredUnits: next,
+      sex: profile?.sex ?? 'UNSPECIFIED',
+    });
+  };
 
   return (
     <SafeAreaView
@@ -75,7 +106,7 @@ export default function ProfileScreen() {
           </ThemedText>
         </View>
 
-        {/* Profile placeholder */}
+        {/* Profile summary */}
         <View style={[styles.profileCard, { backgroundColor: colors.surface }]}>
           <View style={[styles.avatar, { backgroundColor: colors.tint + '22' }]}>
             <Ionicons name="person" size={36} color={colors.tint} />
@@ -85,8 +116,26 @@ export default function ProfileScreen() {
               My Profile
             </ThemedText>
             <ThemedText style={[Typography.footnote, { color: colors.textSecondary }]}>
-              Profile details coming soon
+              Health details and goals live in dedicated screens.
             </ThemedText>
+          </View>
+        </View>
+
+        {/* Profile & nutrition shortcuts */}
+        <View style={styles.sectionGroup}>
+          <ThemedText
+            style={[styles.sectionLabel, Typography.footnote, { color: colors.textSecondary }]}
+          >
+            PROFILE
+          </ThemedText>
+          <View style={[styles.groupCard, { backgroundColor: colors.surface }]}>
+            <SettingsRow
+              icon="person-circle-outline"
+              label="Health profile"
+              subtitle="Gender, height, weight, age, activity"
+              onPress={() => router.push('/health-profile')}
+              colors={colors}
+            />
           </View>
         </View>
 
@@ -170,6 +219,48 @@ export default function ProfileScreen() {
                 ))}
               </View>
             </View>
+            <View style={[styles.rowSeparator, { backgroundColor: colors.borderLight }]} />
+            <View style={styles.appearanceRow}>
+              <View style={[styles.rowIconContainer, { backgroundColor: colors.tint + '18' }]}>
+                <Ionicons name="stats-chart-outline" size={20} color={colors.tint} />
+              </View>
+              <ThemedText style={[Typography.body, { color: colors.text, flex: 1 }]}>
+                Units
+              </ThemedText>
+              <View style={styles.appearancePills}>
+                {[
+                  { label: 'Metric', value: 'METRIC' as UnitSystem },
+                  { label: 'Imperial', value: 'IMPERIAL' as UnitSystem },
+                ].map((opt) => (
+                  <Pressable
+                    key={opt.value}
+                    style={[
+                      styles.pill,
+                      {
+                        backgroundColor:
+                          unitSystem === opt.value ? colors.tint : colors.surfaceSecondary,
+                        borderColor:
+                          unitSystem === opt.value ? colors.tint : colors.border,
+                      },
+                    ]}
+                    onPress={() => handleUnitsChange(opt.value)}
+                  >
+                    <ThemedText
+                      style={[
+                        Typography.caption1,
+                        {
+                          color:
+                            unitSystem === opt.value ? '#FFFFFF' : colors.textSecondary,
+                          fontWeight: unitSystem === opt.value ? '600' : '400',
+                        },
+                      ]}
+                    >
+                      {opt.label}
+                    </ThemedText>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
           </View>
         </View>
 
@@ -183,9 +274,19 @@ export default function ProfileScreen() {
               <ThemedText style={[Typography.body, { color: colors.text }]}>
                 MacroTrack
               </ThemedText>
-              <ThemedText style={[Typography.body, { color: colors.textSecondary }]}>
-                v1.0.0
-              </ThemedText>
+              <View style={{ alignItems: 'flex-end' }}>
+                <ThemedText style={[Typography.body, { color: colors.textSecondary }]}>
+                  v{appVersion}
+                </ThemedText>
+                <ThemedText
+                  style={[
+                    Typography.caption1,
+                    { color: colors.textTertiary, marginTop: 2 },
+                  ]}
+                >
+                  Build {buildNumber}
+                </ThemedText>
+              </View>
             </View>
           </View>
         </View>
@@ -234,6 +335,48 @@ const styles = StyleSheet.create({
   groupCard: {
     borderRadius: BorderRadius.lg,
     overflow: 'hidden',
+  },
+  profileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    gap: Spacing.md,
+  },
+  profileInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  profileTextInput: {
+    minWidth: 72,
+    borderWidth: 1,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    textAlign: 'right',
+    ...Typography.body,
+  },
+  pillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+  },
+  smallPill: {
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs / 1.2,
+  },
+  profileSaveButton: {
+    marginTop: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   settingsRow: {
     flexDirection: 'row',
