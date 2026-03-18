@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
@@ -137,14 +138,6 @@ function checkConflicts(
   return conflicts;
 }
 
-function hasSameSystemSiblings(
-  unitName: string,
-  conversions: { unitName: string }[],
-): boolean {
-  const sys = getMeasurementSystem(unitName);
-  if (sys === 'abstract') return false;
-  return conversions.some((c) => c.unitName !== unitName && getMeasurementSystem(c.unitName) === sys);
-}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -421,22 +414,7 @@ function FoodUnitConversionsBlock(props: FoodUnitConversionsBlockProps) {
       }
     };
 
-    if (hasSameSystemSiblings(unitName, allConversions)) {
-      const siblings = allConversions
-        .filter((c) => c.unitName !== unitName && getMeasurementSystem(c.unitName) === getMeasurementSystem(unitName))
-        .map((c) => c.unitName)
-        .join(', ');
-      Alert.alert(
-        'Related conversions',
-        `${siblings} may have been derived from ${unitName}. They'll remain but may be inconsistent with each other.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Delete anyway', style: 'destructive', onPress: doDelete },
-        ],
-      );
-    } else {
-      doDelete();
-    }
+    doDelete();
   };
 
   // ---------------------------------------------------------------------------
@@ -454,7 +432,12 @@ function FoodUnitConversionsBlock(props: FoodUnitConversionsBlockProps) {
       ? allConversions.find((c) => c.unitName === panel.unitName)
       : null;
     const formToUnitLabelLocal = pendingToUnit || '';
-    const isEditFormLocal = panel.mode === 'form' && (panel as { mode: 'form'; editingUnit: string | null; pickingFrom: boolean }).editingUnit !== null;
+    const panelAsForm = panel.mode === 'form' ? (panel as { mode: 'form'; editingUnit: string | null; pickingFrom: boolean }) : null;
+    const isEditFormLocal = panelAsForm !== null && panelAsForm.editingUnit !== null;
+    const editingUnitLocal = panelAsForm?.editingUnit ?? null;
+    const handleCancelLocal = isEditFormLocal && editingUnitLocal
+      ? () => setPanel({ mode: 'preview', unitName: editingUnitLocal })
+      : closePanel;
     const fromOptionsLocal = [servingUnit, ...allConversions.map((c) => c.unitName)].filter(
       (u, i, a) => a.indexOf(u) === i && u !== pendingToUnit,
     );
@@ -478,7 +461,8 @@ function FoodUnitConversionsBlock(props: FoodUnitConversionsBlockProps) {
           style={[
             styles.floatingCard,
             { backgroundColor: colorsLocal.surface, borderColor: colorsLocal.border },
-            (panel.mode === 'picking' || (panel.mode === 'form' && (panel as { mode: 'form'; editingUnit: string | null; pickingFrom: boolean }).pickingFrom)) && styles.floatingCardPicker,
+            panel.mode === 'preview' && styles.floatingCardPreview,
+            (panel.mode === 'picking' || panelAsForm?.pickingFrom) && styles.floatingCardPicker,
           ]}
           onPress={() => {/* absorb taps so backdrop dismiss doesn't fire */}}
         >
@@ -493,14 +477,7 @@ function FoodUnitConversionsBlock(props: FoodUnitConversionsBlockProps) {
                 onPress={() => openEditForm(previewConvLocal.unitName)}
                 activeOpacity={0.7}
               >
-                <ThemedText style={[Typography.body, { color: colorsLocal.tint }]}>✏️</ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.editIconButton}
-                onPress={closePanel}
-                activeOpacity={0.7}
-              >
-                <ThemedText style={[Typography.caption1, { color: colorsLocal.textTertiary }]}>✕</ThemedText>
+                <Ionicons name="create-outline" size={20} color={colorsLocal.tint} />
               </TouchableOpacity>
             </View>
           )}
@@ -548,10 +525,20 @@ function FoodUnitConversionsBlock(props: FoodUnitConversionsBlockProps) {
                 <ThemedText style={[Typography.headline, { color: colorsLocal.text }]}>
                   {isEditFormLocal ? 'Edit unit' : 'Add unit'}
                 </ThemedText>
+                {isEditFormLocal && editingUnitLocal && (
+                  <TouchableOpacity
+                    style={styles.editIconButton}
+                    onPress={() => handleDelete(editingUnitLocal)}
+                    disabled={isSavingUnit}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="trash-outline" size={20} color={colorsLocal.destructive} />
+                  </TouchableOpacity>
+                )}
               </View>
 
               {/* From-unit picker (replaces form fields when active) */}
-              {(panel as { mode: 'form'; editingUnit: string | null; pickingFrom: boolean }).pickingFrom ? (
+              {panelAsForm?.pickingFrom ? (
                 <View>
                   <ThemedText style={[Typography.subhead, { color: colorsLocal.textSecondary, marginBottom: Spacing.sm }]}>
                     From unit
@@ -592,19 +579,27 @@ function FoodUnitConversionsBlock(props: FoodUnitConversionsBlockProps) {
                       placeholder="Qty"
                       placeholderTextColor={colorsLocal.textTertiary}
                     />
-                    <TouchableOpacity
-                      activeOpacity={0.7}
-                      style={[
-                        styles.unitDropdown,
-                        { borderColor: colorsLocal.border, backgroundColor: colorsLocal.surfaceSecondary },
-                      ]}
-                      onPress={openFromPicker}
-                    >
-                      <ThemedText style={[Typography.body, { color: colorsLocal.text }]} numberOfLines={1}>
-                        {formFromUnit || 'Unit'}
-                      </ThemedText>
-                      <ThemedText style={[Typography.caption1, { color: colorsLocal.textTertiary }]}>▼</ThemedText>
-                    </TouchableOpacity>
+                    {fromOptionsLocal.length <= 1 ? (
+                      <View style={[styles.lockedUnitLabel, { backgroundColor: colorsLocal.surfaceSecondary, borderColor: colorsLocal.border }]}>
+                        <ThemedText style={[Typography.body, { color: colorsLocal.textSecondary }]} numberOfLines={1}>
+                          {formFromUnit || 'Unit'}
+                        </ThemedText>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        style={[
+                          styles.unitDropdown,
+                          { borderColor: colorsLocal.border, backgroundColor: colorsLocal.surfaceSecondary },
+                        ]}
+                        onPress={openFromPicker}
+                      >
+                        <ThemedText style={[Typography.body, { color: colorsLocal.text }]} numberOfLines={1}>
+                          {formFromUnit || 'Unit'}
+                        </ThemedText>
+                        <ThemedText style={[Typography.caption1, { color: colorsLocal.textTertiary }]}>▼</ThemedText>
+                      </TouchableOpacity>
+                    )}
                     <ThemedText style={[Typography.body, { color: colorsLocal.textSecondary }]}>=</ThemedText>
                     <TextInput
                       style={[
@@ -647,21 +642,11 @@ function FoodUnitConversionsBlock(props: FoodUnitConversionsBlockProps) {
 
                   {/* Action buttons */}
                   <View style={styles.formActions}>
-                    {isEditFormLocal && (
-                      <TouchableOpacity
-                        activeOpacity={0.7}
-                        style={styles.deleteButton}
-                        onPress={() => handleDelete((panel as { mode: 'form'; editingUnit: string | null; pickingFrom: boolean }).editingUnit!)}
-                        disabled={isSavingUnit}
-                      >
-                        <ThemedText style={[Typography.subhead, { color: colorsLocal.destructive }]}>Delete</ThemedText>
-                      </TouchableOpacity>
-                    )}
                     <View style={styles.formActionsRight}>
                       <TouchableOpacity
                         activeOpacity={0.7}
                         style={styles.cancelButton}
-                        onPress={closePanel}
+                        onPress={handleCancelLocal}
                         disabled={isSavingUnit}
                       >
                         <ThemedText style={[Typography.body, { color: colorsLocal.text }]}>Cancel</ThemedText>
@@ -853,6 +838,10 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
+  floatingCardPreview: {
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+  },
   floatingCardPicker: {
     maxHeight: 420,
   },
@@ -939,10 +928,6 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     alignItems: 'center',
     marginLeft: 'auto',
-  },
-  deleteButton: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
   },
   cancelButton: {
     paddingHorizontal: Spacing.md,

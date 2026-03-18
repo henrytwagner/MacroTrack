@@ -168,6 +168,14 @@ export default function ProfileScreen() {
               onPress={() => router.push('/barcode-demo')}
               colors={colors}
             />
+            <View style={[styles.rowSeparator, { backgroundColor: colors.borderLight }]} />
+            <SettingsRow
+              icon="scale-outline"
+              label="Scale demo"
+              subtitle="Connect to Etekcity ESN00 smart scale"
+              onPress={() => router.push('/scale-demo')}
+              colors={colors}
+            />
           </View>
         </View>
 

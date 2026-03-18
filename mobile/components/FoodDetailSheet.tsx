@@ -726,136 +726,133 @@ export default function FoodDetailSheet({
             <ThemedText style={[Typography.title2, { color: colors.text }]}>
               {displayName}
             </ThemedText>
-            <View style={styles.sourceRow}>
-              <View style={[styles.sourceBadge, { backgroundColor: colors.surfaceSecondary }]}>
-                <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>
-                  {sourceLabel}
-                </ThemedText>
-              </View>
-            </View>
+            <ThemedText style={[Typography.footnote, { color: colors.textSecondary }]}>
+              {sourceLabel}
+            </ThemedText>
           </View>
 
           {scaledMacros && (
-            <Pressable
-              style={({ pressed }) => [
-                styles.dayImpactUnderTitle,
-                pressed && { opacity: 0.9 },
-              ]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setDayImpactExpanded((e) => !e);
-              }}
-            >
-              <MacroRingProgress
-                totals={projectedTotals}
-                goals={goalsForDay}
-                variant="default"
-                showCalorieSummary={!dayImpactExpanded}
-                tightSpacing
-              />
-              {dayImpactExpanded && goalsForDay && (
-                <View style={[styles.dayImpactDetails, { borderTopColor: colors.border }]}>
-                  <DayImpactRow
-                    label="Cal"
-                    current={projectedTotals.calories}
-                    goal={goalsForDay.calories}
-                    unit=""
-                    colors={colors}
-                  />
-                  <DayImpactRow
-                    label="P"
-                    current={projectedTotals.proteinG}
-                    goal={goalsForDay.proteinG}
-                    unit="g"
-                    colors={colors}
-                  />
-                  <DayImpactRow
-                    label="C"
-                    current={projectedTotals.carbsG}
-                    goal={goalsForDay.carbsG}
-                    unit="g"
-                    colors={colors}
-                  />
-                  <DayImpactRow
-                    label="F"
-                    current={projectedTotals.fatG}
-                    goal={goalsForDay.fatG}
-                    unit="g"
-                    colors={colors}
-                  />
-                </View>
-              )}
-            </Pressable>
-          )}
-
-          {scaledMacros && (
-            <View style={styles.macroBlockWrap}>
+            <View style={[styles.infoCard, { backgroundColor: colors.surfaceSecondary }]}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.dayImpactUnderTitle,
+                  pressed && { opacity: 0.9 },
+                ]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setDayImpactExpanded((e) => !e);
+                }}
+              >
+                <MacroRingProgress
+                  totals={projectedTotals}
+                  goals={goalsForDay}
+                  variant="default"
+                  showCalorieSummary={!dayImpactExpanded}
+                  tightSpacing
+                />
+                {dayImpactExpanded && goalsForDay && (
+                  <View style={[styles.dayImpactDetails, { borderTopColor: colors.border }]}>
+                    <DayImpactRow
+                      label="Cal"
+                      current={projectedTotals.calories}
+                      goal={goalsForDay.calories}
+                      unit=""
+                      colors={colors}
+                    />
+                    <DayImpactRow
+                      label="P"
+                      current={projectedTotals.proteinG}
+                      goal={goalsForDay.proteinG}
+                      unit="g"
+                      colors={colors}
+                    />
+                    <DayImpactRow
+                      label="C"
+                      current={projectedTotals.carbsG}
+                      goal={goalsForDay.carbsG}
+                      unit="g"
+                      colors={colors}
+                    />
+                    <DayImpactRow
+                      label="F"
+                      current={projectedTotals.fatG}
+                      goal={goalsForDay.fatG}
+                      unit="g"
+                      colors={colors}
+                    />
+                  </View>
+                )}
+              </Pressable>
+              <View style={[styles.infoCardSeparator, { backgroundColor: colors.border }]} />
               <MacroSummaryBlock
                 calories={scaledMacros.calories}
                 proteinG={scaledMacros.proteinG}
                 carbsG={scaledMacros.carbsG}
                 fatG={scaledMacros.fatG}
                 colors={colors}
-                backgroundColor={colors.surfaceSecondary}
+                backgroundColor={colors.surface}
               />
             </View>
           )}
 
           <View style={styles.quantitySection}>
-            {food && (
-              <View style={[styles.servingSizeBlock, { backgroundColor: colors.surfaceSecondary }]}>
-                <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>
-                  Serving size
-                </ThemedText>
-                <ThemedText style={[Typography.body, { color: colors.text, fontWeight: '600' }]}>
-                  {equivalentServingLabel ? `${baseServingLabel} (≈ ${equivalentServingLabel})` : baseServingLabel}
-                </ThemedText>
-              </View>
-            )}
-
-            <ThemedText style={[Typography.subhead, { color: colors.text, marginBottom: Spacing.xs }]}>
-              Amount
-            </ThemedText>
-            <TextInput
-              style={[
-                styles.quantityInput,
-                { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface },
-              ]}
-              value={quantity}
-              onChangeText={setQuantity}
-              keyboardType="decimal-pad"
-              placeholder=""
-              placeholderTextColor={colors.textTertiary}
-              returnKeyType="done"
-            />
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.unitPills}
-            >
-              {unitTiles.map((u) => {
-                const isSelected = unit === u;
-                return (
-                  <Pressable
-                    key={u}
-                    style={[
-                      styles.unitPill,
-                      {
-                        backgroundColor: isSelected ? colors.tint : colors.surfaceSecondary,
-                        borderColor: isSelected ? colors.tint : colors.border,
-                      },
-                    ]}
-                    onPress={() => setUnit(u)}
-                  >
-                    <ThemedText
-                      style={[Typography.subhead, { color: isSelected ? '#FFFFFF' : colors.text }]}
-                    >
-                      {u}
+            <View style={[styles.quantityCard, { backgroundColor: colors.surfaceSecondary }]}>
+              {food && (
+                <>
+                  <View style={styles.quantityCardRow}>
+                    <ThemedText style={[Typography.subhead, { color: colors.textSecondary }]}>
+                      Serving size
                     </ThemedText>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
+                    <ThemedText style={[Typography.subhead, { color: colors.text, fontWeight: '500', textAlign: 'right', flex: 1 }]}>
+                      {equivalentServingLabel ? `${baseServingLabel} (≈ ${equivalentServingLabel})` : baseServingLabel}
+                    </ThemedText>
+                  </View>
+                  <View style={[styles.quantityCardDivider, { backgroundColor: colors.borderLight }]} />
+                </>
+              )}
+              <View style={styles.quantityCardRow}>
+                <ThemedText style={[Typography.subhead, { color: colors.textSecondary }]}>Amount</ThemedText>
+                <TextInput
+                  style={[styles.quantityInputInline, { color: colors.text }]}
+                  value={quantity}
+                  onChangeText={setQuantity}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.textTertiary}
+                  returnKeyType="done"
+                  textAlign="right"
+                />
+              </View>
+              <View style={[styles.quantityCardDivider, { backgroundColor: colors.borderLight }]} />
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.unitPillsInCard}
+              >
+                {unitTiles.map((u) => {
+                  const isSelected = unit === u;
+                  return (
+                    <Pressable
+                      key={u}
+                      style={[
+                        styles.unitPill,
+                        {
+                          backgroundColor: isSelected ? colors.tint : colors.surface,
+                          borderColor: isSelected ? colors.tint : colors.border,
+                        },
+                      ]}
+                      onPress={() => setUnit(u)}
+                    >
+                      <ThemedText
+                        style={[Typography.subhead, { color: isSelected ? '#FFFFFF' : colors.text }]}
+                      >
+                        {u}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
           </View>
 
           <View style={styles.actions}>
@@ -881,7 +878,7 @@ export default function FoodDetailSheet({
               <Pressable
                 style={({ pressed }) => [
                   styles.deleteButton,
-                  { borderColor: colors.destructive, opacity: pressed ? 0.8 : 1 },
+                  { opacity: pressed ? 0.7 : 1 },
                   isDeleting && styles.buttonDisabled,
                 ]}
                 onPress={handleDelete}
@@ -891,7 +888,7 @@ export default function FoodDetailSheet({
                   <ActivityIndicator color={colors.destructive} size="small" />
                 ) : (
                   <ThemedText style={[styles.deleteButtonText, { color: colors.destructive }]}>
-                    Delete
+                    Delete Entry
                   </ThemedText>
                 )}
               </Pressable>
@@ -935,30 +932,48 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   foodHeader: {
-    gap: Spacing.sm,
-    marginBottom: Spacing.sm,
+    gap: Spacing.xs,
+    marginBottom: Spacing.md,
   },
-  sourceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-  },
-  sourceBadge: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
-  },
-  macroBlockWrap: {
+  infoCard: {
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
     marginBottom: Spacing.lg,
+  },
+  infoCardSeparator: {
+    height: StyleSheet.hairlineWidth,
   },
   quantitySection: {
     marginBottom: Spacing.xxl,
   },
-  servingSizeBlock: {
-    paddingVertical: Spacing.md,
+  quantityCard: {
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+  },
+  quantityCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.md,
-    marginBottom: Spacing.lg,
+    paddingVertical: Spacing.md,
+    gap: Spacing.md,
+  },
+  quantityCardDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: Spacing.lg,
+  },
+  quantityInputInline: {
+    ...Typography.body,
+    fontWeight: '600' as const,
+    flex: 1,
+    textAlign: 'right',
+    paddingVertical: 0,
+  },
+  unitPillsInCard: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
   },
   quickChip: {
     paddingHorizontal: Spacing.md,
@@ -967,19 +982,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginRight: Spacing.sm,
   },
-  quantityInput: {
-    ...Typography.title2,
-    borderWidth: 1,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    marginBottom: Spacing.sm,
-  },
-  unitPills: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    paddingVertical: Spacing.xs,
-  },
   unitPill: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
@@ -987,7 +989,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   actions: {
-    gap: Spacing.md,
+    gap: Spacing.sm,
   },
   primaryButton: {
     borderRadius: BorderRadius.md,
@@ -1001,15 +1003,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   deleteButton: {
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.lg,
+    paddingVertical: Spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 52,
-    borderWidth: 1,
   },
   deleteButtonText: {
-    ...Typography.headline,
+    ...Typography.subhead,
   },
   buttonDisabled: {
     opacity: 0.4,
@@ -1017,8 +1016,8 @@ const styles = StyleSheet.create({
   dayImpactUnderTitle: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: Spacing.xs,
-    marginBottom: 0,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
   },
   dayImpactDetails: {
     flexDirection: 'row',

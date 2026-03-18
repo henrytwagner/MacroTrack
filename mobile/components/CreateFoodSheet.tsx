@@ -37,8 +37,6 @@ interface CreateFoodSheetProps {
   sourceCustomFoodId?: string;
   onDismiss: () => void;
   onSaved?: (food?: CustomFood) => void;
-  /** Called when user taps Publish (edit) or Create and share (create). Parent should open publish sheet. */
-  onPublishRequest?: (food: CustomFood) => void;
   /** Called after deleting a custom food in edit mode so parent can refresh. */
   onDeleted?: () => void;
 }
@@ -50,6 +48,8 @@ interface FieldInputProps {
   unit?: string;
   required?: boolean;
   placeholder?: string;
+  accentColor?: string;
+  isLast?: boolean;
   colors: (typeof Colors)['light'];
 }
 
@@ -60,21 +60,26 @@ function FieldInput({
   unit,
   required,
   placeholder = '0',
+  accentColor,
+  isLast,
   colors,
 }: FieldInputProps) {
   return (
-    <View style={styles.fieldRow}>
-      <View style={styles.fieldLabelContainer}>
-        <ThemedText style={[Typography.body, { color: colors.text }]}>
-          {label}
-        </ThemedText>
-        {required && (
-          <ThemedText style={[Typography.caption1, { color: colors.destructive }]}>*</ThemedText>
+    <>
+      <View style={styles.macroRow}>
+        {accentColor ? (
+          <View style={[styles.macroDot, { backgroundColor: accentColor }]} />
+        ) : (
+          <View style={[styles.macroDot, { backgroundColor: colors.textTertiary }]} />
         )}
-      </View>
-      <View style={styles.fieldInputContainer}>
+        <ThemedText style={[Typography.body, { color: colors.text, flex: 1 }]}>
+          {label}
+          {required && (
+            <ThemedText style={[Typography.caption1, { color: colors.destructive }]}> *</ThemedText>
+          )}
+        </ThemedText>
         <TextInput
-          style={[styles.fieldInput, { color: colors.text, borderColor: colors.border }]}
+          style={[styles.macroInput, { color: colors.text }]}
           value={value}
           onChangeText={onChangeText}
           keyboardType="numeric"
@@ -83,12 +88,15 @@ function FieldInput({
           returnKeyType="done"
         />
         {unit && (
-          <ThemedText style={[Typography.subhead, { color: colors.textSecondary }]}>
+          <ThemedText style={[styles.macroUnit, { color: colors.textSecondary }]}>
             {unit}
           </ThemedText>
         )}
       </View>
-    </View>
+      {!isLast && (
+        <View style={[styles.macroRowDivider, { backgroundColor: colors.borderLight }]} />
+      )}
+    </>
   );
 }
 
@@ -102,13 +110,14 @@ export default function CreateFoodSheet({
   sourceCustomFoodId,
   onDismiss,
   onSaved,
-  onPublishRequest,
   onDeleted,
 }: CreateFoodSheetProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
-  const isCommunity = intent === 'community';
+  const [publishMode, setPublishMode] = useState<'local' | 'community'>(
+    intent === 'community' ? 'community' : 'local',
+  );
 
   const [name, setName] = useState('');
   const [brandName, setBrandName] = useState('');
@@ -139,6 +148,8 @@ export default function CreateFoodSheet({
 
   useEffect(() => {
     if (!visible) return;
+
+    setPublishMode(intent === 'community' ? 'community' : 'local');
 
     const prefill = editingFood ?? prefillCommunityFood;
     if (prefill) {
@@ -187,7 +198,7 @@ export default function CreateFoodSheet({
       setShowOptional(false);
       setPendingUnitConversions([]);
     }
-  }, [editingFood, prefillCommunityFood, prefillName, visible]);
+  }, [editingFood, prefillCommunityFood, prefillName, visible, intent]);
 
   const baseServingNum = Number(servingSize) || 1;
 
@@ -199,8 +210,6 @@ export default function CreateFoodSheet({
     const adopted = adoptedPending ?? adoptedSaved;
 
     if (adopted) {
-      // Adoption: new unit IS an existing conversion.
-      // Redefine base as "1 newUnit", recalculate remaining conversions.
       const adoptedQIBS = adopted.quantityInBaseServings;
 
       const newPending = pendingUnitConversions
@@ -210,7 +219,6 @@ export default function CreateFoodSheet({
 
       if (editingFood) {
         const newSaved = unitConfigs.filter((c) => c.unitName !== newUnit);
-        // Delete adopted, then update remaining
         const deleteOp = adoptedSaved ? api.deleteFoodUnitConversion(adoptedSaved.id) : Promise.resolve();
         deleteOp
           .then(() =>
@@ -234,7 +242,6 @@ export default function CreateFoodSheet({
       setServingSize('1');
       setServingUnit(newUnit);
     } else {
-      // New unit is not in conversions — clear all (ratios would be physically wrong)
       setPendingUnitConversions([]);
       if (editingFood && unitConfigs.length > 0) {
         Promise.all(unitConfigs.map((c) => api.deleteFoodUnitConversion(c.id)))
@@ -252,7 +259,7 @@ export default function CreateFoodSheet({
     Number(servingSize) > 0 &&
     calories.length > 0;
 
-  const handleSave = async (openPublishAfter?: boolean) => {
+  const handleSave = async () => {
     if (!isValid) return;
     setIsSaving(true);
 
@@ -266,8 +273,25 @@ export default function CreateFoodSheet({
     };
 
     try {
-      if (isCommunity) {
-        if (sourceCustomFoodId) {
+      const willPublish = publishMode === 'community';
+
+      if (willPublish) {
+        if (editingFood) {
+          const customData = {
+            name: name.trim(),
+            servingSize: Number(servingSize) || 1,
+            servingUnit,
+            calories: Number(calories) || 0,
+            proteinG: Number(protein) || 0,
+            carbsG: Number(carbs) || 0,
+            fatG: Number(fat) || 0,
+            ...optionalMacros,
+          };
+          await api.updateCustomFood(editingFood.id, customData);
+          await api.publishCustomFood(editingFood.id, {
+            brandName: brandName.trim() || undefined,
+          });
+        } else if (sourceCustomFoodId) {
           await api.publishCustomFood(sourceCustomFoodId, {
             brandName: brandName.trim() || undefined,
             barcode: prefillBarcode || undefined,
@@ -324,11 +348,7 @@ export default function CreateFoodSheet({
           setPendingUnitConversions([]);
         }
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        if (openPublishAfter) {
-          onPublishRequest?.(result);
-        } else {
-          onSaved?.(result);
-        }
+        onSaved?.(result);
       }
     } catch (e) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -369,7 +389,7 @@ export default function CreateFoodSheet({
   };
 
   const isEditing = !!editingFood;
-  const isCustomCreate = !isCommunity && !editingFood;
+  const titleText = isEditing ? 'Edit Custom Food' : 'Create Custom Food';
 
   return (
     <Modal
@@ -379,16 +399,29 @@ export default function CreateFoodSheet({
       onRequestClose={onDismiss}
     >
       <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top']}>
-        <View style={styles.header}>
+        <View style={[styles.header, { borderBottomColor: 'rgba(128,128,128,0.2)' }]}>
           <Pressable onPress={onDismiss} hitSlop={8}>
             <ThemedText style={[Typography.body, { color: colors.tint }]}>
               Cancel
             </ThemedText>
           </Pressable>
           <ThemedText style={[Typography.headline, { color: colors.text }]}>
-            {isEditing ? 'Edit Custom Food' : isCommunity ? 'Add to Community' : 'Create Custom Food'}
+            {titleText}
           </ThemedText>
-          <View style={{ width: 50 }} />
+          <Pressable onPress={handleSave} disabled={!isValid || isSaving} hitSlop={8}>
+            {isSaving ? (
+              <ActivityIndicator size="small" color={colors.tint} />
+            ) : (
+              <ThemedText
+                style={[
+                  Typography.body,
+                  { color: isValid ? colors.tint : colors.textTertiary, fontWeight: '600' },
+                ]}
+              >
+                Save
+              </ThemedText>
+            )}
+          </Pressable>
         </View>
 
         <KeyboardAvoidingView
@@ -400,13 +433,57 @@ export default function CreateFoodSheet({
             contentContainerStyle={styles.sheetScrollContent}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Name */}
-            <View style={[styles.section, { borderBottomColor: colors.borderLight }]}>
-              <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
-                Name
-              </ThemedText>
+            {/* Publish toggle */}
+            <View style={[styles.publishToggleWrap, { backgroundColor: colors.surfaceSecondary }]}>
+              <Pressable
+                style={[
+                  styles.publishSegment,
+                  publishMode === 'local' && [styles.publishSegmentActive, { backgroundColor: colors.surface }],
+                ]}
+                onPress={() => setPublishMode('local')}
+              >
+                <Ionicons
+                  name="person-outline"
+                  size={15}
+                  color={publishMode === 'local' ? colors.tint : colors.textSecondary}
+                />
+                <ThemedText
+                  style={[
+                    Typography.subhead,
+                    { color: publishMode === 'local' ? colors.tint : colors.textSecondary, fontWeight: '500' },
+                  ]}
+                >
+                  My Foods
+                </ThemedText>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.publishSegment,
+                  publishMode === 'community' && [styles.publishSegmentActive, { backgroundColor: colors.surface }],
+                ]}
+                onPress={() => setPublishMode('community')}
+              >
+                <Ionicons
+                  name="people-outline"
+                  size={15}
+                  color={publishMode === 'community' ? colors.tint : colors.textSecondary}
+                />
+                <ThemedText
+                  style={[
+                    Typography.subhead,
+                    { color: publishMode === 'community' ? colors.tint : colors.textSecondary, fontWeight: '500' },
+                  ]}
+                >
+                  Community
+                </ThemedText>
+              </Pressable>
+            </View>
+
+            {/* Name card */}
+            <ThemedText style={[styles.sectionLabel, { color: colors.textSecondary }]}>NAME</ThemedText>
+            <View style={[styles.sectionCard, { backgroundColor: colors.surfaceSecondary }]}>
               <TextInput
-                style={[styles.nameInput, { color: colors.text, borderColor: colors.border }]}
+                style={[styles.nameCardInput, { color: colors.text }]}
                 value={name}
                 onChangeText={setName}
                 placeholder="e.g. Mom's Chili"
@@ -414,24 +491,25 @@ export default function CreateFoodSheet({
                 autoFocus={!isEditing}
                 returnKeyType="next"
               />
-              {isCommunity && (
-                <TextInput
-                  style={[styles.nameInput, { color: colors.text, borderColor: colors.border, marginTop: Spacing.sm }]}
-                  value={brandName}
-                  onChangeText={setBrandName}
-                  placeholder="Brand name (optional)"
-                  placeholderTextColor={colors.textTertiary}
-                  returnKeyType="next"
-                />
+              {publishMode === 'community' && (
+                <>
+                  <View style={[styles.nameCardDivider, { backgroundColor: colors.borderLight }]} />
+                  <TextInput
+                    style={[styles.nameCardInput, { color: colors.text }]}
+                    value={brandName}
+                    onChangeText={setBrandName}
+                    placeholder="Brand name (optional)"
+                    placeholderTextColor={colors.textTertiary}
+                    returnKeyType="next"
+                  />
+                </>
               )}
             </View>
 
-            {/* Serving Size — amount and base unit; conversions use this unit */}
-            <View style={[styles.section, { borderBottomColor: colors.borderLight }]}>
-              <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
-                Serving Size
-              </ThemedText>
-              <View style={styles.servingSizeRow}>
+            {/* Serving Size card */}
+            <ThemedText style={[styles.sectionLabel, { color: colors.textSecondary }]}>SERVING SIZE</ThemedText>
+            <View style={[styles.sectionCard, { backgroundColor: colors.surfaceSecondary }]}>
+              <View style={styles.servingCardRow}>
                 <TextInput
                   style={[styles.servingSizeInput, { color: colors.text, borderColor: colors.border }]}
                   value={servingSize}
@@ -445,6 +523,7 @@ export default function CreateFoodSheet({
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.servingSizeUnitPills}
+                  style={{ flex: 1 }}
                 >
                   {BASE_UNIT_OPTIONS.map((u) => {
                     const isSelected = servingUnit === u;
@@ -454,7 +533,7 @@ export default function CreateFoodSheet({
                         style={[
                           styles.servingSizeUnitPill,
                           {
-                            backgroundColor: isSelected ? colors.tint : colors.surfaceSecondary,
+                            backgroundColor: isSelected ? colors.tint : colors.surface,
                             borderColor: isSelected ? colors.tint : colors.border,
                           },
                         ]}
@@ -470,54 +549,79 @@ export default function CreateFoodSheet({
                   })}
                 </ScrollView>
               </View>
-              <ThemedText style={[Typography.caption1, { color: colors.textTertiary, marginTop: Spacing.xs }]}>
-                Add conversions below (e.g. 1 cup = 240 g).
-              </ThemedText>
             </View>
 
-            {/* Units — choose base unit, add conversions, and see list */}
-            <View style={[styles.section, { borderBottomColor: colors.borderLight }]}>
-              <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.xs }]}>
-                Units
-              </ThemedText>
-              <ThemedText style={[Typography.caption1, { color: colors.textSecondary, marginBottom: Spacing.sm }]}>
-                Add conversions using the base unit above (e.g. 1 cup = 240 g).
-              </ThemedText>
-              {editingFood ? (
-                <FoodUnitConversionsBlock
-                  mode="saved"
-                  customFoodId={editingFood.id}
-                  servingSize={baseServingNum}
-                  servingUnit={servingUnit}
-                  noUnitSelection
-                  onConversionsChange={setUnitConfigs}
-                  onOverlayRender={setUnitOverlay}
-                />
-              ) : (
-                <FoodUnitConversionsBlock
-                  mode="draft"
-                  servingSize={servingSize}
-                  servingUnit={servingUnit}
-                  pendingConversions={pendingUnitConversions}
-                  onPendingConversionsChange={setPendingUnitConversions}
-                  noUnitSelection
-                  onOverlayRender={setUnitOverlay}
-                />
-              )}
+            {/* Units card */}
+            <ThemedText style={[styles.sectionLabel, { color: colors.textSecondary }]}>UNITS</ThemedText>
+            <View style={[styles.sectionCard, { backgroundColor: colors.surfaceSecondary }]}>
+              <View style={{ padding: Spacing.md }}>
+                {editingFood ? (
+                  <FoodUnitConversionsBlock
+                    mode="saved"
+                    customFoodId={editingFood.id}
+                    servingSize={baseServingNum}
+                    servingUnit={servingUnit}
+                    noUnitSelection
+                    onConversionsChange={setUnitConfigs}
+                    onOverlayRender={setUnitOverlay}
+                  />
+                ) : (
+                  <FoodUnitConversionsBlock
+                    mode="draft"
+                    servingSize={servingSize}
+                    servingUnit={servingUnit}
+                    pendingConversions={pendingUnitConversions}
+                    onPendingConversionsChange={setPendingUnitConversions}
+                    noUnitSelection
+                    onOverlayRender={setUnitOverlay}
+                  />
+                )}
+              </View>
             </View>
 
-            {/* Required Macros */}
-            <View style={[styles.section, { borderBottomColor: colors.borderLight }]}>
-              <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.md }]}>
-                Nutrition per Serving
-              </ThemedText>
-              <FieldInput label="Calories" value={calories} onChangeText={setCalories} unit="kcal" required colors={colors} />
-              <FieldInput label="Protein" value={protein} onChangeText={setProtein} unit="g" required colors={colors} />
-              <FieldInput label="Carbs" value={carbs} onChangeText={setCarbs} unit="g" required colors={colors} />
-              <FieldInput label="Fat" value={fat} onChangeText={setFat} unit="g" required colors={colors} />
+            {/* Nutrition card */}
+            <ThemedText style={[styles.sectionLabel, { color: colors.textSecondary }]}>NUTRITION PER SERVING</ThemedText>
+            <View style={[styles.sectionCard, { backgroundColor: colors.surfaceSecondary }]}>
+              <FieldInput
+                label="Calories"
+                value={calories}
+                onChangeText={setCalories}
+                unit="kcal"
+                required
+                accentColor={colors.caloriesAccent}
+                colors={colors}
+              />
+              <FieldInput
+                label="Protein"
+                value={protein}
+                onChangeText={setProtein}
+                unit="g"
+                required
+                accentColor={colors.proteinAccent}
+                colors={colors}
+              />
+              <FieldInput
+                label="Carbs"
+                value={carbs}
+                onChangeText={setCarbs}
+                unit="g"
+                required
+                accentColor={colors.carbsAccent}
+                colors={colors}
+              />
+              <FieldInput
+                label="Fat"
+                value={fat}
+                onChangeText={setFat}
+                unit="g"
+                required
+                accentColor={colors.fatAccent}
+                isLast
+                colors={colors}
+              />
             </View>
 
-            {/* Optional Fields */}
+            {/* More details toggle */}
             <Pressable
               style={styles.moreDetailsToggle}
               onPress={() => setShowOptional(!showOptional)}
@@ -533,69 +637,22 @@ export default function CreateFoodSheet({
             </Pressable>
 
             {showOptional && (
-              <View style={styles.optionalSection}>
-                <FieldInput label="Sodium" value={sodium} onChangeText={setSodium} unit="mg" colors={colors} />
-                <FieldInput label="Cholesterol" value={cholesterol} onChangeText={setCholesterol} unit="mg" colors={colors} />
-                <FieldInput label="Fiber" value={fiber} onChangeText={setFiber} unit="g" colors={colors} />
-                <FieldInput label="Sugar" value={sugar} onChangeText={setSugar} unit="g" colors={colors} />
-                <FieldInput label="Saturated Fat" value={saturatedFat} onChangeText={setSaturatedFat} unit="g" colors={colors} />
-                <FieldInput label="Trans Fat" value={transFat} onChangeText={setTransFat} unit="g" colors={colors} />
-              </View>
-            )}
-
-            <Pressable
-              style={({ pressed }) => [
-                styles.saveButton,
-                { backgroundColor: colors.tint, opacity: pressed ? 0.8 : 1 },
-                (!isValid || isSaving) && styles.buttonDisabled,
-              ]}
-              onPress={() => handleSave()}
-              disabled={!isValid || isSaving}
-            >
-              {isSaving ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <ThemedText style={styles.saveButtonText}>
-                  {isEditing ? 'Save Changes' : isCommunity ? 'Publish to Community' : 'Create Food'}
-                </ThemedText>
-              )}
-            </Pressable>
-
-            {isEditing && onPublishRequest && (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.secondaryButton,
-                  { borderColor: colors.tint, opacity: pressed ? 0.8 : 1 },
-                ]}
-                onPress={() => onPublishRequest(editingFood!)}
-              >
-                <Ionicons name="share-outline" size={20} color={colors.tint} style={{ marginRight: Spacing.xs }} />
-                <ThemedText style={[Typography.headline, { color: colors.tint }]}>Publish to community</ThemedText>
-              </Pressable>
-            )}
-
-            {isCustomCreate && onPublishRequest && (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.secondaryButton,
-                  { borderColor: colors.tint, opacity: pressed ? 0.8 : 1 },
-                  (!isValid || isSaving) && styles.buttonDisabled,
-                ]}
-                onPress={() => handleSave(true)}
-                disabled={!isValid || isSaving}
-              >
-                <Ionicons name="share-outline" size={20} color={colors.tint} style={{ marginRight: Spacing.xs }} />
-                <ThemedText style={[Typography.headline, { color: colors.tint }]}>Create and share</ThemedText>
-              </Pressable>
+              <>
+                <ThemedText style={[styles.sectionLabel, { color: colors.textSecondary }]}>OPTIONAL</ThemedText>
+                <View style={[styles.sectionCard, { backgroundColor: colors.surfaceSecondary }]}>
+                  <FieldInput label="Sodium" value={sodium} onChangeText={setSodium} unit="mg" colors={colors} />
+                  <FieldInput label="Cholesterol" value={cholesterol} onChangeText={setCholesterol} unit="mg" colors={colors} />
+                  <FieldInput label="Fiber" value={fiber} onChangeText={setFiber} unit="g" colors={colors} />
+                  <FieldInput label="Sugar" value={sugar} onChangeText={setSugar} unit="g" colors={colors} />
+                  <FieldInput label="Saturated Fat" value={saturatedFat} onChangeText={setSaturatedFat} unit="g" colors={colors} />
+                  <FieldInput label="Trans Fat" value={transFat} onChangeText={setTransFat} unit="g" isLast colors={colors} />
+                </View>
+              </>
             )}
 
             {isEditing && (
-              <Pressable
-                style={({ pressed }) => [styles.deleteButton, { borderColor: colors.destructive, opacity: pressed ? 0.8 : 1 }]}
-                onPress={handleDelete}
-              >
-                <Ionicons name="trash-outline" size={20} color={colors.destructive} style={{ marginRight: Spacing.xs }} />
-                <ThemedText style={[Typography.headline, { color: colors.destructive }]}>Delete</ThemedText>
+              <Pressable style={styles.deleteButton} onPress={handleDelete}>
+                <ThemedText style={[Typography.body, { color: colors.destructive }]}>Delete Food</ThemedText>
               </Pressable>
             )}
           </ScrollView>
@@ -624,7 +681,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(128,128,128,0.2)',
   },
   sheetContent: {
     flex: 1,
@@ -633,36 +689,47 @@ const styles = StyleSheet.create({
     padding: Spacing.xl,
     paddingBottom: 100,
   },
-  section: {
-    paddingBottom: Spacing.lg,
-    marginBottom: Spacing.lg,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  sectionLabel: {
+    ...Typography.footnote,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    marginBottom: Spacing.sm,
+    paddingHorizontal: Spacing.xs,
+    textTransform: 'uppercase',
   },
-  nameInput: {
+  sectionCard: {
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+    marginBottom: Spacing.lg,
+  },
+  nameCardInput: {
     ...Typography.body,
-    borderWidth: 1,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
   },
-  servingSizeRow: {
+  nameCardDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: Spacing.lg,
+  },
+  servingCardRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
     gap: Spacing.md,
-    flexWrap: 'wrap',
   },
   servingSizeInput: {
     ...Typography.body,
     borderWidth: 1,
     borderRadius: BorderRadius.sm,
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    minWidth: 80,
+    paddingVertical: Spacing.sm,
+    minWidth: 72,
+    textAlign: 'center',
   },
   servingSizeUnitPills: {
     flexDirection: 'row',
     gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
     alignItems: 'center',
   },
   servingSizeUnitPill: {
@@ -671,31 +738,54 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
     borderWidth: 1,
   },
-  fieldRow: {
+  publishToggleWrap: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    padding: 3,
+    marginBottom: Spacing.lg,
   },
-  fieldLabelContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
+  publishSegment: {
     flex: 1,
-  },
-  fieldInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  fieldInput: {
-    ...Typography.body,
-    borderWidth: 1,
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    paddingVertical: 7,
     borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    width: 80,
+  },
+  publishSegmentActive: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  macroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    gap: Spacing.md,
+  },
+  macroDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  macroInput: {
+    ...Typography.body,
+    fontWeight: '500',
+    flex: 1,
     textAlign: 'right',
+    paddingVertical: 0,
+  },
+  macroUnit: {
+    ...Typography.footnote,
+    minWidth: 28,
+  },
+  macroRowDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: Spacing.lg + 8 + Spacing.md,
   },
   moreDetailsToggle: {
     flexDirection: 'row',
@@ -704,42 +794,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     marginBottom: Spacing.md,
   },
-  optionalSection: {
-    marginBottom: Spacing.xxl,
-  },
-  saveButton: {
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 52,
-    marginTop: Spacing.lg,
-  },
-  saveButtonText: {
-    ...Typography.headline,
-    color: '#FFFFFF',
-  },
-  secondaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.lg,
-    minHeight: 52,
-    marginTop: Spacing.md,
-    borderWidth: 1,
-  },
   deleteButton: {
-    flexDirection: 'row',
+    paddingVertical: Spacing.md,
     alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.lg,
-    minHeight: 52,
     marginTop: Spacing.lg,
-    borderWidth: 1,
-  },
-  buttonDisabled: {
-    opacity: 0.4,
   },
 });

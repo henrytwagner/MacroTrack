@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "macrotrack",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.henrywagner.macrotrack",
@@ -68,11 +68,19 @@
           "microphonePermission": "MacroTrack needs microphone access so you can log food by voice in Kitchen Mode.",
           "speechRecognitionPermission": "MacroTrack uses speech recognition to understand your food logging commands."
         }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "modes": ["central"],
+          "bluetoothAlwaysPermission": "MacroTrack needs Bluetooth to read weight from your smart nutrition scale."
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
-      "reactCompiler": true
+      "reactCompiler": false
     }
   }
 }

@@ -62,6 +62,13 @@ export default function RootLayout() {
             }}
           />
           <Stack.Screen
+            name="scale-demo"
+            options={{
+              presentation: 'modal',
+              title: 'Scale demo',
+            }}
+          />
+          <Stack.Screen
             name="edit-entry"
             options={{
               headerShown: false,

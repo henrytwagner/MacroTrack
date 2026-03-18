@@ -142,8 +142,6 @@ export default function AddFoodScreen() {
   const [isFetchingMyFoods, setIsFetchingMyFoods] = useState(true);
   const [lastAddedEntry, setLastAddedEntry] = useState<FoodEntry | null>(null);
 
-  const [foodToPublish, setFoodToPublish] = useState<CustomFood | null>(null);
-  const [showPublishSheet, setShowPublishSheet] = useState(false);
   const [communityIntent, setCommunityIntent] = useState(false);
   const [barcodeGtinForCommunity, setBarcodeGtinForCommunity] = useState<string | undefined>();
   const [isScanning, setIsScanning] = useState(false);
@@ -388,22 +386,6 @@ export default function AddFoodScreen() {
       setQuery((q) => q + ' ');
       setTimeout(() => setQuery((q) => q.trimEnd()), 10);
     }
-    if (food && !editingCustomFood) {
-      Alert.alert(
-        'Share with the community?',
-        'Make this food visible to all MacroTrack users. Your version becomes the community entry.',
-        [
-          { text: 'Not Now', style: 'cancel' },
-          {
-            text: 'Review & Share',
-            onPress: () => {
-              setFoodToPublish(food);
-              setShowPublishSheet(true);
-            },
-          },
-        ],
-      );
-    }
   }, [isShowingSearch, fetchFrequentRecent, editingCustomFood]);
 
   const handleEditCustomFood = useCallback((food: CustomFood) => {
@@ -485,18 +467,6 @@ export default function AddFoodScreen() {
     setBarcodeGtinForCommunity(undefined);
     setShowCreateSheet(true);
   }, [query]);
-
-  const handlePublishDismiss = useCallback(() => {
-    setShowPublishSheet(false);
-    setFoodToPublish(null);
-  }, []);
-
-  const handlePublishSaved = useCallback(() => {
-    setShowPublishSheet(false);
-    setFoodToPublish(null);
-    setMyFoodsRefreshKey((k) => k + 1);
-    fetchFrequentRecent();
-  }, [fetchFrequentRecent]);
 
   const handleFork = useCallback((newCustomFood: CustomFood) => {
     setDetailFood(null);
@@ -602,8 +572,9 @@ export default function AddFoodScreen() {
         onPublishCustomFood={(customFood) => {
           setDetailFood(null);
           setExistingEntry(null);
-          setFoodToPublish(customFood);
-          setShowPublishSheet(true);
+          setEditingCustomFood(customFood);
+          setCommunityIntent(true);
+          setShowCreateSheet(true);
         }}
         asFullScreen
       />
@@ -674,56 +645,34 @@ export default function AddFoodScreen() {
         </Pressable>
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabsRow}>
-        <Pressable
-          style={styles.tabButton}
-          onPress={() => handleTabPress('search')}
-        >
-          <ThemedText
-            style={[
-              Typography.subhead,
-              { color: activeTab === 'search' ? colors.text : colors.textSecondary },
-            ]}
+      {/* Tabs — segmented control */}
+      <View style={styles.tabSegmentedWrap}>
+        <View style={[styles.tabSegmentedControl, { backgroundColor: colors.surfaceSecondary }]}>
+          <Pressable
+            style={[styles.tabSegment, activeTab === 'search' && [styles.tabSegmentActive, { backgroundColor: colors.surface }]]}
+            onPress={() => handleTabPress('search')}
           >
-            Recommended
-          </ThemedText>
-          {activeTab === 'search' && (
-            <View style={[styles.tabUnderline, { backgroundColor: colors.tint }]} />
-          )}
-        </Pressable>
-        <Pressable
-          style={styles.tabButton}
-          onPress={() => handleTabPress('myFoods')}
-        >
-          <ThemedText
-            style={[
-              Typography.subhead,
-              { color: activeTab === 'myFoods' ? colors.text : colors.textSecondary },
-            ]}
+            <ThemedText style={[Typography.footnote, { color: activeTab === 'search' ? colors.text : colors.textSecondary, fontWeight: activeTab === 'search' ? '600' : '400' }]}>
+              Recommended
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            style={[styles.tabSegment, activeTab === 'myFoods' && [styles.tabSegmentActive, { backgroundColor: colors.surface }]]}
+            onPress={() => handleTabPress('myFoods')}
           >
-            Your foods
-          </ThemedText>
-          {activeTab === 'myFoods' && (
-            <View style={[styles.tabUnderline, { backgroundColor: colors.tint }]} />
-          )}
-        </Pressable>
-        <Pressable
-          style={styles.tabButton}
-          onPress={() => handleTabPress('meals')}
-        >
-          <ThemedText
-            style={[
-              Typography.subhead,
-              { color: activeTab === 'meals' ? colors.text : colors.textSecondary },
-            ]}
+            <ThemedText style={[Typography.footnote, { color: activeTab === 'myFoods' ? colors.text : colors.textSecondary, fontWeight: activeTab === 'myFoods' ? '600' : '400' }]}>
+              Your foods
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            style={[styles.tabSegment, activeTab === 'meals' && [styles.tabSegmentActive, { backgroundColor: colors.surface }]]}
+            onPress={() => handleTabPress('meals')}
           >
-            Meals
-          </ThemedText>
-          {activeTab === 'meals' && (
-            <View style={[styles.tabUnderline, { backgroundColor: colors.tint }]} />
-          )}
-        </Pressable>
+            <ThemedText style={[Typography.footnote, { color: activeTab === 'meals' ? colors.text : colors.textSecondary, fontWeight: activeTab === 'meals' ? '600' : '400' }]}>
+              Meals
+            </ThemedText>
+          </Pressable>
+        </View>
       </View>
 
       {/* Tab content: horizontal pager */}
@@ -1111,8 +1060,9 @@ export default function AddFoodScreen() {
           onPublishCustomFood={(customFood) => {
             setDetailFood(null);
             setExistingEntry(null);
-            setFoodToPublish(customFood);
-            setShowPublishSheet(true);
+            setEditingCustomFood(customFood);
+            setCommunityIntent(true);
+            setShowCreateSheet(true);
           }}
           onDeleteCustomFood={() => {
             setMyFoodsRefreshKey((k) => k + 1);
@@ -1129,51 +1079,11 @@ export default function AddFoodScreen() {
         prefillBarcode={barcodeGtinForCommunity}
         onDismiss={handleCreateDismiss}
         onSaved={handleCreateSaved}
-        onPublishRequest={(food) => {
-          setShowCreateSheet(false);
-          setEditingCustomFood(undefined);
-          setFoodToPublish(food);
-          setShowPublishSheet(true);
-          setMyFoodsRefreshKey((k) => k + 1);
-          fetchFrequentRecent();
-        }}
         onDeleted={() => {
           setMyFoodsRefreshKey((k) => k + 1);
           fetchFrequentRecent();
         }}
       />
-
-      {showPublishSheet && foodToPublish && (
-        <CreateFoodSheet
-          visible={showPublishSheet}
-          intent="community"
-          prefillCommunityFood={{
-            id: '',
-            name: foodToPublish.name,
-            defaultServingSize: foodToPublish.servingSize,
-            defaultServingUnit: foodToPublish.servingUnit,
-            calories: foodToPublish.calories,
-            proteinG: foodToPublish.proteinG,
-            carbsG: foodToPublish.carbsG,
-            fatG: foodToPublish.fatG,
-            sodiumMg: foodToPublish.sodiumMg,
-            cholesterolMg: foodToPublish.cholesterolMg,
-            fiberG: foodToPublish.fiberG,
-            sugarG: foodToPublish.sugarG,
-            saturatedFatG: foodToPublish.saturatedFatG,
-            transFatG: foodToPublish.transFatG,
-            status: 'ACTIVE',
-            usesCount: 0,
-            reportsCount: 0,
-            trustScore: 0.5,
-            createdAt: '',
-            updatedAt: '',
-          }}
-          sourceCustomFoodId={foodToPublish.id}
-          onDismiss={handlePublishDismiss}
-          onSaved={handlePublishSaved}
-        />
-      )}
 
       <UndoSnackbar
         message={lastAddedEntry ? `Added ${lastAddedEntry.name}.` : ''}
@@ -1236,27 +1146,34 @@ const styles = StyleSheet.create({
     ...Typography.body,
     paddingVertical: 0,
   },
-  tabsRow: {
-    flexDirection: 'row',
+  tabSegmentedWrap: {
     paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.xs,
+    paddingBottom: Spacing.sm,
+  },
+  tabSegmentedControl: {
+    flexDirection: 'row',
+    borderRadius: BorderRadius.md,
+    padding: 3,
+  },
+  tabSegment: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    borderRadius: BorderRadius.sm,
+  },
+  tabSegmentActive: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
   },
   tabPager: {
     flex: 1,
   },
   tabPage: {
     flex: 1,
-  },
-  tabButton: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-  },
-  tabUnderline: {
-    marginTop: 2,
-    height: 2,
-    borderRadius: 1,
-    alignSelf: 'stretch',
   },
   actionRow: {
     flexDirection: 'row',

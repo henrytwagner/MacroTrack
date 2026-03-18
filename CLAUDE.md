@@ -6,7 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MacroTrack is a voice-first macronutrient tracking app. Users can log food via voice in "Kitchen Mode" (immersive full-screen modal with live draft cards and WebSocket streaming), manual search, or barcode scanning.
 
-Full product specification lives in `SPEC.md`. Consult it for detailed requirements.
+**Current development focus:**
+- Improving the voice logging flow and Kitchen Mode UI (responsiveness, polish, UX refinements)
+- Improving manual entry pages
+- Integrating BLE scale input as a quantity source alongside voice
+- Long-term: evolving toward a camera-assisted, scale-integrated, AR-overlay logging experience (see `BUILD_PLAN.md`)
+
+Full product specification lives in `SPEC.md`. Consult it for detailed requirements. Long-term vision and phased build strategy lives in `BUILD_PLAN.md`.
 
 ## Commands
 
@@ -67,11 +73,14 @@ Four Zustand stores in `mobile/stores/`:
 
 ### Food Lookup Chain
 
-1. User's custom foods (fuzzy match)
-2. USDA FoodData Central
-3. No match → Voice-guided custom food creation (user provides nutrition values)
+1. User's custom foods (fuzzy match) — highest trust, user-controlled
+2. Community foods (`CommunityFood` model) — reviewed/shared data, preferred over generic database entries
+3. USDA FoodData Central — lower priority; data quality is inconsistent. Use as a fallback, not a default authority.
+4. No match → Voice-guided custom food creation (user provides nutrition values)
 
-**There is no AI-generated nutrition fallback.** Gemini is a parser only — it never generates, estimates, or fabricates nutrition data. All nutrition comes from USDA or user-created custom foods.
+**There is no AI-generated nutrition fallback.** Gemini is a parser only — it never generates, estimates, or fabricates nutrition data. All nutrition comes from user-created custom foods, community foods, or USDA.
+
+**On data source trust:** Personal and community-logged data is treated as more reliable than USDA entries, which have inconsistent serving sizes and nutrient completeness. Do not privilege USDA results over community or custom entries when both are available. The direction of travel is toward personal and community data as primary sources.
 
 ### Kitchen Mode Flow
 
@@ -87,9 +96,11 @@ Session exit outcomes:
 
 - **No auth**: Single-user prototype. Default user is hardcoded in `server/src/db/defaultUser.ts`.
 - **Gemini is a parser, not a nutritionist**: Never ask Gemini to generate/estimate nutrition values. The system prompt must include "Never generate, estimate, or approximate nutritional data."
-- **FoodEntry sources**: Only `DATABASE` (USDA) or `CUSTOM` (user-created). No AI-estimate source.
+- **FoodEntry sources**: `DATABASE` (USDA), `CUSTOM` (user-created), and `COMMUNITY` (community foods). No AI-estimate source. Personal and community sources are preferred over USDA when both match.
 - **Styling**: All colors, typography, and spacing must be defined in `mobile/constants/theme.ts`. No inline magic values.
 - **Barcode scanner** (`mobile/features/barcode/`) is a standalone module. Do not integrate into core app flows (Log tab, Kitchen Mode, server, `shared/types`) until the dedicated integration phase described in BUILD_GUIDE.md.
+- **Multi-modal input is a hard constraint**: Every logging action must be reachable via touch alone, without voice, and without camera. No single input modality should be required. Voice, camera, scale, and touch are all first-class — users choose the combination that works for them in any moment.
+- **BLE scale** (`mobile/features/scale/`) is being integrated as a quantity input source. The scale is the accuracy anchor for quantity — prefer scale-provided weight over user-estimated quantities where available.
 
 ## Gemini Intent Format
 
