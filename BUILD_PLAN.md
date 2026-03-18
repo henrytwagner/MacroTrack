@@ -100,6 +100,8 @@ Because every logging action is reachable via multiple input paths, the app natu
 
 None of these are features that need to be designed from scratch — they emerge naturally from the "every action is multi-modal" constraint. The implementation requirement is to maintain this constraint rigorously as features are built: always ask "can this be done without voice? without touch? without vision?" and ensure the answer is yes wherever possible.
 
+It is worth naming an observation that goes beyond design constraint: the camera + scale logging pipeline — point phone at food, read weight, say one word — may be the most accessible food logging modality ever built for users with motor or cognitive limitations. Existing apps require search, typing, and quantity estimation. This pipeline requires none of those. The user's physical and cognitive load is reduced to: place food, point phone, confirm. For a user with limited fine motor control, significant cognitive load, or conditions that make text entry difficult, this is a qualitatively different experience. This is worth framing explicitly as a research contribution angle, not just a design property. The accessibility benefits are not an accommodation added to a mainstream product — they are a structural consequence of the core architecture.
+
 Formal accessibility audit (screen reader support, dynamic text sizing, contrast ratios, VoiceOver/TalkBack compliance) is a later phase concern, but designing with this framing from the start avoids the refactor cost of retrofitting accessibility after the fact.
 
 ---
@@ -126,13 +128,15 @@ Two distinct identification pathways are planned depending on food type:
 
 **Barcode scan** — For packaged foods. Already built as a standalone module. The barcode is decoded, normalized to GTIN-13, and used to query a nutrition database (USDA FoodData Central, Open Food Facts, or Nutritionix depending on coverage). This pathway is reliable and high-accuracy for packaged goods.
 
-**Visual food recognition** — For produce, whole foods, and prepared items without barcodes. This requires a vision model. Two candidate APIs have been identified:
-- **Passio AI** — Purpose-built nutrition AI with a mobile SDK. Designed for exactly this use case.
-- **LogMeal API** — Cloud-based food recognition REST API.
+**Visual food recognition** — For produce, whole foods, and prepared items without barcodes. A two-phase approach has been settled on after evaluating the available options:
 
-The choice between these will be informed by accuracy benchmarking on the specific food categories most relevant to the use case (produce, grains, proteins). Details TBD.
+*Phase 1 — Gemini Flash vision (photo-tap logging):* The user taps a camera button, takes a photo, and the image is sent to the existing `gemini.ts` service as a base64-encoded frame with a structured identification prompt. Gemini returns a JSON food name, which routes directly into the existing `foodParser.ts` USDA lookup flow. No new dependencies. Slots into the current architecture in hours. Latency (~500–1000ms) is acceptable for a deliberate photo-tap interaction; it rules out live AR but is invisible in a tap-to-log flow.
 
-**AR overlay** — Once food identification is running, identified items in the camera frame will be annotated with floating macro tags. On iOS, this is built on ARKit (or more likely a simpler Vision framework + CoreGraphics overlay since full spatial AR isn't strictly needed — 2D bounding boxes on the camera feed are sufficient for the intended UX). The overlay renders: food name, detected confidence, live macro computation based on current scale weight.
+*Phase 2 — react-native-vision-camera + on-device CoreML model (live AR frames):* `react-native-vision-camera`'s Frame Processor API runs a JS function on every camera frame via JSI (no bridge overhead). A food classification model — EfficientNetB0 fine-tuned on Food-101, exported to `.mlmodelc` — runs entirely on the Neural Engine. Expected inference latency: ~50ms per frame. Zero marginal cost per frame. Full pipeline ownership. The model (~20MB) ships bundled in the app. AR overlays will be drawn in react-native-skia, which integrates cleanly with vision-camera's frame output.
+
+*Why specialized nutrition APIs (Passio AI, LogMeal) were evaluated and rejected:* These platforms bundle nutrition data delivery with their vision inference. Passio's SDK, for example, couples an on-device CoreML vision model with a mandatory cloud call to fetch `PassioFoodItem` nutrition data after every identification. The tokens you pay for are mostly this cloud nutrition fetch — which MacroTrack discards, since nutrition data comes from USDA and user-created sources. You cannot cleanly extract just the food name without triggering the billing layer their SDK is designed around. LogMeal is purely cloud-based and has the same data-bundling problem. Both create per-call cost for a data layer this app intentionally owns independently.
+
+**AR overlay** — Identified items in the camera frame are annotated with floating macro cards rendered in react-native-skia on top of the vision-camera feed. Full ARKit spatial anchoring is not required — 2D bounding boxes from the vision model output are sufficient for the intended UX. The overlay renders: food name, confidence score, and live macro computation bound to the current scale weight (updating in real time as the weight changes).
 
 ### 4.3 Voice: Confirmation and Command
 
@@ -291,8 +295,9 @@ This mode is computationally heavier and will likely require on-device inference
 | Nutrition database | USDA FoodData Central | Established |
 | BLE scale stream | CoreBluetooth / react-native-ble-plx | In progress |
 | Barcode scan | Expo Camera / AVFoundation | Built (not integrated) |
-| Visual food ID | Passio AI SDK or LogMeal API | Not started |
-| AR overlays | ARKit / Vision + CoreGraphics | Not started |
+| Visual food ID (Phase 1) | Gemini Flash vision (photo → base64 → `gemini.ts`) | Not started |
+| Visual food ID (Phase 2) | react-native-vision-camera + EfficientNetB0 CoreML | Not started |
+| AR overlays | react-native-skia on vision-camera feed | Not started |
 | Packaged food DB | Open Food Facts / Nutritionix | Not started |
 
 ---
@@ -305,9 +310,13 @@ The following are observations from the design process that don't have settled a
 
 **On vision model accuracy for produce**: Visual food recognition models vary significantly in their produce classification accuracy. A banana is easy; a roasted sweet potato is harder; a homemade grain bowl is very hard. The interaction design needs a graceful degradation path for low-confidence or failed identifications. This is partly a UX problem (how do you prompt the user to correct an identification without breaking the flow?) and partly a model selection problem.
 
-**On latency and the real-time feel**: The AR overlay experience is only compelling if the overlay appears quickly. Cloud API round-trips for food identification introduce 200–800ms of latency. On-device inference (Core ML / TFLite) is faster but requires a model that can run on-device. Passio AI specifically advertises on-device inference for their nutrition SDK. This is a meaningful factor in the vendor selection decision.
+**On live AR frame rate vs. accuracy tradeoff**: The on-device CoreML model can physically run faster than necessary — the question is what inference frequency makes the AR overlay *feel* live without draining battery. Food doesn't move quickly on a kitchen counter, so a 2–5fps inference cadence is likely sufficient to keep the overlay feeling responsive. Running at 30fps would be wasteful and thermally aggressive. The right frequency needs hands-on testing with the actual model and device to find the point where additional frames stop improving perceived responsiveness.
+
+**On the Phase 1→Phase 2 data collection bridge**: Phase 1 photo-tap logs should capture three things alongside the food entry: the original image, the Gemini-returned food label, and the user's final confirmed food match (the USDA entry they accepted). This triplet — image, predicted label, confirmed label — is labeled training data for fine-tuning the Phase 2 CoreML model, collected with zero extra user effort. Over hundreds of logs, this builds a dataset biased toward the foods this specific user actually eats, which is more valuable for model accuracy than a generic Food-101 dataset. The data collection schema should be designed into Phase 1 even if the fine-tuning pipeline isn't built until Phase 2.
 
 **On the zero-out event as a UX signal**: The design of using scale return-to-zero as a natural item boundary is appealing but has edge cases. What if the user picks up an item to look at it and sets it back down? What if the scale oscillates near zero? Debounce logic and a minimum-time-on-scale threshold will be needed. The right thresholds are unclear without hands-on testing.
+
+**On multi-item detection for fridge scan mode**: The Phase 2 CoreML model (EfficientNetB0 fine-tuned on Food-101) is a single-label classifier — it returns one prediction per frame. This is architecturally incompatible with fridge scan mode, which requires identifying multiple objects simultaneously with individual bounding boxes. That task is object detection, not image classification — a fundamentally different model architecture (YOLO-style or similar). Phase 4 should plan for a separate model, separate frame processor plugin, and separate AR rendering logic. Do not attempt to extend the Phase 2 classification pipeline to cover Phase 4.
 
 **On the phone-as-AR-window positioning**: This framing has been tested informally and resonates. The comparison to AR glasses is useful because it gives people a mental model of what the app is trying to do, without the baggage of "another macro tracker." Whether it survives contact with real users is unknown.
 
@@ -321,7 +330,7 @@ The following are observations from the design process that don't have settled a
 
 3. **Phase 1 end-to-end test** — Run a full logging session: scan a packaged food with a barcode, weigh it on the scale, voice-confirm, verify the entry appears in the daily log with correct nutrition data.
 
-4. **Vendor evaluation for visual food ID** — Test Passio AI and LogMeal against a representative set of 20–30 food items. Record accuracy and latency. Select one.
+4. **Phase 1 Gemini photo logging** — Add camera button to Log tab, capture photo, send to `gemini.ts` for food identification, pipe result into existing `foodParser.ts`. Design the entry schema to capture (image, Gemini label, confirmed USDA match) as training data for Phase 2.
 
 ---
 
