@@ -146,7 +146,7 @@ export default function KitchenModeScreen() {
   // Distance the bar travels before it sticks (initial top → sticky top).
   // Bar starts at: feedHeight - MACRO_PILL_HALF_HEIGHT
   // Bar sticks at: Spacing.md (lines up with the camera nav buttons)
-  const BAR_TRAVEL = feedHeight - MACRO_PILL_HALF_HEIGHT - Spacing.md;
+  const BAR_TRAVEL = feedHeight - MACRO_PILL_HALF_HEIGHT - Spacing.xs;
   const barTranslateY = barcodeModeScrollY.interpolate({
     inputRange: [0, BAR_TRAVEL],
     outputRange: [0, -BAR_TRAVEL],
@@ -898,8 +898,10 @@ export default function KitchenModeScreen() {
         >
           {barcodeModeActive ? (
             <>
-              {/* 0: transparent spacer — camera height minus half-pill so the bar straddles */}
-              <Pressable onPress={handleCameraAreaTap} style={{ height: feedHeight - MACRO_PILL_HALF_HEIGHT }} />
+              {/* 0: transparent spacer — full camera height so the sheet starts exactly at the camera
+                   bottom edge; the bar (top: feedHeight-MACRO_PILL_HALF_HEIGHT) then straddles that
+                   boundary with its top half over the camera and bottom half over the white sheet */}
+              <Pressable onPress={handleCameraAreaTap} style={{ height: feedHeight }} />
 
               {/* 1: sheet header — rounded top corners, clears floating bar */}
               <View style={[styles.sheetHeader, { backgroundColor: colors.background }]} />
