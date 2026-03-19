@@ -35,6 +35,8 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { BarcodeScanResult } from '@/features/barcode/types';
 import { normalizeToGTIN } from '@/features/barcode/gtin';
 import type { WSServerMessage } from '@shared/types';
+import { useScale } from '@/features/scale/useScale';
+import { KitchenScaleCard } from '@/features/scale/KitchenScaleCard';
 
 // Macro pill is ~48px tall (paddingVertical 8×2 + compact ring 32px); half used to
 // position the pill flush with the camera feed / cards boundary in barcode mode.
@@ -158,6 +160,7 @@ export default function KitchenModeScreen() {
   const { totals, fetch: fetchEntries } = useDailyLogStore();
   const { goalsByDate, fetch: fetchGoals } = useGoalStore();
   const { items, projectedTotals, initSession, applyServerMessage, reset } = useDraftStore();
+  const scale = useScale();
 
   // Reversed items so newest appears at top; activeId is the first non-normal card or topmost card
   const reversedItems = useMemo(() => [...items].reverse(), [items]);
@@ -890,7 +893,7 @@ export default function KitchenModeScreen() {
           style={styles.scrollView}
           contentContainerStyle={[
             barcodeModeActive ? undefined : styles.scrollContent,
-            items.length === 0 && !barcodeModeActive && styles.scrollContentEmpty,
+            items.length === 0 && !barcodeModeActive && Platform.OS === 'web' && styles.scrollContentEmpty,
           ]}
           showsVerticalScrollIndicator={false}
           onScroll={Animated.event(
@@ -911,6 +914,7 @@ export default function KitchenModeScreen() {
 
               {/* 2: sheet body — cards */}
               <View style={[styles.sheetBody, { backgroundColor: colors.background, minHeight: screenHeight }]}>
+                {Platform.OS !== 'web' && <KitchenScaleCard {...scale} />}
                 {items.length === 0 ? (
                   <View style={styles.emptyState}>
                     <Ionicons name="scan-outline" size={48} color={colors.textTertiary} />
@@ -941,33 +945,36 @@ export default function KitchenModeScreen() {
               </View>
             </>
           ) : (
-            items.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="mic-outline" size={48} color={colors.textTertiary} />
-                <ThemedText
-                  style={[
-                    Typography.body,
-                    {
-                      color: colors.textSecondary,
-                      textAlign: 'center',
-                      marginTop: Spacing.md,
-                    },
-                  ]}
-                >
-                  Start speaking to log food.{'\n'}Try: "200 grams of chicken breast"
-                </ThemedText>
-              </View>
-            ) : (
-              reversedItems.map((item) => (
-                <DraftMealCard
-                  key={item.id}
-                  item={item}
-                  isActive={item.id === activeId}
-                  onSendTranscript={handleSendTranscript}
-                  onOpenBarcodeScanner={handleBarcodeButtonPress}
-                />
-              ))
-            )
+            <>
+              {Platform.OS !== 'web' && <KitchenScaleCard {...scale} />}
+              {items.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="mic-outline" size={48} color={colors.textTertiary} />
+                  <ThemedText
+                    style={[
+                      Typography.body,
+                      {
+                        color: colors.textSecondary,
+                        textAlign: 'center',
+                        marginTop: Spacing.md,
+                      },
+                    ]}
+                  >
+                    Start speaking to log food.{'\n'}Try: "200 grams of chicken breast"
+                  </ThemedText>
+                </View>
+              ) : (
+                reversedItems.map((item) => (
+                  <DraftMealCard
+                    key={item.id}
+                    item={item}
+                    isActive={item.id === activeId}
+                    onSendTranscript={handleSendTranscript}
+                    onOpenBarcodeScanner={handleBarcodeButtonPress}
+                  />
+                ))
+              )}
+            </>
           )}
         </Animated.ScrollView>
 
