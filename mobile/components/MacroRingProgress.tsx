@@ -41,7 +41,7 @@ function getOverflowColor(baseColor: string): string {
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
-interface SingleRingProps {
+export interface SingleRingProps {
   size: number;
   strokeWidth: number;
   current: number;
@@ -53,7 +53,7 @@ interface SingleRingProps {
   labelColor?: string;
 }
 
-function SingleMacroRing({
+export function SingleMacroRing({
   size,
   strokeWidth,
   current,

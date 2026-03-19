@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   StyleSheet,
@@ -27,6 +27,8 @@ const CREATING_FIELD_LABELS: Record<string, string> = {
   protein: 'Protein',
   carbs: 'Carbs',
   fat: 'Fat',
+  brand: 'Brand',
+  barcode: 'Barcode',
 };
 
 function isNumericField(field: string): boolean {
@@ -285,16 +287,24 @@ const CREATION_FIELD_ORDER = [
   'protein',
   'carbs',
   'fat',
+  'brand',
+  'barcode',
 ];
 
 function CreatingCard({
   item,
   colors,
   onSendTranscript,
+  onOpenBarcodeScanner,
+  expanded,
+  onInteract,
 }: {
   item: DraftItem;
   colors: (typeof Colors)['light'];
   onSendTranscript: (text: string) => void;
+  onOpenBarcodeScanner?: () => void;
+  expanded: boolean;
+  onInteract: () => void;
 }) {
   const progress = item.creatingProgress;
   const currentField = progress?.currentField ?? 'confirm';
@@ -302,6 +312,8 @@ function CreatingCard({
 
   // Fields that have been filled (before the current one)
   const filledFields = CREATION_FIELD_ORDER.slice(1, currentIdx); // skip "confirm"
+
+  const isSkippable = currentField === 'brand' || currentField === 'barcode';
 
   return (
     <>
@@ -312,7 +324,14 @@ function CreatingCard({
         >
           {item.name}
         </ThemedText>
-        <Ionicons name="add-circle-outline" size={18} color={colors.tint} />
+        <View style={styles.cardHeaderRight}>
+          <Ionicons name="add-circle-outline" size={18} color={colors.tint} />
+          {expanded && (
+            <Pressable onPress={() => { onInteract(); onSendTranscript('cancel'); }}>
+              <Ionicons name="close-circle-outline" size={18} color={colors.textTertiary} />
+            </Pressable>
+          )}
+        </View>
       </View>
 
       <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>
@@ -332,6 +351,10 @@ function CreatingCard({
           valueStr = `${progress?.carbsG ?? '?'}g carbs`;
         } else if (field === 'fat') {
           valueStr = `${progress?.fatG ?? '?'}g fat`;
+        } else if (field === 'brand') {
+          valueStr = progress?.brand ? progress.brand : '(skipped)';
+        } else if (field === 'barcode') {
+          valueStr = progress?.barcode ? progress.barcode : '(skipped)';
         }
         return (
           <View key={field} style={styles.filledFieldRow}>
@@ -344,8 +367,8 @@ function CreatingCard({
         );
       })}
 
-      {/* Current field — inline TextInput + mic dot */}
-      {currentField !== 'complete' && currentField !== 'confirm' && (
+      {/* Current field — inline TextInput + mic dot (hidden in minimal mode) */}
+      {expanded && currentField !== 'complete' && currentField !== 'confirm' && (
         <View style={[styles.currentFieldRow, { borderColor: colors.tint }]}>
           <ThemedText style={[Typography.footnote, { color: colors.tint }]}>
             {CREATING_FIELD_LABELS[currentField]}?
@@ -364,12 +387,36 @@ function CreatingCard({
             returnKeyType="done"
             onSubmitEditing={(e) => {
               const val = e.nativeEvent.text.trim();
-              if (val) onSendTranscript(val);
+              if (val) { onInteract(); onSendTranscript(val); }
             }}
             blurOnSubmit={false}
           />
+          {isSkippable && (
+            <Pressable
+              onPress={() => { onInteract(); onSendTranscript('skip'); }}
+              style={styles.skipButton}
+            >
+              <ThemedText style={[Typography.caption2, { color: colors.textTertiary }]}>
+                Skip
+              </ThemedText>
+            </Pressable>
+          )}
+          {currentField === 'barcode' && onOpenBarcodeScanner && (
+            <Pressable
+              onPress={() => { onInteract(); onOpenBarcodeScanner(); }}
+              style={[styles.skipButton, { backgroundColor: 'rgba(0,0,0,0.06)' }]}
+            >
+              <Ionicons name="barcode-outline" size={14} color={colors.tint} />
+            </Pressable>
+          )}
           <View style={[styles.micDot, { backgroundColor: colors.tint }]} />
         </View>
+      )}
+
+      {!expanded && (
+        <ThemedText style={[Typography.caption2, { color: colors.textTertiary, textAlign: 'center', marginTop: 4 }]}>
+          tap to edit
+        </ThemedText>
       )}
     </>
   );
@@ -702,6 +749,137 @@ function CommunitySubmitPromptCard({
 }
 
 // ---------------------------------------------------------------------------
+// Confirming card — nutrition collected, choose save/share/cancel
+// ---------------------------------------------------------------------------
+
+function ConfirmingCard({
+  item,
+  colors,
+  onSendTranscript,
+  expanded,
+  onInteract,
+}: {
+  item: DraftItem;
+  colors: (typeof Colors)['light'];
+  onSendTranscript: (text: string) => void;
+  expanded: boolean;
+  onInteract: () => void;
+}) {
+  const progress = item.creatingProgress;
+  const confirmingData = item.confirmingData;
+
+  const defaultQty = confirmingData?.quantityMismatch
+    ? '1'
+    : String(item.initialQuantity ?? 1);
+  const defaultUnit = confirmingData?.quantityMismatch
+    ? (progress?.servingUnit ?? 'servings')
+    : (item.initialUnit ?? progress?.servingUnit ?? 'servings');
+
+  const [qty, setQty] = useState(defaultQty);
+  const [unit, setUnit] = useState(defaultUnit);
+
+  return (
+    <>
+      <View style={styles.cardHeader}>
+        <ThemedText
+          style={[Typography.headline, styles.foodName, { color: colors.text }]}
+          numberOfLines={1}
+        >
+          {item.name}
+        </ThemedText>
+        <View style={styles.cardHeaderRight}>
+          <Ionicons name="checkmark-circle-outline" size={18} color={colors.success} />
+          <Pressable onPress={() => { onInteract(); onSendTranscript('cancel'); }}>
+            <Ionicons name="close-circle-outline" size={18} color={colors.textTertiary} />
+          </Pressable>
+        </View>
+      </View>
+
+      <ThemedText style={[Typography.caption1, { color: colors.textSecondary }]}>
+        Per {progress?.servingSize ?? 1} {progress?.servingUnit ?? 'serving'}
+      </ThemedText>
+
+      <View style={styles.macroRow}>
+        <MacroChip label="cal" value={progress?.calories ?? 0} color={colors.caloriesAccent} />
+        <MacroChip label="P" value={progress?.proteinG ?? 0} color={colors.proteinAccent} />
+        <MacroChip label="C" value={progress?.carbsG ?? 0} color={colors.carbsAccent} />
+        <MacroChip label="F" value={progress?.fatG ?? 0} color={colors.fatAccent} />
+      </View>
+
+      {progress?.brand ? (
+        <ThemedText style={[Typography.footnote, { color: colors.textSecondary }]}>
+          Brand: {progress.brand}
+        </ThemedText>
+      ) : null}
+      {progress?.barcode ? (
+        <ThemedText style={[Typography.footnote, { color: colors.textSecondary }]}>
+          Barcode: {progress.barcode}
+        </ThemedText>
+      ) : null}
+
+      {/* Quantity — always visible */}
+      <View style={styles.quantityRow}>
+        <ThemedText style={[Typography.footnote, { color: colors.textSecondary, marginRight: 4 }]}>
+          Quantity:
+        </ThemedText>
+        <TextInput
+          style={[styles.creatingInput, { color: colors.text, borderBottomColor: colors.tint, flex: 0, minWidth: 48 }]}
+          value={qty}
+          onChangeText={(v) => { onInteract(); setQty(v); }}
+          keyboardType="decimal-pad"
+        />
+        <TextInput
+          style={[styles.creatingInput, { color: colors.text, borderBottomColor: colors.tint, flex: 0, minWidth: 72, marginLeft: 6 }]}
+          value={unit}
+          onChangeText={(v) => { onInteract(); setUnit(v); }}
+        />
+      </View>
+
+      {confirmingData?.quantityMismatch && (
+        <ThemedText style={[Typography.caption2, { color: colors.warning }]}>
+          {`⚠ You said '${item.initialQuantity} ${item.initialUnit}' — serving is ${progress?.servingSize ?? 1} ${progress?.servingUnit ?? 'servings'}. Confirm how much you had.`}
+        </ThemedText>
+      )}
+
+      <View style={styles.choiceButtonRow}>
+        <Pressable
+          onPress={() => { onInteract(); onSendTranscript(`save to community ${qty} ${unit}`); }}
+          style={({ pressed }) => [
+            styles.choiceButton,
+            { borderColor: colors.tint, backgroundColor: pressed ? colors.tint : 'transparent' },
+          ]}
+        >
+          {({ pressed }) => (
+            <ThemedText style={[Typography.footnote, { color: pressed ? '#fff' : colors.tint, fontWeight: '600' }]}>
+              Share
+            </ThemedText>
+          )}
+        </Pressable>
+        <Pressable
+          onPress={() => { onInteract(); onSendTranscript(`save privately ${qty} ${unit}`); }}
+          style={({ pressed }) => [
+            styles.choiceButton,
+            { borderColor: colors.border, backgroundColor: pressed ? colors.surfaceSecondary : 'transparent' },
+          ]}
+        >
+          {({ pressed }) => (
+            <ThemedText style={[Typography.footnote, { color: pressed ? colors.text : colors.textSecondary, fontWeight: '600' }]}>
+              Save Privately
+            </ThemedText>
+          )}
+        </Pressable>
+      </View>
+
+      {!expanded && (
+        <ThemedText style={[Typography.caption2, { color: colors.textTertiary, textAlign: 'center', marginTop: 4 }]}>
+          tap to edit
+        </ThemedText>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Phase 4 — History results card
 // ---------------------------------------------------------------------------
 
@@ -936,11 +1114,40 @@ interface DraftMealCardProps {
   item: DraftItem;
   isActive: boolean;
   onSendTranscript: (text: string) => void;
+  onOpenBarcodeScanner?: () => void;
 }
 
-export default function DraftMealCard({ item, isActive, onSendTranscript }: DraftMealCardProps) {
+export default function DraftMealCard({ item, isActive, onSendTranscript, onOpenBarcodeScanner }: DraftMealCardProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+
+  // ---------------------------------------------------------------------------
+  // Progressive disclosure — tap to expand, auto-collapse after 3s
+  // ---------------------------------------------------------------------------
+
+  const [expanded, setExpanded] = useState(false);
+  const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resetCollapseTimer = () => {
+    if (collapseTimer.current) clearTimeout(collapseTimer.current);
+    collapseTimer.current = setTimeout(() => setExpanded(false), 3000);
+  };
+
+  const handleExpand = () => {
+    setExpanded(true);
+    resetCollapseTimer();
+  };
+
+  const handleCardPress = () => {
+    if (!expanded) handleExpand();
+    else resetCollapseTimer();
+  };
+
+  useEffect(() => {
+    return () => {
+      if (collapseTimer.current) clearTimeout(collapseTimer.current);
+    };
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Value flash animations
@@ -1050,17 +1257,19 @@ export default function DraftMealCard({ item, isActive, onSendTranscript }: Draf
       ? colors.warning
       : item.state === 'creating'
         ? colors.tint
-        : item.state === 'usda_pending'
-          ? colors.warning
-          : item.state === 'disambiguate'
-            ? colors.tint
-            : item.state === 'confirm_clear'
-              ? colors.warning
-              : item.state === 'community_submit_prompt'
-                ? colors.tint
-                : item.state === 'estimate_card'
-                  ? colors.warning
-                  : colors.border;
+        : item.state === 'confirming'
+          ? colors.success
+          : item.state === 'usda_pending'
+            ? colors.warning
+            : item.state === 'disambiguate'
+              ? colors.tint
+              : item.state === 'confirm_clear'
+                ? colors.warning
+                : item.state === 'community_submit_prompt'
+                  ? colors.tint
+                  : item.state === 'estimate_card'
+                    ? colors.warning
+                    : colors.border;
 
   const isCompact = !isActive && item.state === 'normal';
 
@@ -1076,46 +1285,64 @@ export default function DraftMealCard({ item, isActive, onSendTranscript }: Draf
         },
       ]}
     >
-      {item.state === 'normal' && isCompact && (
-        <CompactNormalCard item={item} colors={colors} flashAnims={flashAnims} />
-      )}
-      {item.state === 'normal' && !isCompact && (
-        <ExpandedNormalCard item={item} colors={colors} flashAnims={flashAnims} />
-      )}
-      {item.state === 'clarifying' && <ClarifyingCard item={item} colors={colors} />}
-      {item.state === 'creating' && (
-        <CreatingCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
-      )}
-      {item.state === 'choice' && (
-        <ChoiceCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
-      )}
-      {item.state === 'usda_pending' && (
-        <UsdaPendingCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
-      )}
-      {item.state === 'disambiguate' && (
-        <DisambiguateCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
-      )}
-      {item.state === 'confirm_clear' && (
-        <ConfirmClearCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
-      )}
-      {item.state === 'community_submit_prompt' && (
-        <CommunitySubmitPromptCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
-      )}
-      {item.state === 'history_results' && (
-        <HistoryResultsCard item={item} colors={colors} />
-      )}
-      {item.state === 'macro_summary' && (
-        <MacroSummaryCard item={item} colors={colors} />
-      )}
-      {item.state === 'food_info' && (
-        <FoodInfoCard item={item} colors={colors} />
-      )}
-      {item.state === 'food_suggestions' && (
-        <FoodSuggestionsCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
-      )}
-      {item.state === 'estimate_card' && (
-        <EstimateCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
-      )}
+      <Pressable onPress={handleCardPress}>
+        {item.state === 'normal' && isCompact && (
+          <CompactNormalCard item={item} colors={colors} flashAnims={flashAnims} />
+        )}
+        {item.state === 'normal' && !isCompact && (
+          <ExpandedNormalCard item={item} colors={colors} flashAnims={flashAnims} />
+        )}
+        {item.state === 'clarifying' && <ClarifyingCard item={item} colors={colors} />}
+        {item.state === 'creating' && (
+          <CreatingCard
+            item={item}
+            colors={colors}
+            onSendTranscript={onSendTranscript}
+            onOpenBarcodeScanner={onOpenBarcodeScanner}
+            expanded={expanded}
+            onInteract={resetCollapseTimer}
+          />
+        )}
+        {item.state === 'confirming' && (
+          <ConfirmingCard
+            item={item}
+            colors={colors}
+            onSendTranscript={onSendTranscript}
+            expanded={expanded}
+            onInteract={resetCollapseTimer}
+          />
+        )}
+        {item.state === 'choice' && (
+          <ChoiceCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
+        )}
+        {item.state === 'usda_pending' && (
+          <UsdaPendingCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
+        )}
+        {item.state === 'disambiguate' && (
+          <DisambiguateCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
+        )}
+        {item.state === 'confirm_clear' && (
+          <ConfirmClearCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
+        )}
+        {item.state === 'community_submit_prompt' && (
+          <CommunitySubmitPromptCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
+        )}
+        {item.state === 'history_results' && (
+          <HistoryResultsCard item={item} colors={colors} />
+        )}
+        {item.state === 'macro_summary' && (
+          <MacroSummaryCard item={item} colors={colors} />
+        )}
+        {item.state === 'food_info' && (
+          <FoodInfoCard item={item} colors={colors} />
+        )}
+        {item.state === 'food_suggestions' && (
+          <FoodSuggestionsCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
+        )}
+        {item.state === 'estimate_card' && (
+          <EstimateCard item={item} colors={colors} onSendTranscript={onSendTranscript} />
+        )}
+      </Pressable>
     </Animated.View>
   );
 }
@@ -1224,5 +1451,18 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: BorderRadius.full,
     backgroundColor: 'rgba(255,165,0,0.12)',
+  },
+  quantityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: Spacing.xs,
+    gap: Spacing.xs,
+  },
+  skipButton: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+    backgroundColor: 'rgba(128,128,128,0.1)',
+    flexShrink: 0,
   },
 });

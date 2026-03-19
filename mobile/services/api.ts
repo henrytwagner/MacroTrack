@@ -198,6 +198,32 @@ export async function deleteCustomFood(id: string): Promise<void> {
 
 // --- Community Foods ---
 
+export async function getCommunityFoods(params?: {
+  status?: string;
+  page?: number;
+  limit?: number;
+}): Promise<CommunityFood[]> {
+  const qs = new URLSearchParams();
+  qs.set('status', params?.status ?? 'ALL');
+  if (params?.page != null) qs.set('page', String(params.page));
+  if (params?.limit != null) qs.set('limit', String(params.limit));
+  return request<CommunityFood[]>(`/api/food/community?${qs.toString()}`);
+}
+
+export async function updateCommunityFood(
+  id: string,
+  data: Partial<CreateCommunityFoodRequest>,
+): Promise<CommunityFood> {
+  return request<CommunityFood>(`/api/food/community/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteCommunityFood(id: string): Promise<void> {
+  return request<void>(`/api/food/community/${id}`, { method: 'DELETE' });
+}
+
 export async function createCommunityFood(
   data: CreateCommunityFoodRequest,
 ): Promise<CommunityFood> {
@@ -286,11 +312,10 @@ export async function cascadeUnitConversions(
 
 export async function lookupBarcode(
   code: string,
-): Promise<CommunityFood | null> {
-  const result = await request<{ food: CommunityFood | null }>(
+): Promise<{ food: CommunityFood; source: 'community' } | { food: CustomFood; source: 'custom' } | { food: null }> {
+  return request<{ food: CommunityFood; source: 'community' } | { food: CustomFood; source: 'custom' } | { food: null }>(
     `/api/barcode/lookup?code=${encodeURIComponent(code)}`,
   );
-  return result.food;
 }
 
 // --- Community Food Reporting ---

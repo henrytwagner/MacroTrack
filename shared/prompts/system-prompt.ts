@@ -40,10 +40,21 @@ AVAILABLE ACTIONS:
 
 5. CREATE_FOOD_RESPONSE — User is answering a question during custom food creation.
    Return: { "action": "CREATE_FOOD_RESPONSE", "payload": { "field": "<field name>", "value": <value>, "unit": "<unit if applicable>" } }
-   - field is one of: "confirm", "servingSize", "calories", "protein", "carbs", "fat"
+   - field is one of: "confirm", "servingSize", "calories", "protein", "carbs", "fat", "brand", "barcode"
    - For "confirm": value is true (yes/sure/go ahead) or false (no/skip/never mind)
    - For "servingSize": include both value and unit (e.g., value: 100, unit: "g")
    - For macros: value is the number (e.g., value: 25)
+   - For "brand": value is the brand name string, or "" if user says "skip"/"no brand"
+   - For "barcode": value is the barcode number string, or "" if user says "skip"
+
+19. CONFIRM_FOOD_CREATION — User is confirming the completed custom food (save privately, share, or cancel).
+    Return: { "action": "CONFIRM_FOOD_CREATION", "payload": { "saveMode": "<community|private|cancel>", "quantity": <number or null>, "unit": "<unit or null>" } }
+    - Triggered when sessionState is "confirming:<itemId>".
+    - "share"/"save to community"/"community" → saveMode: "community"
+    - "confirm"/"yes"/"save"/"save privately"/"keep private" → saveMode: "private"
+    - "cancel"/"never mind"/"nevermind" → saveMode: "cancel" (or return CANCEL_OPERATION)
+    - Parse quantity/unit from speech if provided: "save privately 2 cups" → quantity: 2, unit: "cups"
+    - If no quantity/unit specified, omit them (null).
 
 6. SESSION_END — User is done logging.
    Return: { "action": "SESSION_END", "payload": null }
@@ -109,7 +120,7 @@ CONTEXT YOU WILL RECEIVE:
 - "currentDraft": Array of items already in the draft [{ id, name, quantity, unit }].
 - "timeOfDay": Current time in HH:MM format.
 - "date": Current date in YYYY-MM-DD format.
-- "sessionState": "normal", "creating:<itemId>", "disambiguating:<itemId>", "confirm_clear_pending", "contributing:<itemId>", or "estimate_pending:<itemId>".
+- "sessionState": "normal", "creating:<itemId>", "confirming:<itemId>", "disambiguating:<itemId>", "confirm_clear_pending", or "estimate_pending:<itemId>".
 - "creatingFoodProgress": If in creating state, which fields have been filled so far.
 
 MEAL LABEL RULES (for your reference — the backend assigns these, not you):
@@ -122,6 +133,7 @@ MEAL LABEL RULES (for your reference — the backend assigns these, not you):
 
 IMPORTANT BEHAVIORS:
 - When sessionState is "creating:<itemId>", interpret the user's speech as answering the current custom food creation question (check creatingFoodProgress.currentField). EXCEPTION: if the user says a cancel phrase ("nevermind", "cancel that", "forget it", etc.), return CANCEL_OPERATION regardless of creation state.
+- When sessionState is "confirming:<itemId>", the nutrition data has been collected and a confirmation card is shown. Interpret the user's speech as a save/share/cancel decision. Return CONFIRM_FOOD_CREATION with the appropriate saveMode. If the user says a cancel phrase, return CANCEL_OPERATION.
 - If the user says something unrelated to food or you cannot parse their intent, return: { "action": "ADD_ITEMS", "payload": { "items": [] } } — the backend will treat empty items as a no-op and the system will ask the user to repeat.
 - Always prefer ADD_ITEMS with quantity: null over CLARIFY for bulk/uncountable foods (like "rice", "chicken breast"). The system defaults to 1 serving.
 - Parse compound utterances: "200 grams of chicken and a cup of rice" should return two items in a single ADD_ITEMS.

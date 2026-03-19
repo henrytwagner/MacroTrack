@@ -157,6 +157,7 @@ export const useDraftStore = create<DraftStoreState>((set, get) => ({
               state: 'creating' as const,
               creatingProgress: {
                 ...(item.creatingProgress ?? { currentField: 'confirm' as const }),
+                ...(msg.collectedValues ?? {}),
                 currentField: msg.field,
               },
             };
@@ -168,6 +169,24 @@ export const useDraftStore = create<DraftStoreState>((set, get) => ({
           items = items.map((item) =>
             item.id === msg.item.id ? { ...msg.item } : item,
           );
+          break;
+        }
+
+        case 'create_food_confirm': {
+          items = items.map((item) => {
+            if (item.id !== msg.itemId) return item;
+            return {
+              ...item,
+              state: 'confirming' as const,
+              creatingProgress: { ...msg.collectedValues, currentField: 'complete' as const },
+              initialQuantity: msg.initialQuantity,
+              initialUnit: msg.initialUnit,
+              confirmingData: {
+                quantityMismatch: msg.quantityMismatch,
+                collectedValues: msg.collectedValues,
+              },
+            };
+          });
           break;
         }
 

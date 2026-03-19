@@ -20,7 +20,7 @@ interface PublishCustomFoodBody {
 // Prisma-to-shared-type mapper
 // ---------------------------------------------------------------------------
 
-function mapCustomFood(food: {
+export function mapCustomFood(food: {
   id: string;
   name: string;
   servingSize: number;
@@ -35,6 +35,7 @@ function mapCustomFood(food: {
   sugarG: number | null;
   saturatedFatG: number | null;
   transFatG: number | null;
+  barcode: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): CustomFood {
@@ -53,6 +54,7 @@ function mapCustomFood(food: {
     sugarG: food.sugarG ?? undefined,
     saturatedFatG: food.saturatedFatG ?? undefined,
     transFatG: food.transFatG ?? undefined,
+    barcode: food.barcode ?? undefined,
     createdAt: food.createdAt.toISOString(),
     updatedAt: food.updatedAt.toISOString(),
   };
@@ -113,6 +115,7 @@ export async function customFoodRoutes(app: FastifyInstance) {
           sugarG: body.sugarG,
           saturatedFatG: body.saturatedFatG,
           transFatG: body.transFatG,
+          barcode: body.barcode ?? null,
         },
       });
 
@@ -156,6 +159,7 @@ export async function customFoodRoutes(app: FastifyInstance) {
             saturatedFatG: body.saturatedFatG,
           }),
           ...(body.transFatG !== undefined && { transFatG: body.transFatG }),
+          ...(body.barcode !== undefined && { barcode: body.barcode || null }),
         },
       });
 

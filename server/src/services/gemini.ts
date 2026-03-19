@@ -9,6 +9,7 @@ import type {
   GeminiEditItemIntent,
   GeminiRemoveItemIntent,
   GeminiCreateFoodResponseIntent,
+  GeminiConfirmFoodCreationIntent,
   GeminiSessionEndIntent,
   GeminiClarifyIntent,
   GeminiOpenBarcodeScannerIntent,
@@ -85,6 +86,11 @@ function coerceIntent(raw: GeminiIntent): GeminiIntent {
             value.toLowerCase() === "true" ||
             value.toLowerCase() === "yes";
         }
+      } else if (field === "brand" || field === "barcode") {
+        // Keep as string — empty string means skip
+        if (typeof value !== "string") {
+          intent.payload.value = String(value ?? "");
+        }
       } else {
         intent.payload.value = Number(value);
       }
@@ -105,6 +111,7 @@ function coerceIntent(raw: GeminiIntent): GeminiIntent {
     case "LOOKUP_FOOD_INFO":
     case "SUGGEST_FOODS":
     case "ESTIMATE_FOOD":
+    case "CONFIRM_FOOD_CREATION":
       return raw;
 
     default:
@@ -141,6 +148,22 @@ function parseTranscriptMock(
   // Session end
   if (/\b(done|save that|that's it|i'm finished|save|all done|that's everything)\b/.test(t)) {
     return { action: "SESSION_END", payload: null } satisfies GeminiSessionEndIntent;
+  }
+
+  // Confirming food creation
+  if (context.sessionState.startsWith("confirming:")) {
+    if (/cancel|never mind|nevermind|forget it/i.test(t)) {
+      return { action: "CANCEL_OPERATION", payload: null };
+    }
+    const saveMode = (t.includes("community") || t.includes("share")) ? "community" : "private";
+    // Parse optional "N unit" from speech: "save privately 2 cups"
+    const qtyMatch = t.match(/(\d+(?:\.\d+)?)\s+(\w+)/);
+    const quantity = qtyMatch ? Number(qtyMatch[1]) : undefined;
+    const unit = qtyMatch ? normalizeUnit(qtyMatch[2]) : undefined;
+    return {
+      action: "CONFIRM_FOOD_CREATION",
+      payload: { saveMode, quantity, unit },
+    } satisfies GeminiConfirmFoodCreationIntent;
   }
 
   // Disambiguation choice
@@ -344,6 +367,18 @@ function mockCreateFoodResponse(
         field: "servingSize",
         value: match ? Number(match[1]) : 1,
         unit: match ? normalizeUnit(match[2]) : "servings",
+      },
+    };
+  }
+
+  // Brand/barcode — string fields, support "skip"
+  if (currentField === "brand" || currentField === "barcode") {
+    const isSkip = /\b(skip|no|none|no brand|no barcode|n\/a)\b/.test(t);
+    return {
+      action: "CREATE_FOOD_RESPONSE",
+      payload: {
+        field: currentField,
+        value: isSkip ? "" : t,
       },
     };
   }

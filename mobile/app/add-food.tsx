@@ -12,6 +12,8 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
 } from 'react-native';
+import { BarcodeCameraScreen } from '@/features/barcode/BarcodeCameraScreen';
+import type { BarcodeScanResult } from '@/features/barcode/types';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -144,7 +146,7 @@ export default function AddFoodScreen() {
 
   const [communityIntent, setCommunityIntent] = useState(false);
   const [barcodeGtinForCommunity, setBarcodeGtinForCommunity] = useState<string | undefined>();
-  const [isScanning, setIsScanning] = useState(false);
+  const [showBarcodeCamera, setShowBarcodeCamera] = useState(false);
 
   const fetchFrequentRecent = useCallback(async () => {
     setIsFetchingLists(true);
@@ -412,19 +414,17 @@ export default function AddFoodScreen() {
     setLastAddedEntry(null);
   }, []);
 
-  const handleBarcodeScan = useCallback(async () => {
-    setIsScanning(true);
+  const handleBarcodeScan = useCallback(() => {
+    setShowBarcodeCamera(true);
+  }, []);
+
+  const handleBarcodeScanResult = useCallback(async (result: BarcodeScanResult) => {
+    setShowBarcodeCamera(false);
+    const gtin = result.gtin;
     try {
-      const { scanWithCamera } = await import('@/features/barcode/scanner');
-      const result = await scanWithCamera();
-      if (!result) {
-        setIsScanning(false);
-        return;
-      }
-      const gtin = result.gtin;
-      const communityFood = await api.lookupBarcode(gtin);
-      if (communityFood) {
-        setDetailFood(communityFood);
+      const lookupResult = await api.lookupBarcode(gtin);
+      if (lookupResult.food) {
+        setDetailFood(lookupResult.food);
       } else {
         Alert.alert(
           'Product not recognized',
@@ -454,9 +454,7 @@ export default function AddFoodScreen() {
         );
       }
     } catch {
-      // scan failed or denied — silent
-    } finally {
-      setIsScanning(false);
+      // lookup failed — silent
     }
   }, []);
 
@@ -527,6 +525,16 @@ export default function AddFoodScreen() {
 
   // Edit flow: show only the form (same as add), no list. Same page, same info + quantity.
   const isEditMode = Boolean(editEntryId && detailFood && existingEntry);
+  if (showBarcodeCamera) {
+    return (
+      <BarcodeCameraScreen
+        defaultFacing="back"
+        onScan={handleBarcodeScanResult}
+        onCancel={() => setShowBarcodeCamera(false)}
+      />
+    );
+  }
+
   if (editEntryId && !existingEntry) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -625,12 +633,8 @@ export default function AddFoodScreen() {
               <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
             </Pressable>
           )}
-          <Pressable onPress={handleBarcodeScan} hitSlop={8} disabled={isScanning}>
-            {isScanning ? (
-              <ActivityIndicator size="small" color={colors.tint} />
-            ) : (
-              <Ionicons name="barcode-outline" size={22} color={colors.tint} />
-            )}
+          <Pressable onPress={handleBarcodeScan} hitSlop={8}>
+            <Ionicons name="barcode-outline" size={22} color={colors.tint} />
           </Pressable>
         </View>
         <Pressable

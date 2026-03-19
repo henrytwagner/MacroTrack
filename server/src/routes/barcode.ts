@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client.js";
 import { mapCommunityFood } from "./communityFood.js";
+import { mapCustomFood } from "./customFood.js";
+import { getDefaultUserId } from "../db/defaultUser.js";
 import sharp from "sharp";
 import {
   MultiFormatReader,
@@ -222,10 +224,18 @@ export async function barcodeRoutes(app: FastifyInstance) {
       });
 
       if (!barcodeRecord) {
+        // Fall back to custom foods for this user
+        const userId = await getDefaultUserId();
+        const customFood = await prisma.customFood.findFirst({
+          where: { userId, barcode: normalized },
+        });
+        if (customFood) {
+          return reply.send({ food: mapCustomFood(customFood), source: 'custom' });
+        }
         return reply.send({ food: null });
       }
 
-      return reply.send({ food: mapCommunityFood(barcodeRecord.communityFood) });
+      return reply.send({ food: mapCommunityFood(barcodeRecord.communityFood), source: 'community' });
     },
   );
 }

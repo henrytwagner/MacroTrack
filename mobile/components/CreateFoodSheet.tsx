@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { BarcodeCameraScreen } from '@/features/barcode/BarcodeCameraScreen';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -30,6 +31,7 @@ interface CreateFoodSheetProps {
   visible: boolean;
   prefillName?: string;
   editingFood?: CustomFood;
+  editingCommunityFood?: CommunityFood;
   intent?: 'custom' | 'community';
   prefillCommunityFood?: CommunityFood;
   prefillBarcode?: string;
@@ -37,7 +39,7 @@ interface CreateFoodSheetProps {
   sourceCustomFoodId?: string;
   onDismiss: () => void;
   onSaved?: (food?: CustomFood) => void;
-  /** Called after deleting a custom food in edit mode so parent can refresh. */
+  /** Called after deleting a food in edit mode so parent can refresh. */
   onDeleted?: () => void;
 }
 
@@ -104,6 +106,7 @@ export default function CreateFoodSheet({
   visible,
   prefillName,
   editingFood,
+  editingCommunityFood,
   intent = 'custom',
   prefillCommunityFood,
   prefillBarcode,
@@ -136,6 +139,8 @@ export default function CreateFoodSheet({
   const [saturatedFat, setSaturatedFat] = useState('');
   const [transFat, setTransFat] = useState('');
 
+  const [barcode, setBarcode] = useState('');
+  const [showBarcodeCamera, setShowBarcodeCamera] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   /** Pending conversions when creating a new food; applied after the food is saved. */
   const [pendingUnitConversions, setPendingUnitConversions] = useState<
@@ -151,7 +156,7 @@ export default function CreateFoodSheet({
 
     setPublishMode(intent === 'community' ? 'community' : 'local');
 
-    const prefill = editingFood ?? prefillCommunityFood;
+    const prefill = editingFood ?? editingCommunityFood ?? prefillCommunityFood;
     if (prefill) {
       setName(prefill.name);
       setBrandName(
@@ -198,7 +203,8 @@ export default function CreateFoodSheet({
       setShowOptional(false);
       setPendingUnitConversions([]);
     }
-  }, [editingFood, prefillCommunityFood, prefillName, visible, intent]);
+    setBarcode(prefillBarcode ?? '');
+  }, [editingFood, editingCommunityFood, prefillCommunityFood, prefillName, prefillBarcode, visible, intent]);
 
   const baseServingNum = Number(servingSize) || 1;
 
@@ -273,6 +279,24 @@ export default function CreateFoodSheet({
     };
 
     try {
+      // Community food edit: bypass publish toggle entirely
+      if (editingCommunityFood) {
+        await api.updateCommunityFood(editingCommunityFood.id, {
+          name: name.trim(),
+          brandName: brandName.trim() || undefined,
+          defaultServingSize: Number(servingSize) || 1,
+          defaultServingUnit: servingUnit,
+          calories: Number(calories) || 0,
+          proteinG: Number(protein) || 0,
+          carbsG: Number(carbs) || 0,
+          fatG: Number(fat) || 0,
+          ...optionalMacros,
+        });
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        onSaved?.();
+        return;
+      }
+
       const willPublish = publishMode === 'community';
 
       if (willPublish) {
@@ -290,11 +314,12 @@ export default function CreateFoodSheet({
           await api.updateCustomFood(editingFood.id, customData);
           await api.publishCustomFood(editingFood.id, {
             brandName: brandName.trim() || undefined,
+            barcode: barcode.trim() || undefined,
           });
         } else if (sourceCustomFoodId) {
           await api.publishCustomFood(sourceCustomFoodId, {
             brandName: brandName.trim() || undefined,
-            barcode: prefillBarcode || undefined,
+            barcode: barcode.trim() || undefined,
           });
         } else {
           await api.createCommunityFood({
@@ -306,7 +331,7 @@ export default function CreateFoodSheet({
             proteinG: Number(protein) || 0,
             carbsG: Number(carbs) || 0,
             fatG: Number(fat) || 0,
-            barcode: prefillBarcode || undefined,
+            barcode: barcode.trim() || undefined,
             ...optionalMacros,
           });
         }
@@ -322,6 +347,7 @@ export default function CreateFoodSheet({
           carbsG: Number(carbs) || 0,
           fatG: Number(fat) || 0,
           ...optionalMacros,
+          barcode: barcode.trim() || undefined,
         };
 
         let result: CustomFood;
@@ -361,6 +387,33 @@ export default function CreateFoodSheet({
   };
 
   const handleDelete = () => {
+    if (editingCommunityFood) {
+      Alert.alert(
+        'Delete community food?',
+        `"${editingCommunityFood.name}" will be permanently removed from the community database.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await api.deleteCommunityFood(editingCommunityFood.id);
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                onDeleted?.();
+                onDismiss();
+              } catch (e) {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                const message =
+                  e instanceof api.ApiError ? e.message : (e as Error)?.message ?? 'Could not delete.';
+                Alert.alert('Could not delete', message);
+              }
+            },
+          },
+        ],
+      );
+      return;
+    }
     if (!editingFood) return;
     Alert.alert(
       'Delete this personal food?',
@@ -388,8 +441,27 @@ export default function CreateFoodSheet({
     );
   };
 
-  const isEditing = !!editingFood;
-  const titleText = isEditing ? 'Edit Custom Food' : 'Create Custom Food';
+  const isEditing = !!(editingFood || editingCommunityFood);
+  const titleText = editingCommunityFood
+    ? 'Edit Community Food'
+    : isEditing
+    ? 'Edit Custom Food'
+    : 'Create Custom Food';
+
+  if (showBarcodeCamera) {
+    return (
+      <Modal visible={visible} animationType="none" presentationStyle="pageSheet" onRequestClose={() => setShowBarcodeCamera(false)}>
+        <BarcodeCameraScreen
+          defaultFacing="back"
+          onScan={(result) => {
+            setBarcode(result.gtin);
+            setShowBarcodeCamera(false);
+          }}
+          onCancel={() => setShowBarcodeCamera(false)}
+        />
+      </Modal>
+    );
+  }
 
   return (
     <Modal
@@ -433,8 +505,8 @@ export default function CreateFoodSheet({
             contentContainerStyle={styles.sheetScrollContent}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Publish toggle */}
-            <View style={[styles.publishToggleWrap, { backgroundColor: colors.surfaceSecondary }]}>
+            {/* Publish toggle — hidden when editing a community food directly */}
+            {!editingCommunityFood && <View style={[styles.publishToggleWrap, { backgroundColor: colors.surfaceSecondary }]}>
               <Pressable
                 style={[
                   styles.publishSegment,
@@ -477,7 +549,7 @@ export default function CreateFoodSheet({
                   Community
                 </ThemedText>
               </Pressable>
-            </View>
+            </View>}
 
             {/* Name card */}
             <ThemedText style={[styles.sectionLabel, { color: colors.textSecondary }]}>NAME</ThemedText>
@@ -491,7 +563,7 @@ export default function CreateFoodSheet({
                 autoFocus={!isEditing}
                 returnKeyType="next"
               />
-              {publishMode === 'community' && (
+              {(publishMode === 'community' || editingCommunityFood) && (
                 <>
                   <View style={[styles.nameCardDivider, { backgroundColor: colors.borderLight }]} />
                   <TextInput
@@ -504,6 +576,30 @@ export default function CreateFoodSheet({
                   />
                 </>
               )}
+            </View>
+
+            {/* Barcode card */}
+            <ThemedText style={[styles.sectionLabel, { color: colors.textSecondary }]}>BARCODE</ThemedText>
+            <View style={[styles.sectionCard, { backgroundColor: colors.surfaceSecondary }]}>
+              <View style={styles.barcodeCardRow}>
+                <TextInput
+                  style={[styles.barcodeInput, { color: colors.text }]}
+                  value={barcode}
+                  onChangeText={setBarcode}
+                  placeholder="GTIN (optional)"
+                  placeholderTextColor={colors.textTertiary}
+                  keyboardType="number-pad"
+                  returnKeyType="done"
+                />
+                {barcode.length > 0 && (
+                  <Pressable onPress={() => setBarcode('')} hitSlop={8}>
+                    <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+                  </Pressable>
+                )}
+                <Pressable onPress={() => setShowBarcodeCamera(true)} hitSlop={8}>
+                  <Ionicons name="barcode-outline" size={22} color={colors.tint} />
+                </Pressable>
+              </View>
             </View>
 
             {/* Serving Size card */}
@@ -551,33 +647,35 @@ export default function CreateFoodSheet({
               </View>
             </View>
 
-            {/* Units card */}
-            <ThemedText style={[styles.sectionLabel, { color: colors.textSecondary }]}>UNITS</ThemedText>
-            <View style={[styles.sectionCard, { backgroundColor: colors.surfaceSecondary }]}>
-              <View style={{ padding: Spacing.md }}>
-                {editingFood ? (
-                  <FoodUnitConversionsBlock
-                    mode="saved"
-                    customFoodId={editingFood.id}
-                    servingSize={baseServingNum}
-                    servingUnit={servingUnit}
-                    noUnitSelection
-                    onConversionsChange={setUnitConfigs}
-                    onOverlayRender={setUnitOverlay}
-                  />
-                ) : (
-                  <FoodUnitConversionsBlock
-                    mode="draft"
-                    servingSize={servingSize}
-                    servingUnit={servingUnit}
-                    pendingConversions={pendingUnitConversions}
-                    onPendingConversionsChange={setPendingUnitConversions}
-                    noUnitSelection
-                    onOverlayRender={setUnitOverlay}
-                  />
-                )}
+            {/* Units card — hidden for community food editing */}
+            {!editingCommunityFood && <>
+              <ThemedText style={[styles.sectionLabel, { color: colors.textSecondary }]}>UNITS</ThemedText>
+              <View style={[styles.sectionCard, { backgroundColor: colors.surfaceSecondary }]}>
+                <View style={{ padding: Spacing.md }}>
+                  {editingFood ? (
+                    <FoodUnitConversionsBlock
+                      mode="saved"
+                      customFoodId={editingFood.id}
+                      servingSize={baseServingNum}
+                      servingUnit={servingUnit}
+                      noUnitSelection
+                      onConversionsChange={setUnitConfigs}
+                      onOverlayRender={setUnitOverlay}
+                    />
+                  ) : (
+                    <FoodUnitConversionsBlock
+                      mode="draft"
+                      servingSize={servingSize}
+                      servingUnit={servingUnit}
+                      pendingConversions={pendingUnitConversions}
+                      onPendingConversionsChange={setPendingUnitConversions}
+                      noUnitSelection
+                      onOverlayRender={setUnitOverlay}
+                    />
+                  )}
+                </View>
               </View>
-            </View>
+            </>}
 
             {/* Nutrition card */}
             <ThemedText style={[styles.sectionLabel, { color: colors.textSecondary }]}>NUTRITION PER SERVING</ThemedText>
@@ -798,5 +896,17 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     alignItems: 'center',
     marginTop: Spacing.lg,
+  },
+  barcodeCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  barcodeInput: {
+    ...Typography.body,
+    flex: 1,
+    paddingVertical: Spacing.sm,
   },
 });

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Alert,
   StyleSheet,
@@ -27,6 +27,7 @@ import type {
   UpdateFoodEntryRequest,
 } from '@shared/types';
 import * as api from '@/services/api';
+import { BarcodeCameraScreen } from '@/features/barcode/BarcodeCameraScreen';
 
 type DetailFoodType = USDASearchResult | CustomFood | CommunityFood;
 import { scaleFactorForQuantity } from '@/utils/servingScale';
@@ -74,6 +75,103 @@ function getMealLabel(): MealLabel {
   if (hour >= 14 && hour < 17) return 'snack';
   if (hour >= 17 && hour < 22) return 'dinner';
   return 'snack';
+}
+
+function BarcodeEditPanel({
+  food,
+  onClose,
+  onSaved,
+  colors,
+}: {
+  food: CustomFood;
+  onClose: () => void;
+  onSaved: (barcode: string | undefined) => void;
+  colors: (typeof Colors)['light'];
+}) {
+  const [gtin, setGtin] = useState(food.barcode ?? '');
+  const [showCamera, setShowCamera] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  if (showCamera) {
+    return (
+      <View style={StyleSheet.absoluteFill}>
+        <BarcodeCameraScreen
+          defaultFacing="back"
+          onScan={(result) => {
+            setGtin(result.gtin);
+            setShowCamera(false);
+          }}
+          onCancel={() => setShowCamera(false)}
+        />
+      </View>
+    );
+  }
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const trimmed = gtin.trim();
+      await api.updateCustomFood(food.id, { barcode: trimmed || '' });
+      onSaved(trimmed || undefined);
+    } catch {
+      Alert.alert('Error', 'Could not save barcode.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <Pressable
+      style={[StyleSheet.absoluteFill, barcodeEditStyles.backdrop, { backgroundColor: colors.overlay }]}
+      onPress={onClose}
+    >
+      <Pressable style={[barcodeEditStyles.panel, { backgroundColor: colors.surface }]} onPress={() => {}}>
+        <ThemedText style={[Typography.headline, { color: colors.text, marginBottom: Spacing.sm }]}>
+          Barcode
+        </ThemedText>
+        {food.barcode ? (
+          <ThemedText style={[Typography.footnote, { color: colors.textSecondary, marginBottom: Spacing.sm }]}>
+            Current: {food.barcode}
+          </ThemedText>
+        ) : null}
+        <View style={barcodeEditStyles.inputRow}>
+          <TextInput
+            style={[barcodeEditStyles.gtinInput, { color: colors.text, borderColor: colors.border }]}
+            value={gtin}
+            onChangeText={setGtin}
+            placeholder="Enter GTIN"
+            placeholderTextColor={colors.textTertiary}
+            keyboardType="number-pad"
+          />
+          <Pressable
+            style={[barcodeEditStyles.scanIconBtn, { backgroundColor: colors.surfaceSecondary }]}
+            onPress={() => setShowCamera(true)}
+          >
+            <Ionicons name="barcode-outline" size={22} color={colors.tint} />
+          </Pressable>
+        </View>
+        <View style={barcodeEditStyles.panelActions}>
+          <Pressable
+            style={[barcodeEditStyles.panelBtn, { borderColor: colors.border, borderWidth: 1 }]}
+            onPress={onClose}
+          >
+            <ThemedText style={[Typography.body, { color: colors.text }]}>Cancel</ThemedText>
+          </Pressable>
+          <Pressable
+            style={[barcodeEditStyles.panelBtn, { backgroundColor: colors.tint }]}
+            onPress={handleSave}
+            disabled={isSaving}
+          >
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <ThemedText style={[Typography.body, { color: '#fff', fontWeight: '600' }]}>Save</ThemedText>
+            )}
+          </Pressable>
+        </View>
+      </Pressable>
+    </Pressable>
+  );
 }
 
 function DayImpactRow({
@@ -149,6 +247,10 @@ export default function FoodDetailSheet({
   const [suppressUsdaWarning, setSuppressUsdaWarning] = useState<boolean | null>(null); // null = not yet fetched
   const [usdaWarningVisible, setUsdaWarningVisible] = useState(false);
   const [dontWarnAgain, setDontWarnAgain] = useState(false);
+  const [barcodeOverlay, setBarcodeOverlay] = useState<React.ReactNode>(null);
+  const [localBarcode, setLocalBarcode] = useState<string | undefined>(
+    food && isCustomFood(food) ? food.barcode : undefined,
+  );
 
   const { totals } = useDailyLogStore();
   const { goalsByDate } = useGoalStore();
@@ -168,6 +270,7 @@ export default function FoodDetailSheet({
       setQuantity(food.servingSize ? String(food.servingSize) : '100');
       setUnit(food.servingSizeUnit || 'g');
     }
+    setLocalBarcode(food && isCustomFood(food) ? food.barcode : undefined);
   }, [food, existingEntry]);
 
   useEffect(() => {
@@ -512,6 +615,7 @@ export default function FoodDetailSheet({
     <>
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top']}>
       {/* USDA warning overlay — rendered inside the sheet so it always appears on top */}
+      {barcodeOverlay}
       {usdaWarningVisible && (
         <Pressable
           style={[StyleSheet.absoluteFill, styles.warningOverlay, { backgroundColor: colors.overlay, zIndex: 100 }]}
@@ -723,9 +827,36 @@ export default function FoodDetailSheet({
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.foodHeader}>
-            <ThemedText style={[Typography.title2, { color: colors.text }]}>
-              {displayName}
-            </ThemedText>
+            <View style={styles.foodHeaderNameRow}>
+              <ThemedText style={[Typography.title2, { color: colors.text, flex: 1 }]}>
+                {displayName}
+              </ThemedText>
+              {food && isCustomFood(food) && (
+                <Pressable
+                  hitSlop={8}
+                  onPress={() => {
+                    setBarcodeOverlay(
+                      <BarcodeEditPanel
+                        food={{ ...food, barcode: localBarcode }}
+                        onClose={() => setBarcodeOverlay(null)}
+                        onSaved={(barcode) => {
+                          setLocalBarcode(barcode);
+                          setBarcodeOverlay(null);
+                        }}
+                        colors={colors}
+                      />,
+                    );
+                  }}
+                  style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, marginLeft: Spacing.sm }]}
+                >
+                  <Ionicons
+                    name={localBarcode ? 'barcode' : 'barcode-outline'}
+                    size={22}
+                    color={localBarcode ? colors.tint : colors.textSecondary}
+                  />
+                </Pressable>
+              )}
+            </View>
             <ThemedText style={[Typography.footnote, { color: colors.textSecondary }]}>
               {sourceLabel}
             </ThemedText>
@@ -935,6 +1066,10 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
     marginBottom: Spacing.md,
   },
+  foodHeaderNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   infoCard: {
     borderRadius: BorderRadius.lg,
     overflow: 'hidden',
@@ -1096,5 +1231,51 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'transparent',
+  },
+});
+
+const barcodeEditStyles = StyleSheet.create({
+  backdrop: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 200,
+  },
+  panel: {
+    width: 320,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.xl,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  gtinInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    ...Typography.body,
+  },
+  scanIconBtn: {
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+  },
+  panelActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  panelBtn: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
   },
 });

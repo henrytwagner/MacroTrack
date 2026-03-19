@@ -34,7 +34,15 @@ export function parseWeightFromBytes(base64: string): ScaleReading | null {
     .join(' ');
 
   const stable = bytes[4] === 0xd0 && bytes[5] === 0x05;
-  const unitByte = bytes[7];
+
+  // Confirmed byte layout (Etekcity ESN00, 28-row empirical dataset 2026-03-18):
+  //   B6: sign — 0=positive, 1=negative
+  //   B7, B8: weight mantissa, big-endian → raw = (B7 << 8) | B8
+  //   B9: unit — 0x00=g, 0x01=lb:oz, 0x02=ml, 0x04=ml-density (treat as ml), 0x06=oz
+  //   Divisor: g/ml → 10, oz/lb:oz → 100
+  const negative = bytes[6] === 0x01;
+  const raw = (bytes[7] << 8) | bytes[8];
+  const unitByte = bytes[9];
 
   let unit: ScaleUnit;
   let value: number;
@@ -42,27 +50,31 @@ export function parseWeightFromBytes(base64: string): ScaleReading | null {
 
   if (unitByte === 0x00) {
     unit = 'g';
-    value = ((bytes[8] | (bytes[9] << 8)) >>> 0) / 10.0;
-    display = `${value.toFixed(1)} g`;
-  } else if (unitByte === 0x04) {
+    value = raw / 10.0;
+    display = `${negative ? '-' : ''}${value.toFixed(1)} g`;
+  } else if (unitByte === 0x02 || unitByte === 0x04) {
+    // 0x02 = ml, 0x04 = ml with density compensation (water-drop mode) — same formula
     unit = 'ml';
-    value = ((bytes[8] | (bytes[9] << 8)) >>> 0) / 10.0;
-    display = `${value.toFixed(1)} ml`;
+    value = raw / 10.0;
+    display = `${negative ? '-' : ''}${value.toFixed(1)} ml`;
   } else if (unitByte === 0x06) {
     unit = 'oz';
-    value = ((bytes[8] | (bytes[9] << 8)) >>> 0) / 100.0;
-    display = `${value.toFixed(2)} oz`;
+    value = raw / 100.0;
+    display = `${negative ? '-' : ''}${value.toFixed(2)} oz`;
   } else if (unitByte === 0x01) {
     unit = 'lb:oz';
-    const lbs = bytes[9];
-    const oz = bytes[8] / 100.0;
-    value = lbs + oz / 16;
-    display = `${lbs} lb ${oz.toFixed(2)} oz`;
+    const totalOz = raw / 100.0;
+    const lbs = Math.floor(totalOz / 16);
+    const ozRem = totalOz - lbs * 16;
+    value = lbs + ozRem / 16;
+    display = `${negative ? '-' : ''}${lbs} lb ${ozRem.toFixed(2)} oz`;
   } else {
     unit = 'g';
-    value = ((bytes[8] | (bytes[9] << 8)) >>> 0) / 10.0;
-    display = `${value.toFixed(1)} g`;
+    value = raw / 10.0;
+    display = `${negative ? '-' : ''}${value.toFixed(1)} g`;
   }
+
+  if (negative) value = -value;
 
   return { value, unit, display, stable, rawHex };
 }

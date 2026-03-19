@@ -74,6 +74,7 @@ model CustomFood {
   id             String               @id @default(uuid())
   userId         String
   name           String
+  brandName      String?
   servingSize    Float
   servingUnit    String
   calories       Float
@@ -86,6 +87,7 @@ model CustomFood {
   sugarG         Float?
   saturatedFatG  Float?
   transFatG      Float?
+  barcode        String?
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
@@ -94,6 +96,7 @@ model CustomFood {
   unitConfigs FoodUnitConversion[]
 
   @@index([userId, name])
+  @@index([userId, barcode])
 }
 
 model VoiceSession {

@@ -16,41 +16,39 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import MacroInlineLine from '@/components/MacroInlineLine';
-import UndoSnackbar from '@/components/UndoSnackbar';
-import type { CustomFood } from '@shared/types';
+import type { CommunityFood } from '@shared/types';
 import * as api from '@/services/api';
 
-interface CustomFoodListProps {
+interface CommunityFoodListProps {
   visible: boolean;
   onClose: () => void;
-  onEditFood: (food: CustomFood) => void;
-  onPublishFood?: (food: CustomFood) => void;
+  onEditFood: (food: CommunityFood) => void;
   refreshKey?: number;
-  embedded?: boolean;
-  filterQuery?: string;
 }
 
-export default function CustomFoodList({
+const STATUS_COLORS: Record<string, string> = {
+  ACTIVE: '#34C759',
+  PENDING: '#FF9500',
+  RETIRED: '#8E8E93',
+};
+
+export default function CommunityFoodList({
   visible,
   onClose,
   onEditFood,
-  onPublishFood,
   refreshKey,
-  embedded = false,
-  filterQuery,
-}: CustomFoodListProps) {
+}: CommunityFoodListProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
-  const [foods, setFoods] = useState<CustomFood[]>([]);
+  const [foods, setFoods] = useState<CommunityFood[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [deletedFood, setDeletedFood] = useState<CustomFood | null>(null);
   const [query, setQuery] = useState('');
 
   const fetchFoods = useCallback(async () => {
     setIsLoading(true);
     try {
-      const result = await api.getCustomFoods();
+      const result = await api.getCommunityFoods({ status: 'ALL', limit: 100 });
       setFoods(result);
     } catch {
       // silent
@@ -63,85 +61,79 @@ export default function CustomFoodList({
     if (visible) fetchFoods();
   }, [visible, fetchFoods, refreshKey]);
 
-  // Embedded mode uses the external filterQuery prop; full-screen uses internal query state.
-  const activeQuery = embedded ? (filterQuery ?? '') : query;
-  const filteredFoods = activeQuery.trim()
-    ? foods.filter((f) => f.name.toLowerCase().includes(activeQuery.toLowerCase()))
-    : foods;
-
-  const handleDelete = (food: CustomFood) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setFoods((prev) => prev.filter((f) => f.id !== food.id));
-    setDeletedFood(food);
-  };
-
-  const handleUndo = () => {
-    if (deletedFood) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      setFoods((prev) =>
-        [...prev, deletedFood].sort((a, b) => a.name.localeCompare(b.name)),
-      );
-      setDeletedFood(null);
-    }
-  };
-
-  const handleUndoDismiss = () => {
-    if (deletedFood) {
-      api.deleteCustomFood(deletedFood.id).catch(() => {});
-      setDeletedFood(null);
-    }
-  };
-
-  const confirmDelete = (food: CustomFood) => {
+  const confirmDelete = (food: CommunityFood) => {
     Alert.alert(
-      'Delete Custom Food',
-      `Delete "${food.name}"? This cannot be undone after the undo window.`,
+      'Delete Community Food',
+      `Delete "${food.name}"? This cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => handleDelete(food) },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.deleteCommunityFood(food.id);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              setFoods((prev) => prev.filter((f) => f.id !== food.id));
+            } catch (e) {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+              const message =
+                e instanceof api.ApiError ? e.message : (e as Error)?.message ?? 'Could not delete.';
+              Alert.alert('Could not delete', message);
+            }
+          },
+        },
       ],
     );
   };
 
+  const filteredFoods = query.trim()
+    ? foods.filter((f) =>
+        f.name.toLowerCase().includes(query.toLowerCase()) ||
+        (f.brandName ?? '').toLowerCase().includes(query.toLowerCase()),
+      )
+    : foods;
+
   const renderItem = useCallback(
-    ({ item }: { item: CustomFood }) => (
-      <View style={styles.foodRow}>
-        <Pressable
-          style={({ pressed }) => [styles.foodInfo, pressed && { opacity: 0.6 }]}
-          onPress={() => onEditFood(item)}
-        >
-          <ThemedText
-            style={[Typography.body, { color: colors.text }]}
-            numberOfLines={1}
-          >
-            {item.name}
-          </ThemedText>
-          <MacroInlineLine
-            prefix={`${item.servingSize} ${item.servingUnit}`}
-            macros={item}
-            colors={{ ...colors, textSecondary: colors.textSecondary }}
-            textStyle="footnote"
-          />
-        </Pressable>
-        {onPublishFood && (
+    ({ item }: { item: CommunityFood }) => {
+      const statusColor = STATUS_COLORS[item.status] ?? STATUS_COLORS.RETIRED;
+      return (
+        <View style={styles.foodRow}>
           <Pressable
-            onPress={() => onPublishFood(item)}
-            hitSlop={8}
-            style={({ pressed }) => [{ marginRight: Spacing.md }, pressed && { opacity: 0.5 }]}
+            style={({ pressed }) => [styles.foodInfo, pressed && { opacity: 0.6 }]}
+            onPress={() => onEditFood(item)}
           >
-            <Ionicons name="globe-outline" size={18} color={colors.tint} />
+            <View style={styles.nameRow}>
+              <ThemedText
+                style={[Typography.body, { color: colors.text, flex: 1 }]}
+                numberOfLines={1}
+              >
+                {item.name}
+              </ThemedText>
+              <View style={[styles.statusBadge, { backgroundColor: statusColor + '22', borderColor: statusColor }]}>
+                <ThemedText style={[Typography.caption2, { color: statusColor, fontWeight: '600' }]}>
+                  {item.status}
+                </ThemedText>
+              </View>
+            </View>
+            <MacroInlineLine
+              prefix={`${item.defaultServingSize} ${item.defaultServingUnit} · ${item.usesCount} uses`}
+              macros={item}
+              colors={{ ...colors, textSecondary: colors.textSecondary }}
+              textStyle="footnote"
+            />
           </Pressable>
-        )}
-        <Pressable
-          onPress={() => confirmDelete(item)}
-          hitSlop={8}
-          style={({ pressed }) => [pressed && { opacity: 0.5 }]}
-        >
-          <Ionicons name="trash-outline" size={20} color={colors.destructive} />
-        </Pressable>
-      </View>
-    ),
-    [colors, onEditFood, onPublishFood],
+          <Pressable
+            onPress={() => confirmDelete(item)}
+            hitSlop={8}
+            style={({ pressed }) => [pressed && { opacity: 0.5 }]}
+          >
+            <Ionicons name="trash-outline" size={20} color={colors.destructive} />
+          </Pressable>
+        </View>
+      );
+    },
+    [colors, onEditFood],
   );
 
   if (!visible) return null;
@@ -150,11 +142,11 @@ export default function CustomFoodList({
     <ActivityIndicator style={styles.loader} size="large" color={colors.tint} />
   ) : filteredFoods.length === 0 ? (
     <View style={styles.emptyState}>
-      <Ionicons name="restaurant-outline" size={48} color={colors.textTertiary} />
+      <Ionicons name="globe-outline" size={48} color={colors.textTertiary} />
       <ThemedText
         style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.md }]}
       >
-        {activeQuery.trim() ? 'No foods match your search.' : 'No custom foods yet. Create one from the Log tab.'}
+        {query.trim() ? 'No foods match your search.' : 'No community foods found.'}
       </ThemedText>
     </View>
   ) : (
@@ -171,20 +163,6 @@ export default function CustomFoodList({
     />
   );
 
-  if (embedded) {
-    return (
-      <View style={styles.embeddedContainer}>
-        {listContent}
-        <UndoSnackbar
-          message={deletedFood ? `${deletedFood.name} deleted.` : ''}
-          visible={!!deletedFood}
-          onUndo={handleUndo}
-          onDismiss={handleUndoDismiss}
-        />
-      </View>
-    );
-  }
-
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.header}>
@@ -192,7 +170,7 @@ export default function CustomFoodList({
           <Ionicons name="chevron-back" size={24} color={colors.tint} />
         </Pressable>
         <ThemedText style={[Typography.title3, { color: colors.text }]}>
-          My Foods
+          Community Foods
         </ThemedText>
         <View style={{ width: 24 }} />
       </View>
@@ -203,7 +181,7 @@ export default function CustomFoodList({
           style={[styles.searchInput, { color: colors.text }]}
           value={query}
           onChangeText={setQuery}
-          placeholder="Search my foods…"
+          placeholder="Search community foods…"
           placeholderTextColor={colors.textTertiary}
           returnKeyType="search"
           autoCorrect={false}
@@ -213,13 +191,6 @@ export default function CustomFoodList({
       </View>
 
       {listContent}
-
-      <UndoSnackbar
-        message={deletedFood ? `${deletedFood.name} deleted.` : ''}
-        visible={!!deletedFood}
-        onUndo={handleUndo}
-        onDismiss={handleUndoDismiss}
-      />
     </SafeAreaView>
   );
 }
@@ -228,9 +199,6 @@ const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 10,
-  },
-  embeddedContainer: {
-    paddingTop: Spacing.lg,
   },
   header: {
     flexDirection: 'row',
@@ -277,6 +245,17 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 3,
     marginRight: Spacing.md,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  statusBadge: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
   },
   separator: {
     height: StyleSheet.hairlineWidth,

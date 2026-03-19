@@ -272,6 +272,30 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* Development */}
+        <View style={styles.sectionGroup}>
+          <ThemedText style={[styles.sectionLabel, Typography.footnote, { color: colors.textSecondary }]}>
+            DEVELOPMENT
+          </ThemedText>
+          <View style={[styles.groupCard, { backgroundColor: colors.surface }]}>
+            <SettingsRow
+              icon="bug-outline"
+              label="Custom Foods"
+              subtitle="Edit and delete custom foods"
+              onPress={() => router.push('/manage-custom-foods')}
+              colors={colors}
+            />
+            <View style={[styles.rowSeparator, { backgroundColor: colors.borderLight }]} />
+            <SettingsRow
+              icon="globe-outline"
+              label="Community Foods"
+              subtitle="Edit and delete community foods"
+              onPress={() => router.push('/manage-community-foods')}
+              colors={colors}
+            />
+          </View>
+        </View>
+
         {/* App info placeholder */}
         <View style={styles.sectionGroup}>
           <ThemedText style={[styles.sectionLabel, Typography.footnote, { color: colors.textSecondary }]}>

@@ -16,6 +16,7 @@ import type {
   WSSessionCancelledMessage,
   WSCreateFoodFieldMessage,
   WSCreateFoodCompleteMessage,
+  WSCreateFoodConfirmMessage,
   WSItemRemovedMessage,
   WSErrorMessage,
   WSFoodChoiceMessage,
@@ -35,6 +36,7 @@ import type {
   WSEstimateCardMessage,
   GeminiRequestContext,
   GeminiCreateFoodResponseIntent,
+  GeminiConfirmFoodCreationIntent,
   MealLabel,
   USDASearchResult,
   DisambiguationOption,
@@ -42,6 +44,15 @@ import type {
   HistoryFoodEntry,
 } from "../../../shared/types.js";
 import { createCloudSttSession, type CloudSttSession } from "../voice/sttCloudClient.js";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Strip all non-digit characters from a barcode string. */
+function normalizeBarcode(s: string): string {
+  return s.replace(/\D/g, "");
+}
 
 // ---------------------------------------------------------------------------
 // Custom food creation flow constants
@@ -54,6 +65,8 @@ const CREATION_FIELDS: CreatingFoodField[] = [
   "protein",
   "carbs",
   "fat",
+  "brand",
+  "barcode",
 ];
 
 const CREATION_QUESTIONS: Record<CreatingFoodField, string> = {
@@ -63,6 +76,8 @@ const CREATION_QUESTIONS: Record<CreatingFoodField, string> = {
   protein: "How much protein per serving?",
   carbs: "How many carbs?",
   fat: "And how much fat?",
+  brand: "What brand is this? Say 'skip' if it doesn't have one.",
+  barcode: "Does it have a barcode? Say the number or 'skip'.",
   complete: "",
 };
 
@@ -83,16 +98,18 @@ interface VoiceSessionState {
   sessionState:
     | "normal"
     | `creating:${string}`
+    | `confirming:${string}`
     | `awaiting_choice:${string}`
     | `usda_pending:${string}`
     | `barcode_pending:${string}`
     | `barcode_naming:${string}`
     | `disambiguating:${string}`
     | "confirm_clear_pending"
-    | `contributing:${string}`
     | `estimate_pending:${string}`;
   creatingFoodName: string;
   creatingFoodProgress: CreatingFoodProgress | null;
+  creatingFoodInitialQuantity: number | null;
+  creatingFoodInitialUnit: string | null;
   customFoodsCreatedThisSession: string[];
   completed: boolean; // true once save/cancel has been sent
   pendingUsdaResult: USDASearchResult | null;
@@ -100,6 +117,11 @@ interface VoiceSessionState {
   pendingBarcodeGtin: string;
   pendingDisambiguationOptions: DisambiguationOption[];
   pendingDisambiguationName: string;
+  /** Quantity from the parsed ADD_ITEMS intent, stored so food_choice handler can look it up. */
+  pendingIntentItems: Array<{ name: string; quantity?: number; unit?: string }> | null;
+  /** Pending initial qty/unit to transfer to creatingFoodInitial* when entering creating state. */
+  pendingCreationInitialQuantity: number | null;
+  pendingCreationInitialUnit: string | null;
   /** Undo history — snapshots of draft taken before each voice command. Max 10. */
   draftHistory: DraftItem[][];
   /** Redo stack — populated by UNDO, cleared on any new modification. */
@@ -290,6 +312,7 @@ async function handleCreatingTranscript(
         foodName: session.creatingFoodName,
         field: currentField,
         question,
+        collectedValues: { ...(session.creatingFoodProgress ?? {}) },
       } satisfies WSCreateFoodFieldMessage);
       return;
     }
@@ -324,86 +347,51 @@ async function handleCreatingTranscript(
       foodName: session.creatingFoodName,
       field: nextF,
       question: CREATION_QUESTIONS[nextF],
+      collectedValues: { ...progress },
     } satisfies WSCreateFoodFieldMessage);
     return;
   }
 
-  // Fill numeric fields
-  const numValue = typeof value === "number" ? value : Number(value) || 0;
-  if (field === "servingSize") {
-    progress.servingSize = numValue;
-    progress.servingUnit = unit ?? "servings";
-  } else if (field === "calories") {
-    progress.calories = numValue;
-  } else if (field === "protein") {
-    progress.proteinG = numValue;
-  } else if (field === "carbs") {
-    progress.carbsG = numValue;
-  } else if (field === "fat") {
-    progress.fatG = numValue;
+  // Fill fields — brand/barcode are strings (skip = empty/undefined)
+  if (field === "brand") {
+    progress.brand = (typeof value === "string" && value) ? value.trim() : undefined;
+  } else if (field === "barcode") {
+    const raw = typeof value === "string" ? normalizeBarcode(value) : "";
+    progress.barcode = raw || undefined; // undefined = skipped
+  } else {
+    // Numeric fields
+    const numValue = typeof value === "number" ? value : Number(value) || 0;
+    if (field === "servingSize") {
+      progress.servingSize = numValue;
+      progress.servingUnit = unit ?? "servings";
+    } else if (field === "calories") {
+      progress.calories = numValue;
+    } else if (field === "protein") {
+      progress.proteinG = numValue;
+    } else if (field === "carbs") {
+      progress.carbsG = numValue;
+    } else if (field === "fat") {
+      progress.fatG = numValue;
+    }
   }
 
   const nextF = nextField(field);
   progress.currentField = nextF;
 
   if (nextF === "complete") {
-    // All fields gathered — persist the custom food
-    try {
-      const created = await prisma.customFood.create({
-        data: {
-          userId: session.userId,
-          name: session.creatingFoodName,
-          servingSize: progress.servingSize ?? 1,
-          servingUnit: progress.servingUnit ?? "servings",
-          calories: progress.calories ?? 0,
-          proteinG: progress.proteinG ?? 0,
-          carbsG: progress.carbsG ?? 0,
-          fatG: progress.fatG ?? 0,
-        },
-      });
-      session.customFoodsCreatedThisSession.push(created.id);
-
-      // Transition the draft item from "creating" → "normal"
-      const itemIdx = session.draft.findIndex((d) => d.id === tmpId);
-      if (itemIdx !== -1) {
-        session.draft[itemIdx] = {
-          ...session.draft[itemIdx],
-          calories: progress.calories ?? 0,
-          proteinG: progress.proteinG ?? 0,
-          carbsG: progress.carbsG ?? 0,
-          fatG: progress.fatG ?? 0,
-          source: "CUSTOM",
-          customFoodId: created.id,
-          state: "normal",
-          creatingProgress: undefined,
-        };
-        const completedItem = session.draft[itemIdx];
-        session.sessionState = "normal";
-        session.creatingFoodProgress = null;
-        session.creatingFoodName = "";
-        send(socket, {
-          type: "create_food_complete",
-          item: completedItem,
-        } satisfies WSCreateFoodCompleteMessage);
-
-        // Phase 3: prompt to share with community if food was just created
-        if (session.customFoodsCreatedThisSession.includes(created.id)) {
-          session.sessionState = `contributing:${tmpId}`;
-          send(socket, {
-            type: "community_submit_prompt",
-            itemId: tmpId,
-            foodName: created.name,
-            question: `Want to share '${created.name}' with the MacroTrack community so others can use it?`,
-          } satisfies WSCommunitySubmitPromptMessage);
-        }
-      }
-    } catch (err) {
-      console.error("[voiceSession] Failed to create custom food:", err);
-      send(socket, {
-        type: "error",
-        message: "Failed to save the custom food. Please try again.",
-      } satisfies WSErrorMessage);
-    }
+    // All fields gathered — send confirmation card instead of saving immediately
+    const quantityMismatch = !!session.creatingFoodInitialUnit
+      && session.creatingFoodInitialUnit !== (progress.servingUnit ?? "servings");
+    session.sessionState = `confirming:${tmpId}`;
+    send(socket, {
+      type: "create_food_confirm",
+      itemId: tmpId,
+      foodName: session.creatingFoodName,
+      collectedValues: { ...progress },
+      initialQuantity: session.creatingFoodInitialQuantity ?? undefined,
+      initialUnit: session.creatingFoodInitialUnit ?? undefined,
+      quantityMismatch,
+    } satisfies WSCreateFoodConfirmMessage);
     return;
   }
 
@@ -413,6 +401,7 @@ async function handleCreatingTranscript(
     foodName: session.creatingFoodName,
     field: nextF,
     question: CREATION_QUESTIONS[nextF],
+    collectedValues: { ...progress },
   } satisfies WSCreateFoodFieldMessage);
 }
 
@@ -436,6 +425,10 @@ async function handleNormalTranscript(
   // Check intent before full processing — intercept special actions
   try {
     const intent = await parseTranscript(context);
+    // Store ADD_ITEMS items so food_choice handler can look up the original quantity
+    if (intent.action === "ADD_ITEMS") {
+      session.pendingIntentItems = intent.payload.items;
+    }
     if (intent.action === "OPEN_BARCODE_SCANNER") {
       send(socket, { type: "open_barcode_scanner" } satisfies WSOpenBarcodeScannerMessage);
       return;
@@ -513,6 +506,7 @@ async function handleNormalTranscript(
         foodName: name,
         field: "servingSize",
         question: CREATION_QUESTIONS.servingSize,
+        collectedValues: { currentField: "servingSize" },
       } satisfies WSCreateFoodFieldMessage);
       return;
     }
@@ -582,7 +576,9 @@ async function handleAwaitingChoiceTranscript(
   }
 
   if (wantsCreate) {
-    // Transition to creating flow
+    // Transition to creating flow — capture original quantity from the initial ADD_ITEMS intent
+    session.creatingFoodInitialQuantity = session.pendingCreationInitialQuantity;
+    session.creatingFoodInitialUnit = session.pendingCreationInitialUnit;
     const timeOfDay = getTimeOfDay();
     const creatingItem: DraftItem = {
       id: tmpId,
@@ -961,72 +957,177 @@ async function handleConfirmClearTranscript(
 }
 
 // ---------------------------------------------------------------------------
-// Phase 3 — Contributing (community submit prompt) handler
+// Confirming handler — nutrition collected, awaiting save/community/cancel
 // ---------------------------------------------------------------------------
 
-async function handleContributingTranscript(
+async function handleConfirmingTranscript(
   text: string,
   session: VoiceSessionState,
   socket: WebSocket,
 ) {
-  const itemId = (session.sessionState as string).replace("contributing:", "");
-  const lower = text.toLowerCase().trim();
-  const isYes = /\b(yes|yeah|sure|go ahead|yep|ok|okay|share|submit|contribute)\b/.test(lower);
-  const isNo = /\b(no|nope|cancel|stop|skip|keep private)\b/.test(lower);
+  const tmpId = (session.sessionState as string).replace("confirming:", "");
+  const progress = session.creatingFoodProgress!;
+  const foodName = session.creatingFoodName;
 
-  if (isYes) {
-    // Find the custom food created this session
-    const item = session.draft.find((d) => d.id === itemId);
-    if (item?.customFoodId) {
-      const customFood = await prisma.customFood.findUnique({
-        where: { id: item.customFoodId },
-      });
-      if (customFood) {
-        // Fire-and-forget: submit to community
-        prisma.communityFood.create({
-          data: {
-            name: customFood.name,
-            defaultServingSize: customFood.servingSize,
-            defaultServingUnit: customFood.servingUnit,
-            calories: customFood.calories,
-            proteinG: customFood.proteinG,
-            carbsG: customFood.carbsG,
-            fatG: customFood.fatG,
-            sodiumMg: customFood.sodiumMg ?? undefined,
-            cholesterolMg: customFood.cholesterolMg ?? undefined,
-            fiberG: customFood.fiberG ?? undefined,
-            sugarG: customFood.sugarG ?? undefined,
-            saturatedFatG: customFood.saturatedFatG ?? undefined,
-            transFatG: customFood.transFatG ?? undefined,
-            createdByUserId: session.userId,
-            status: "PENDING",
-          },
-        }).catch((err: unknown) => {
-          console.error("[voiceSession] Community submit failed:", err);
-        });
-        send(socket, {
-          type: "ask",
-          question: `Thanks! ${customFood.name} has been submitted to the community.`,
-        } satisfies WSAskMessage);
-      }
+  const context: GeminiRequestContext = {
+    transcript: text,
+    currentDraft: draftContext(session.draft),
+    timeOfDay: getTimeOfDay(),
+    date: session.date,
+    sessionState: session.sessionState as GeminiRequestContext["sessionState"],
+    creatingFoodProgress: progress,
+  };
+
+  let intent;
+  try {
+    intent = await parseTranscript(context);
+  } catch {
+    send(socket, {
+      type: "error",
+      message: "I didn't catch that, could you say it again?",
+    } satisfies WSErrorMessage);
+    return;
+  }
+
+  if (intent.action === "CANCEL_OPERATION") {
+    session.draft = session.draft.filter((d) => d.id !== tmpId);
+    session.sessionState = "normal";
+    session.creatingFoodName = "";
+    session.creatingFoodProgress = null;
+    session.creatingFoodInitialQuantity = null;
+    session.creatingFoodInitialUnit = null;
+    send(socket, {
+      type: "operation_cancelled",
+      itemId: tmpId,
+      message: `Cancelled. ${foodName} won't be added.`,
+    } satisfies WSOperationCancelledMessage);
+    return;
+  }
+
+  if (intent.action !== "CONFIRM_FOOD_CREATION") {
+    // Re-prompt with the confirmation card
+    const quantityMismatch = !!session.creatingFoodInitialUnit
+      && session.creatingFoodInitialUnit !== (progress.servingUnit ?? "servings");
+    send(socket, {
+      type: "create_food_confirm",
+      itemId: tmpId,
+      foodName,
+      collectedValues: { ...progress },
+      initialQuantity: session.creatingFoodInitialQuantity ?? undefined,
+      initialUnit: session.creatingFoodInitialUnit ?? undefined,
+      quantityMismatch,
+    } satisfies WSCreateFoodConfirmMessage);
+    return;
+  }
+
+  const { saveMode, quantity, unit } = (intent as GeminiConfirmFoodCreationIntent).payload;
+
+  if (saveMode === "cancel") {
+    session.draft = session.draft.filter((d) => d.id !== tmpId);
+    session.sessionState = "normal";
+    session.creatingFoodName = "";
+    session.creatingFoodProgress = null;
+    session.creatingFoodInitialQuantity = null;
+    session.creatingFoodInitialUnit = null;
+    send(socket, {
+      type: "operation_cancelled",
+      itemId: tmpId,
+      message: `Cancelled. ${foodName} won't be added.`,
+    } satisfies WSOperationCancelledMessage);
+    return;
+  }
+
+  try {
+    const created = await prisma.customFood.create({
+      data: {
+        userId: session.userId,
+        name: foodName,
+        brandName: progress.brand || null,
+        servingSize: progress.servingSize ?? 1,
+        servingUnit: progress.servingUnit ?? "servings",
+        calories: progress.calories ?? 0,
+        proteinG: progress.proteinG ?? 0,
+        carbsG: progress.carbsG ?? 0,
+        fatG: progress.fatG ?? 0,
+        barcode: normalizeBarcode(progress.barcode || session.pendingBarcodeGtin || "") || null,
+      },
+    });
+
+    if (session.pendingBarcodeGtin) session.pendingBarcodeGtin = "";
+    session.customFoodsCreatedThisSession.push(created.id);
+
+    const finalQty = quantity ?? session.creatingFoodInitialQuantity ?? 1;
+    const finalUnit = unit ?? session.creatingFoodInitialUnit ?? progress.servingUnit ?? "servings";
+    const ratio = (progress.servingSize ?? 1) > 0 ? finalQty / (progress.servingSize ?? 1) : 1;
+
+    const itemIdx = session.draft.findIndex((d) => d.id === tmpId);
+    const baseItem = itemIdx !== -1 ? session.draft[itemIdx] : null;
+    const completedItem: DraftItem = {
+      id: tmpId,
+      name: foodName,
+      quantity: finalQty,
+      unit: finalUnit,
+      calories: Math.round((progress.calories ?? 0) * ratio),
+      proteinG: Math.round((progress.proteinG ?? 0) * ratio * 10) / 10,
+      carbsG: Math.round((progress.carbsG ?? 0) * ratio * 10) / 10,
+      fatG: Math.round((progress.fatG ?? 0) * ratio * 10) / 10,
+      source: "CUSTOM",
+      customFoodId: created.id,
+      mealLabel: baseItem?.mealLabel ?? getMealLabel(getTimeOfDay()),
+      state: "normal",
+    };
+
+    if (itemIdx !== -1) {
+      session.draft[itemIdx] = completedItem;
+    } else {
+      session.draft.push(completedItem);
     }
-    session.sessionState = "normal";
-    return;
-  }
 
-  if (isNo) {
     session.sessionState = "normal";
-    send(socket, { type: "ask", question: "OK, keeping it private." } satisfies WSAskMessage);
-    return;
-  }
+    session.creatingFoodProgress = null;
+    session.creatingFoodName = "";
+    session.creatingFoodInitialQuantity = null;
+    session.creatingFoodInitialUnit = null;
 
-  // Re-prompt
-  send(socket, {
-    type: "community_submit_prompt",
-    itemId,
-    foodName: session.draft.find((d) => d.id === itemId)?.name ?? "",
-    question: "Say 'yes' to share with the community, or 'no' to keep it private.",
-  } satisfies WSCommunitySubmitPromptMessage);
+    send(socket, {
+      type: "create_food_complete",
+      item: completedItem,
+    } satisfies WSCreateFoodCompleteMessage);
+
+    if (saveMode === "community") {
+      prisma.communityFood.create({
+        data: {
+          name: created.name,
+          brandName: created.brandName ?? undefined,
+          defaultServingSize: created.servingSize,
+          defaultServingUnit: created.servingUnit,
+          calories: created.calories,
+          proteinG: created.proteinG,
+          carbsG: created.carbsG,
+          fatG: created.fatG,
+          createdByUserId: session.userId,
+          status: "PENDING",
+        },
+      }).catch((err: unknown) => {
+        console.error("[voiceSession] Community submit failed:", err);
+      });
+      send(socket, {
+        type: "ask",
+        question: `Saved and shared ${foodName} with the community.`,
+      } satisfies WSAskMessage);
+    } else {
+      send(socket, {
+        type: "ask",
+        question: `Saved ${foodName} privately.`,
+      } satisfies WSAskMessage);
+    }
+  } catch (err) {
+    console.error("[voiceSession] Failed to create custom food:", err);
+    send(socket, {
+      type: "error",
+      message: "Failed to save the custom food. Please try again.",
+    } satisfies WSErrorMessage);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1466,10 +1567,13 @@ async function handleBarcodeScan(
   session: VoiceSessionState,
   socket: WebSocket,
 ) {
+  const normalizedGtin = normalizeBarcode(gtin);
+  if (!normalizedGtin) return;
+
   if (session.sessionState !== "normal") return;
 
   const record = await prisma.communityFoodBarcode.findUnique({
-    where: { barcode: gtin },
+    where: { barcode: normalizedGtin },
     include: { communityFood: true },
   });
 
@@ -1493,12 +1597,36 @@ async function handleBarcodeScan(
     send(socket, { type: "items_added", items: [item] } satisfies WSItemsAddedMessage);
     send(socket, { type: "ask", question: `Added ${food.name}.` } satisfies WSAskMessage);
   } else {
-    session.sessionState = `barcode_pending:${gtin}`;
-    session.pendingBarcodeGtin = gtin;
-    send(socket, {
-      type: "ask",
-      question: "I couldn't find that product. Want me to create a custom food?",
-    } satisfies WSAskMessage);
+    // Check if the user has a custom food with this barcode
+    const customFood = await prisma.customFood.findFirst({
+      where: { userId: session.userId, barcode: normalizedGtin },
+    });
+    if (customFood) {
+      const item: DraftItem = {
+        id: `barcode-${Date.now()}`,
+        name: customFood.name,
+        quantity: customFood.servingSize,
+        unit: customFood.servingUnit,
+        calories: customFood.calories,
+        proteinG: customFood.proteinG,
+        carbsG: customFood.carbsG,
+        fatG: customFood.fatG,
+        source: "CUSTOM",
+        customFoodId: customFood.id,
+        mealLabel: getMealLabel(getTimeOfDay()),
+        state: "normal",
+      };
+      session.draft.push(item);
+      send(socket, { type: "items_added", items: [item] } satisfies WSItemsAddedMessage);
+      send(socket, { type: "ask", question: `Added ${customFood.name}.` } satisfies WSAskMessage);
+    } else {
+      session.sessionState = `barcode_pending:${normalizedGtin}`;
+      session.pendingBarcodeGtin = normalizedGtin;
+      send(socket, {
+        type: "ask",
+        question: "I couldn't find that product. Want me to create a custom food?",
+      } satisfies WSAskMessage);
+    }
   }
 }
 
@@ -1573,6 +1701,7 @@ async function handleBarcodeNamingTranscript(
     foodName,
     field: "servingSize",
     question: CREATION_QUESTIONS.servingSize,
+    collectedValues: { currentField: "servingSize" },
   } satisfies WSCreateFoodFieldMessage);
 }
 
@@ -1637,6 +1766,12 @@ function applyMessageToDraft(
     session.draft.push(choiceItem);
     session.sessionState = `awaiting_choice:${msg.itemId}`;
     session.pendingUsdaItemName = msg.foodName;
+    // Capture initial quantity from the parsed ADD_ITEMS intent for this food
+    const intentItem = session.pendingIntentItems?.find(
+      (i) => i.name.toLowerCase() === msg.foodName.toLowerCase(),
+    );
+    session.pendingCreationInitialQuantity = intentItem?.quantity ?? null;
+    session.pendingCreationInitialUnit = intentItem?.unit ?? null;
   } else if (msg.type === "disambiguate") {
     // Only handle one disambiguation at a time
     if (session.sessionState !== "normal") return;
@@ -1689,6 +1824,8 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
         sessionState: "normal",
         creatingFoodName: "",
         creatingFoodProgress: null,
+        creatingFoodInitialQuantity: null,
+        creatingFoodInitialUnit: null,
         customFoodsCreatedThisSession: [],
         completed: false,
         pendingUsdaResult: null,
@@ -1696,6 +1833,9 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
         pendingBarcodeGtin: "",
         pendingDisambiguationOptions: [],
         pendingDisambiguationName: "",
+        pendingIntentItems: null,
+        pendingCreationInitialQuantity: null,
+        pendingCreationInitialUnit: null,
         draftHistory: [],
         redoStack: [],
       };
@@ -1711,6 +1851,8 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
             try {
               if (session.sessionState.startsWith("creating:")) {
                 await handleCreatingTranscript(text, session, socket);
+              } else if (session.sessionState.startsWith("confirming:")) {
+                await handleConfirmingTranscript(text, session, socket);
               } else if (session.sessionState.startsWith("awaiting_choice:")) {
                 await handleAwaitingChoiceTranscript(text, session, socket);
               } else if (session.sessionState.startsWith("usda_pending:")) {
@@ -1723,8 +1865,6 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
                 await handleDisambiguatingTranscript(text, session, socket);
               } else if (session.sessionState === "confirm_clear_pending") {
                 await handleConfirmClearTranscript(text, session, socket);
-              } else if (session.sessionState.startsWith("contributing:")) {
-                await handleContributingTranscript(text, session, socket);
               } else if (session.sessionState.startsWith("estimate_pending:")) {
                 await handleEstimatePendingTranscript(text, session, socket);
               } else {
@@ -1756,6 +1896,8 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
           if (msg.type === "transcript") {
             if (session.sessionState.startsWith("creating:")) {
               await handleCreatingTranscript(msg.text, session, socket);
+            } else if (session.sessionState.startsWith("confirming:")) {
+              await handleConfirmingTranscript(msg.text, session, socket);
             } else if (session.sessionState.startsWith("awaiting_choice:")) {
               await handleAwaitingChoiceTranscript(msg.text, session, socket);
             } else if (session.sessionState.startsWith("usda_pending:")) {
@@ -1768,8 +1910,6 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
               await handleDisambiguatingTranscript(msg.text, session, socket);
             } else if (session.sessionState === "confirm_clear_pending") {
               await handleConfirmClearTranscript(msg.text, session, socket);
-            } else if (session.sessionState.startsWith("contributing:")) {
-              await handleContributingTranscript(msg.text, session, socket);
             } else if (session.sessionState.startsWith("estimate_pending:")) {
               await handleEstimatePendingTranscript(msg.text, session, socket);
             } else {

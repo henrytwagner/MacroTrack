@@ -87,6 +87,7 @@ export interface CustomFood extends Macros, ExtendedNutrition {
   name: string;
   servingSize: number;
   servingUnit: string;
+  barcode?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -257,6 +258,7 @@ export interface CreateCustomFoodRequest {
   sugarG?: number;
   saturatedFatG?: number;
   transFatG?: number;
+  barcode?: string;
 }
 
 export type UpdateCustomFoodRequest = Partial<CreateCustomFoodRequest>;
@@ -345,11 +347,12 @@ export type DraftCardState =
   | "normal"
   | "clarifying"
   | "creating"
+  | "confirming"  // nutrition collected, awaiting save confirmation
   | "choice"
   | "usda_pending"
   | "disambiguate"
   | "confirm_clear"
-  | "community_submit_prompt"
+  | "community_submit_prompt"  // deprecated — new server never triggers this
   | "history_results"
   | "macro_summary"
   | "food_info"
@@ -369,6 +372,12 @@ export interface DraftItem extends Macros {
   state: DraftCardState;
   clarifyQuestion?: string; // shown on card when state === "clarifying"
   creatingProgress?: CreatingFoodProgress; // tracks fields filled so far
+  initialQuantity?: number;  // from user's original query (e.g. "two cups of X")
+  initialUnit?: string;
+  confirmingData?: {
+    quantityMismatch: boolean;   // true when initialUnit ≠ servingUnit
+    collectedValues: CreatingFoodProgress;
+  };
   isAssumed?: boolean; // true when quantity/unit inferred from history
   isEstimate?: boolean; // true when macros are AI-estimated
   estimateConfidence?: "high" | "medium" | "low";
@@ -388,6 +397,8 @@ export interface CreatingFoodProgress {
   proteinG?: number;
   carbsG?: number;
   fatG?: number;
+  brand?: string;    // empty = skipped
+  barcode?: string;  // empty = skipped
   currentField: CreatingFoodField;
 }
 
@@ -398,6 +409,8 @@ export type CreatingFoodField =
   | "protein"
   | "carbs"
   | "fat"
+  | "brand"    // skippable ("skip" = no brand)
+  | "barcode"  // skippable
   | "complete";
 
 // --- Disambiguation Types (Phase 2) ---
@@ -504,11 +517,22 @@ export interface WSCreateFoodFieldMessage {
   foodName: string;
   field: CreatingFoodField;
   question: string;
+  collectedValues?: Partial<CreatingFoodProgress>;
 }
 
 export interface WSCreateFoodCompleteMessage {
   type: "create_food_complete";
   item: DraftItem;
+}
+
+export interface WSCreateFoodConfirmMessage {
+  type: "create_food_confirm";
+  itemId: string;
+  foodName: string;
+  collectedValues: CreatingFoodProgress;
+  initialQuantity?: number;
+  initialUnit?: string;
+  quantityMismatch: boolean; // true when initialUnit ≠ servingUnit
 }
 
 export interface WSFoodChoiceMessage {
@@ -630,6 +654,7 @@ export type WSServerMessage =
   | WSCreateFoodPromptMessage
   | WSCreateFoodFieldMessage
   | WSCreateFoodCompleteMessage
+  | WSCreateFoodConfirmMessage
   | WSFoodChoiceMessage
   | WSUsdaConfirmMessage
   | WSOpenBarcodeScannerMessage
@@ -768,6 +793,15 @@ export interface GeminiEstimateFoodIntent {
   payload: { name: string; quantity?: number; unit?: string; context?: string };
 }
 
+export interface GeminiConfirmFoodCreationIntent {
+  action: "CONFIRM_FOOD_CREATION";
+  payload: {
+    saveMode: "community" | "private" | "cancel";
+    quantity?: number;
+    unit?: string;
+  };
+}
+
 export type GeminiIntent =
   | GeminiAddItemsIntent
   | GeminiEditItemIntent
@@ -786,7 +820,8 @@ export type GeminiIntent =
   | GeminiQueryRemainingIntent
   | GeminiLookupFoodInfoIntent
   | GeminiSuggestFoodsIntent
-  | GeminiEstimateFoodIntent;
+  | GeminiEstimateFoodIntent
+  | GeminiConfirmFoodCreationIntent;
 
 // --- Gemini Request Context ---
 
@@ -808,11 +843,11 @@ export interface GeminiRequestContext {
   sessionState:
     | "normal"
     | `creating:${string}`
+    | `confirming:${string}`
     | `awaiting_choice:${string}`
     | `usda_pending:${string}`
     | `disambiguating:${string}`
     | `confirm_clear_pending`
-    | `contributing:${string}`
     | `estimate_pending:${string}`; // "creating:tmp-3" when mid-creation
   creatingFoodProgress?: CreatingFoodProgress;
 }

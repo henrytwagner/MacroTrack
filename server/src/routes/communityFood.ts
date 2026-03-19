@@ -114,10 +114,10 @@ export async function communityFoodRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const status = request.query.status ?? "ACTIVE";
       const page = Math.max(1, parseInt(request.query.page ?? "1", 10));
-      const limit = Math.min(50, Math.max(1, parseInt(request.query.limit ?? "20", 10)));
+      const limit = Math.min(100, Math.max(1, parseInt(request.query.limit ?? "20", 10)));
 
       const foods = await prisma.communityFood.findMany({
-        where: { status: status as "ACTIVE" | "PENDING" | "RETIRED" },
+        ...(status !== "ALL" && { where: { status: status as "ACTIVE" | "PENDING" | "RETIRED" } }),
         orderBy: [{ trustScore: "desc" }, { usesCount: "desc" }, { name: "asc" }],
         skip: (page - 1) * limit,
         take: limit,
@@ -269,6 +269,22 @@ export async function communityFoodRoutes(app: FastifyInstance) {
       });
 
       return reply.send(mapCommunityFood(food));
+    },
+  );
+
+  // DELETE /api/food/community/:id — delete a community food
+  app.delete<{ Params: { id: string } }>(
+    "/api/food/community/:id",
+    async (request, reply) => {
+      const { id } = request.params;
+
+      const existing = await prisma.communityFood.findUnique({ where: { id } });
+      if (!existing) {
+        return reply.code(404).send({ error: "Community food not found" });
+      }
+
+      await prisma.communityFood.delete({ where: { id } });
+      return reply.code(204).send();
     },
   );
 

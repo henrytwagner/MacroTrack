@@ -20,7 +20,7 @@ import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import DateHeader from '@/components/DateHeader';
 import MacroProgressBar from '@/components/MacroProgressBar';
-import MacroRingProgress from '@/components/MacroRingProgress';
+import MacroRingProgress, { SingleMacroRing } from '@/components/MacroRingProgress';
 import MealGroup from '@/components/MealGroup';
 import UndoSnackbar from '@/components/UndoSnackbar';
 import { useDateStore } from '@/stores/dateStore';
@@ -36,50 +36,6 @@ function addDays(dateStr: string, delta: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function MacroPreviewRow({
-  label,
-  current,
-  goal,
-  unit,
-  colors,
-}: {
-  label: string;
-  current: number;
-  goal: number;
-  unit: string;
-  colors: Record<string, string>;
-}) {
-  const remaining = goal - current;
-  const isOver = remaining < 0;
-  const text =
-    remaining >= 0
-      ? `${Math.round(remaining)}${unit} left`
-      : `${Math.round(Math.abs(remaining))}${unit} over`;
-  return (
-    <View style={styles.macroPreviewRow}>
-      <ThemedText style={[Typography.caption2, { color: colors.textSecondary }]}>
-        {label}
-      </ThemedText>
-      <ThemedText
-        style={[
-          Typography.caption2,
-          { color: isOver ? colors.progressOverflow : colors.textSecondary },
-          styles.macroPreviewValue,
-        ]}
-      >
-        {Math.round(current)} / {goal}
-      </ThemedText>
-      <ThemedText
-        style={[
-          Typography.caption2,
-          { color: isOver ? colors.progressOverflow : colors.textTertiary },
-        ]}
-      >
-        {text}
-      </ThemedText>
-    </View>
-  );
-}
 
 export default function LogScreen() {
   const colorScheme = useColorScheme();
@@ -341,61 +297,63 @@ export default function LogScreen() {
 
         {/* Macro preview: absolutely positioned over scroll area */}
         {showMacroPreview && (
+          <View style={styles.macroPillZone}>
           <Pressable
             style={[
-              styles.macroPreviewPill,
-              {
-                backgroundColor: colorScheme === 'dark'
-                  ? 'rgba(28, 28, 30, 0.98)'
-                  : 'rgba(255, 255, 255, 0.98)',
-                borderColor: colors.border,
-                shadowColor: '#000',
-              },
+              macroPreviewExpanded ? styles.squircleCard : styles.macroPill,
+              { backgroundColor: colors.surface, borderColor: colors.border, shadowColor: '#000' },
             ]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               setMacroPreviewExpanded((e) => !e);
             }}
           >
-            <MacroRingProgress
-              totals={totals}
-              goals={goals}
-              variant="compact"
-              showCalorieSummary={!macroPreviewExpanded}
-            />
-            {macroPreviewExpanded && goals && (
-              <View style={[styles.macroPreviewDetails, { borderTopColor: colors.border }]}>
-                <MacroPreviewRow
-                  label="Cal"
-                  current={totals.calories}
-                  goal={goals.calories}
-                  unit=""
-                  colors={colors}
-                />
-                <MacroPreviewRow
-                  label="P"
-                  current={totals.proteinG}
-                  goal={goals.proteinG}
-                  unit="g"
-                  colors={colors}
-                />
-                <MacroPreviewRow
-                  label="C"
-                  current={totals.carbsG}
-                  goal={goals.carbsG}
-                  unit="g"
-                  colors={colors}
-                />
-                <MacroPreviewRow
-                  label="F"
-                  current={totals.fatG}
-                  goal={goals.fatG}
-                  unit="g"
-                  colors={colors}
-                />
+            {macroPreviewExpanded && goals ? (
+              <View style={styles.macroGrid}>
+                {([
+                  { label: 'Cal', current: totals.calories, goal: goals.calories, unit: '', color: colors.caloriesAccent },
+                  { label: 'P', current: totals.proteinG, goal: goals.proteinG, unit: 'g', color: colors.proteinAccent },
+                  { label: 'C', current: totals.carbsG, goal: goals.carbsG, unit: 'g', color: colors.carbsAccent },
+                  { label: 'F', current: totals.fatG, goal: goals.fatG, unit: 'g', color: colors.fatAccent },
+                ] as const).map(({ label, current, goal, unit, color }) => {
+                  const remaining = goal - current;
+                  const isOver = remaining < 0;
+                  const remainingText = remaining >= 0
+                    ? `${Math.round(remaining)}${unit} left`
+                    : `${Math.round(Math.abs(remaining))}${unit} over`;
+                  return (
+                    <View key={label} style={styles.macroColumn}>
+                      <SingleMacroRing
+                        size={32}
+                        strokeWidth={3}
+                        current={current}
+                        goal={goal}
+                        accentColor={color}
+                        trackColor={colors.progressTrack}
+                      />
+                      <ThemedText style={[Typography.caption2, { color: colors.textSecondary }]}>
+                        {label}
+                      </ThemedText>
+                      <ThemedText style={[Typography.caption2, { color: isOver ? colors.progressOverflow : colors.textSecondary, fontWeight: '600' }]}>
+                        {Math.round(current)} / {goal}
+                      </ThemedText>
+                      <ThemedText style={[Typography.caption2, { color: isOver ? colors.progressOverflow : colors.textTertiary }]}>
+                        {remainingText}
+                      </ThemedText>
+                    </View>
+                  );
+                })}
               </View>
+            ) : (
+              <MacroRingProgress
+                totals={totals}
+                goals={goals}
+                variant="compact"
+                showCalorieSummary={false}
+              />
             )}
           </Pressable>
+          </View>
         )}
       </View>
 
@@ -479,38 +437,44 @@ const styles = StyleSheet.create({
   mealGroups: {
     gap: Spacing.xl,
   },
-  macroPreviewPill: {
+  macroPillZone: {
     position: 'absolute',
     top: Spacing.sm,
-    left: Spacing.lg,
-    right: Spacing.lg,
+    left: 0,
+    right: 0,
     zIndex: 10,
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+  },
+  macroPill: {
+    borderRadius: 999,
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.lg,
     borderWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
-    justifyContent: 'center',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  macroPreviewDetails: {
+  squircleCard: {
+    alignSelf: 'stretch',
+    borderRadius: 28,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  macroGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     width: '100%',
-    marginTop: Spacing.sm,
-    paddingTop: Spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  macroPreviewRow: {
+  macroColumn: {
     flex: 1,
     alignItems: 'center',
     gap: 2,
-  },
-  macroPreviewValue: {
-    fontWeight: '600',
   },
   fabStack: {
     position: 'absolute',
