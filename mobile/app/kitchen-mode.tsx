@@ -913,7 +913,7 @@ export default function KitchenModeScreen() {
               <View style={[styles.sheetBody, { backgroundColor: colors.background, minHeight: screenHeight }]}>
                 {items.length === 0 ? (
                   <View style={styles.emptyState}>
-                    <Ionicons name="mic-outline" size={48} color={colors.textTertiary} />
+                    <Ionicons name="scan-outline" size={48} color={colors.textTertiary} />
                     <ThemedText
                       style={[
                         Typography.body,
@@ -924,7 +924,7 @@ export default function KitchenModeScreen() {
                         },
                       ]}
                     >
-                      Start speaking to log food.{'\n'}Try: "200 grams of chicken breast"
+                      Point the camera at a barcode to log food.{'\n'}You can also speak or type.
                     </ThemedText>
                   </View>
                 ) : (
