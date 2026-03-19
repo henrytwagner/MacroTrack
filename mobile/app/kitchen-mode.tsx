@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   KeyboardAvoidingView,
   LayoutAnimation,
   Platform,
@@ -8,16 +9,17 @@ import {
   ScrollView,
   StyleSheet,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as KeepAwake from 'expo-keep-awake';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
-import MacroRingProgress from '@/components/MacroRingProgress';
+import MacroRingProgress, { SingleMacroRing } from '@/components/MacroRingProgress';
 import DraftMealCard from '@/components/DraftMealCard';
 import ListeningIndicator, { type ListeningState } from '@/components/ListeningIndicator';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
@@ -29,9 +31,14 @@ import { useGoalStore } from '@/stores/goalStore';
 import * as voiceSession from '@/services/voiceSession';
 import * as speech from '@/services/speech';
 import { createSTTStrategy, type STTCallbacks } from '@/services/sttStrategy';
-import { BarcodeCameraScreen } from '@/features/barcode/BarcodeCameraScreen';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { BarcodeScanResult } from '@/features/barcode/types';
+import { normalizeToGTIN } from '@/features/barcode/gtin';
 import type { WSServerMessage } from '@shared/types';
+
+// Macro pill is ~48px tall (paddingVertical 8×2 + compact ring 32px); half used to
+// position the pill flush with the camera feed / cards boundary in barcode mode.
+const MACRO_PILL_HALF_HEIGHT = 24;
 
 // ---------------------------------------------------------------------------
 // Macro preview row (tap-to-expand details)
@@ -83,6 +90,49 @@ function MacroPreviewRow({
 }
 
 // ---------------------------------------------------------------------------
+// DoubleTapFlip — CameraView wrapper that flips camera on double-tap
+// ---------------------------------------------------------------------------
+
+function DoubleTapFlip({
+  width,
+  height,
+  facing,
+  flash,
+  onFlip,
+  onBarcodeScanned,
+}: {
+  width: number;
+  height: number;
+  facing: 'front' | 'back';
+  flash: boolean;
+  onFlip: () => void;
+  onBarcodeScanned: (scan: { data: string; type: string }) => void;
+}) {
+  const lastTapRef = useRef(0);
+
+  const handleTap = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) {
+      onFlip();
+    }
+    lastTapRef.current = now;
+  }, [onFlip]);
+
+  return (
+    <Pressable onPress={handleTap} style={{ width, height }}>
+      <CameraView
+        style={{ width, height }}
+        facing={facing}
+        enableTorch={flash}
+        barcodeScannerEnabled
+        onBarcodeScanned={onBarcodeScanned}
+        pointerEvents="none"
+      />
+    </Pressable>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -90,6 +140,18 @@ export default function KitchenModeScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const router = useRouter();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const feedHeight = screenWidth * (3 / 4);
+  const barcodeModeScrollY = useRef(new Animated.Value(0)).current;
+  // Distance the bar travels before it sticks (initial top → sticky top).
+  // Bar starts at: feedHeight - MACRO_PILL_HALF_HEIGHT
+  // Bar sticks at: Spacing.md (lines up with the camera nav buttons)
+  const BAR_TRAVEL = feedHeight - MACRO_PILL_HALF_HEIGHT - Spacing.md;
+  const barTranslateY = barcodeModeScrollY.interpolate({
+    inputRange: [0, BAR_TRAVEL],
+    outputRange: [0, -BAR_TRAVEL],
+    extrapolate: 'clamp',
+  });
   const { from } = useLocalSearchParams<{ from?: string }>();
 
   const selectedDate = useDateStore((s) => s.selectedDate);
@@ -103,7 +165,7 @@ export default function KitchenModeScreen() {
     reversedItems.find((i) => i.state !== 'normal')?.id ?? reversedItems[0]?.id;
 
   // Auto-scroll to top when a new card is added
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<any>(null);
   useEffect(() => {
     if (items.length > 0) scrollRef.current?.scrollTo({ y: 0, animated: true });
   }, [items.length]);
@@ -114,15 +176,15 @@ export default function KitchenModeScreen() {
   }, [items]);
 
   const [listeningState, setListeningState] = useState<ListeningState>('idle');
-  const [showBarcodeCamera, setShowBarcodeCamera] = useState(false);
+  const [barcodeModeActive, setBarcodeModeActive] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('back');
+  const [flashEnabled, setFlashEnabled] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [nativeModuleMissing, setNativeModuleMissing] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [macroPreviewExpanded, setMacroPreviewExpanded] = useState(false);
-
-  type BottomBarVariant = 'classic' | 'pillsSpread' | 'pillsCenter';
-
-  const [bottomBarVariant, setBottomBarVariant] = useState<BottomBarVariant>('classic');
+  const insets = useSafeAreaInsets();
 
   type TextDisplayMode = 'off' | 'captions' | 'editing';
   const [textDisplayMode, setTextDisplayMode] = useState<TextDisplayMode>('off');
@@ -134,6 +196,21 @@ export default function KitchenModeScreen() {
   const isSavingRef = useRef(false);
   const sttStrategyRef = useRef(createSTTStrategy());
   const listeningPausedByUserRef = useRef(false);
+  const lastScannedGtinRef = useRef<string | null>(null);
+  const lastScannedAtRef = useRef<number>(0);
+  const cameraDoubleTapRef = useRef<number>(0);
+
+  // Request camera permission the first time barcode mode is activated
+  useEffect(() => {
+    if (barcodeModeActive && !cameraPermission?.granted) {
+      requestCameraPermission();
+    }
+  }, [barcodeModeActive, cameraPermission?.granted, requestCameraPermission]);
+
+  // Reset scroll tracker when leaving barcode mode so the bar returns to straddling position
+  useEffect(() => {
+    if (!barcodeModeActive) barcodeModeScrollY.setValue(0);
+  }, [barcodeModeActive, barcodeModeScrollY]);
 
   // ---------------------------------------------------------------------------
   // STT — start / restart listening
@@ -206,9 +283,8 @@ export default function KitchenModeScreen() {
 
   const handleBarcodeButtonPress = useCallback(() => {
     if (sessionEndedRef.current) return;
-    sttStrategyRef.current.stop();
-    speech.stopSpeaking();
-    setShowBarcodeCamera(true);
+    setBarcodeModeActive((prev) => !prev);
+    // No STT stop/start — barcode mode is non-interrupting like captions
   }, []);
 
   const handleServerMessage = useCallback(
@@ -457,15 +533,61 @@ export default function KitchenModeScreen() {
   }, [listeningState, startListening]);
 
   const handleBarcodeScanResult = useCallback((result: BarcodeScanResult) => {
-    setShowBarcodeCamera(false);
     setListeningState('processing');
-    voiceSession.sendBarcodeScan(result.gtin);
+    // Normalize to digits only (gtin from scanner is already normalized, but be safe)
+    const digits = result.gtin.replace(/\D/g, '');
+    // If a creating card has barcode as the current field, send as a transcript
+    // so it flows through the normal CREATE_FOOD_RESPONSE pipeline
+    const isFillingBarcodeField = items.some(
+      (i) => i.state === 'creating' && i.creatingProgress?.currentField === 'barcode',
+    );
+    if (isFillingBarcodeField) {
+      voiceSession.sendTranscript(digits);
+    } else {
+      voiceSession.sendBarcodeScan(digits);
+    }
+  }, [items]);
+
+  // Double-tap the spacer above the sheet to flip camera (the actual CameraView is
+  // behind the ScrollView and can't receive taps directly)
+  const handleCameraAreaTap = useCallback(() => {
+    const now = Date.now();
+    if (now - cameraDoubleTapRef.current < 300) {
+      setCameraFacing((f) => (f === 'back' ? 'front' : 'back'));
+    }
+    cameraDoubleTapRef.current = now;
   }, []);
 
-  const handleBarcodeCameraCancel = useCallback(() => {
-    setShowBarcodeCamera(false);
-    if (!sessionEndedRef.current && !listeningPausedByUserRef.current) startListening();
-  }, [startListening]);
+  // Inline camera scan — deduplicates rapid re-fires (same code within 2s)
+  const handleInlineScan = useCallback(({ data, type }: { data: string; type: string }) => {
+    if (sessionEndedRef.current) return;
+    let gtin: string;
+    try {
+      gtin = normalizeToGTIN(data, type);
+    } catch {
+      return; // invalid barcode, ignore
+    }
+    const now = Date.now();
+    if (gtin === lastScannedGtinRef.current && now - lastScannedAtRef.current < 2000) return;
+    lastScannedGtinRef.current = gtin;
+    lastScannedAtRef.current = now;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    handleBarcodeScanResult({ gtin, raw: data, format: type });
+  }, [handleBarcodeScanResult]);
+
+  const handleOptionsPress = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const flashLabel = flashEnabled ? 'Flashlight: On  (tap to turn off)' : 'Flashlight: Off  (tap to turn on)';
+    Alert.alert('Input Mode', 'Switch input mode:', [
+      { text: 'Voice', onPress: () => {} },
+      { text: 'Text', onPress: () => {} },
+      { text: 'Camera', onPress: () => {} },
+      ...(barcodeModeActive
+        ? [{ text: flashLabel, onPress: () => setFlashEnabled((f) => !f) }]
+        : []),
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }, [barcodeModeActive, flashEnabled]);
 
   const handleCancel = useCallback(() => {
     if (sessionEndedRef.current) return;
@@ -604,20 +726,6 @@ export default function KitchenModeScreen() {
   }
 
   // ---------------------------------------------------------------------------
-  // Fallback barcode camera (full-screen swap, same pattern as barcode-demo)
-  // ---------------------------------------------------------------------------
-
-  if (showBarcodeCamera) {
-    return (
-      <BarcodeCameraScreen
-        defaultFacing="front"
-        onScan={handleBarcodeScanResult}
-        onCancel={handleBarcodeCameraCancel}
-      />
-    );
-  }
-
-  // ---------------------------------------------------------------------------
   // Main screen
   // ---------------------------------------------------------------------------
 
@@ -630,414 +738,349 @@ export default function KitchenModeScreen() {
       )}`
     : null;
 
-  return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      edges={['top', 'bottom']}
-    >
-      {/* Top bar */}
-      <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
-        <Pressable
-          onPress={handleCancel}
-          hitSlop={12}
-          style={({ pressed }) => [
-            styles.topBarIconLeft,
-            pressed && { opacity: 0.7 },
-          ]}
-        >
-          <Ionicons
-            name="chevron-back"
-            size={24}
-            color={colors.textSecondary}
-          />
-        </Pressable>
-
-        <View style={styles.topBarTitleContainer}>
-          <ThemedText style={[Typography.title3, { color: colors.text }]}>
-            Kitchen Mode
-          </ThemedText>
-          {dateLabel && (
-            <ThemedText style={[Typography.footnote, { color: colors.warning }]}>
-              {dateLabel}
-            </ThemedText>
-          )}
-        </View>
-
-        <Pressable
-          onPress={handleSave}
-          hitSlop={12}
-          style={({ pressed }) => [
-            styles.topBarIconRight,
-            pressed && { opacity: 0.8 },
-          ]}
-        >
-          <View
-            style={[
-              styles.topBarSaveIconPill,
-              { backgroundColor: colors.tint },
-            ]}
-          >
-            <Ionicons name="checkmark" size={18} color="#fff" />
-          </View>
-        </Pressable>
-      </View>
-
-      {/* Live macro rings (always visible); tap to toggle detail breakdown below */}
+  const renderMacroBar = () => (
+    <>
       <Pressable
-        style={[styles.ringBar, { backgroundColor: colors.surface }]}
+        style={[
+          macroPreviewExpanded ? [styles.squircleCard, { flex: 1 }] : styles.macroPill,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           setMacroPreviewExpanded((e) => !e);
         }}
       >
-        <MacroRingProgress
-          totals={projectedTotals}
-          goals={goalsByDate[selectedDate] ?? null}
-          variant="default"
-          showCalorieSummary={!macroPreviewExpanded}
-        />
-        {macroPreviewExpanded && goalsByDate[selectedDate] && (
-          <View style={[styles.macroPreviewDetails, { borderTopColor: colors.border }]}>
-            <MacroPreviewRow
-              label="Cal"
-              current={projectedTotals.calories}
-              goal={goalsByDate[selectedDate]!.calories}
-              unit=""
-              colors={colors}
-            />
-            <MacroPreviewRow
-              label="P"
-              current={projectedTotals.proteinG}
-              goal={goalsByDate[selectedDate]!.proteinG}
-              unit="g"
-              colors={colors}
-            />
-            <MacroPreviewRow
-              label="C"
-              current={projectedTotals.carbsG}
-              goal={goalsByDate[selectedDate]!.carbsG}
-              unit="g"
-              colors={colors}
-            />
-            <MacroPreviewRow
-              label="F"
-              current={projectedTotals.fatG}
-              goal={goalsByDate[selectedDate]!.fatG}
-              unit="g"
-              colors={colors}
-            />
-          </View>
-        )}
-      </Pressable>
-      <View style={[styles.hairline, { backgroundColor: colors.border }]} />
-
-      {/* Dev-only: toggle between bottom bar layouts */}
-      {__DEV__ && (
-        <View style={styles.variantToggleRow}>
-          <Pressable
-            onPress={() => setBottomBarVariant('classic')}
-            style={[
-              styles.variantToggleChip,
-              bottomBarVariant === 'classic' && { backgroundColor: colors.surfaceSecondary },
-            ]}
-            hitSlop={8}
-          >
-            <ThemedText
-              style={[
-                Typography.caption2,
-                {
-                  color:
-                    bottomBarVariant === 'classic' ? colors.text : colors.textTertiary,
-                },
-              ]}
-            >
-              Classic
-            </ThemedText>
-          </Pressable>
-          <Pressable
-            onPress={() => setBottomBarVariant('pillsSpread')}
-            style={[
-              styles.variantToggleChip,
-              bottomBarVariant === 'pillsSpread' && {
-                backgroundColor: colors.surfaceSecondary,
-              },
-            ]}
-            hitSlop={8}
-          >
-            <ThemedText
-              style={[
-                Typography.caption2,
-                {
-                  color:
-                    bottomBarVariant === 'pillsSpread'
-                      ? colors.text
-                      : colors.textTertiary,
-                },
-              ]}
-            >
-              Pills
-            </ThemedText>
-          </Pressable>
-          <Pressable
-            onPress={() => setBottomBarVariant('pillsCenter')}
-            style={[
-              styles.variantToggleChip,
-              bottomBarVariant === 'pillsCenter' && { backgroundColor: colors.surfaceSecondary },
-            ]}
-            hitSlop={8}
-          >
-            <ThemedText
-              style={[
-                Typography.caption2,
-                {
-                  color:
-                    bottomBarVariant === 'pillsCenter' ? colors.text : colors.textTertiary,
-                },
-              ]}
-            >
-              Pills C
-            </ThemedText>
-          </Pressable>
-        </View>
-      )}
-
-      {/* Draft cards */}
-      <ScrollView
-        ref={scrollRef}
-        style={styles.scrollView}
-        contentContainerStyle={[
-          styles.scrollContent,
-          items.length === 0 && styles.scrollContentEmpty,
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        {items.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="mic-outline" size={48} color={colors.textTertiary} />
-            <ThemedText
-              style={[
-                Typography.body,
-                {
-                  color: colors.textSecondary,
-                  textAlign: 'center',
-                  marginTop: Spacing.md,
-                },
-              ]}
-            >
-              Start speaking to log food.{'\n'}Try: "200 grams of chicken breast"
-            </ThemedText>
+        {macroPreviewExpanded && goalsByDate[selectedDate] ? (
+          <View style={styles.macroGrid}>
+            {([
+              { label: 'Cal', current: projectedTotals.calories, goal: goalsByDate[selectedDate]!.calories, unit: '', color: colors.caloriesAccent },
+              { label: 'P', current: projectedTotals.proteinG, goal: goalsByDate[selectedDate]!.proteinG, unit: 'g', color: colors.proteinAccent },
+              { label: 'C', current: projectedTotals.carbsG, goal: goalsByDate[selectedDate]!.carbsG, unit: 'g', color: colors.carbsAccent },
+              { label: 'F', current: projectedTotals.fatG, goal: goalsByDate[selectedDate]!.fatG, unit: 'g', color: colors.fatAccent },
+            ] as const).map(({ label, current, goal, unit, color }) => (
+              <View key={label} style={styles.macroColumn}>
+                <SingleMacroRing
+                  size={32}
+                  strokeWidth={3}
+                  current={current}
+                  goal={goal}
+                  accentColor={color}
+                  trackColor={colors.progressTrack}
+                />
+                <MacroPreviewRow
+                  label={label}
+                  current={current}
+                  goal={goal}
+                  unit={unit}
+                  colors={colors}
+                />
+              </View>
+            ))}
           </View>
         ) : (
-          reversedItems.map((item) => (
-            <DraftMealCard
-              key={item.id}
-              item={item}
-              isActive={item.id === activeId}
-              onSendTranscript={handleSendTranscript}
-            />
-          ))
+          <MacroRingProgress
+            totals={projectedTotals}
+            goals={goalsByDate[selectedDate] ?? null}
+            variant="compact"
+            showCalorieSummary={false}
+          />
         )}
-      </ScrollView>
+      </Pressable>
 
-      {/* Floating caption / edit row — above the bottom controls; only edit row moves with keyboard */}
-      {textDisplayMode !== 'off' && textDisplayMode === 'editing' && (
-        <KeyboardAvoidingView
-          style={[
-            styles.floatingOverlay,
-            bottomBarVariant === 'classic'
-              ? styles.floatingAboveClassic
-              : styles.floatingAbovePills,
-          ]}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={0}
-          pointerEvents="box-none"
+      {!macroPreviewExpanded && (
+        <Pressable
+          onPress={handleOptionsPress}
+          hitSlop={8}
+          style={[styles.optionsButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
         >
-          <View style={styles.floatingInner}>
-            <View
-              style={[
-                styles.floatingEditRow,
-                { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
-              ]}
-            >
-              <TextInput
-                style={[styles.editingInput, { color: colors.text }]}
-                placeholder="Edit before sending…"
-                placeholderTextColor={colors.textTertiary}
-                value={editText}
-                onChangeText={setEditText}
-                onSubmitEditing={handleEditSubmit}
-                returnKeyType="send"
-                blurOnSubmit={false}
-                autoFocus
-              />
-              <Pressable onPress={handleEditSubmit} hitSlop={8}>
-                <Ionicons name="arrow-up-circle" size={28} color={colors.tint} />
-              </Pressable>
-              <Pressable onPress={exitEditMode} hitSlop={8} style={styles.discardButton}>
-                <ThemedText style={[Typography.footnote, { color: colors.destructive }]}>
-                  Discard
-                </ThemedText>
-              </Pressable>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
+          <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
+        </Pressable>
       )}
+    </>
+  );
 
-      {textDisplayMode !== 'off' && textDisplayMode !== 'editing' && (
-        <View
-          style={[
-            styles.floatingOverlay,
-            bottomBarVariant === 'classic'
-              ? styles.floatingAboveClassic
-              : styles.floatingAbovePills,
-          ]}
-          pointerEvents="box-none"
-        >
-          <View style={styles.floatingInner}>
-            <Pressable
-              onPress={handleCaptionTap}
-              style={[styles.floatingCaptionPill, { backgroundColor: colors.surfaceSecondary }]}
-            >
-              <View style={styles.captionTextContainer}>
-                <ThemedText
-                  style={[Typography.footnote, { color: colors.text, textAlign: 'center' }]}
-                  numberOfLines={2}
-                >
-                  {captionText || 'Listening for speech…'}
-                </ThemedText>
-              </View>
-              {captionText ? (
-                <Ionicons
-                  name="create-outline"
-                  size={18}
-                  color={colors.textTertiary}
-                  style={styles.captionEditIcon}
-                />
-              ) : null}
-            </Pressable>
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      {/* Navigation bar — hidden in barcode mode (buttons move onto feed) */}
+      {!barcodeModeActive && (
+        <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
+          <Pressable
+            onPress={handleCancel}
+            hitSlop={12}
+            style={({ pressed }) => [
+              styles.topBarIconLeft,
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Ionicons name="chevron-back" size={24} color={colors.textSecondary} />
+          </Pressable>
+
+          <View style={styles.topBarTitleContainer}>
+            <ThemedText style={[Typography.title3, { color: colors.text }]}>
+              Kitchen Mode
+            </ThemedText>
+            {dateLabel && (
+              <ThemedText style={[Typography.footnote, { color: colors.warning }]}>
+                {dateLabel}
+              </ThemedText>
+            )}
           </View>
+
+          <Pressable
+            onPress={handleSave}
+            hitSlop={12}
+            style={({ pressed }) => [
+              styles.topBarIconRight,
+              pressed && { opacity: 0.8 },
+            ]}
+          >
+            <View style={[styles.topBarSaveIconPill, { backgroundColor: colors.tint }]}>
+              <Ionicons name="checkmark" size={18} color="#fff" />
+            </View>
+          </Pressable>
         </View>
       )}
 
-      {/* Floating bottom pills for variants 2 & 3 */}
-      {(bottomBarVariant === 'pillsSpread' || bottomBarVariant === 'pillsCenter') && (
-        <View pointerEvents="box-none" style={styles.bottomPillsFloatingContainer}>
-          {bottomBarVariant === 'pillsSpread' ? (
-            <View style={styles.bottomPillsRowSpread}>
-              <Pressable
-                onPress={handleCaptionToggle}
-                style={[styles.bottomPill, { backgroundColor: colors.surfaceSecondary }]}
-                hitSlop={8}
-              >
-                <Ionicons
-                  name="text-outline"
-                  size={22}
-                  color={textDisplayMode !== 'off' ? colors.tint : colors.textSecondary}
+      {/* Content area: draft cards + floating overlays */}
+      <View style={styles.contentArea}>
+        {barcodeModeActive && (
+          <>
+            {/* Camera — absolute, behind the ScrollView */}
+            <View style={[styles.cameraFeedAbsolute, { height: feedHeight }]}>
+              {cameraPermission?.granted ? (
+                <DoubleTapFlip
+                  width={screenWidth}
+                  height={feedHeight}
+                  facing={cameraFacing}
+                  flash={flashEnabled}
+                  onFlip={() => setCameraFacing((f) => (f === 'back' ? 'front' : 'back'))}
+                  onBarcodeScanned={handleInlineScan}
                 />
+              ) : (
+                <View style={[styles.cameraFeedPlaceholder, { width: screenWidth, height: feedHeight }]} />
+              )}
+            </View>
+
+            {/* Nav overlay — absolute, in front of camera */}
+            <View style={styles.cameraNavOverlay} pointerEvents="box-none">
+              <Pressable
+                onPress={handleCancel}
+                hitSlop={12}
+                style={({ pressed }) => [styles.cameraNavButton, pressed && { opacity: 0.7 }]}
+              >
+                <Ionicons name="chevron-back" size={24} color="#fff" />
               </Pressable>
-              <View
-                style={[
-                  styles.bottomPill,
-                  styles.bottomPillLarge,
-                  { backgroundColor: colors.surfaceSecondary },
-                ]}
-              >
-                <ListeningIndicator
-                  state={listeningState}
-                  onPress={handleListeningIndicatorPress}
-                  showLabel={false}
-                />
-              </View>
               <Pressable
-                onPress={handleBarcodeButtonPress}
-                style={[styles.bottomPill, { backgroundColor: colors.surfaceSecondary }]}
-                hitSlop={8}
+                onPress={handleSave}
+                hitSlop={12}
+                style={({ pressed }) => [pressed && { opacity: 0.8 }]}
               >
-                <Ionicons
-                  name="barcode-outline"
-                  size={22}
-                  color={colors.textSecondary}
-                />
+                <View style={[styles.topBarSaveIconPill, { backgroundColor: colors.tint }]}>
+                  <Ionicons name="checkmark" size={18} color="#fff" />
+                </View>
               </Pressable>
             </View>
-          ) : (
-            <View style={styles.bottomPillsRowCenter}>
-              <Pressable
-                onPress={handleCaptionToggle}
-                style={[styles.bottomPill, { backgroundColor: colors.surfaceSecondary }]}
-                hitSlop={8}
-              >
-                <Ionicons
-                  name="text-outline"
-                  size={22}
-                  color={textDisplayMode !== 'off' ? colors.tint : colors.textSecondary}
-                />
-              </Pressable>
-              <View
-                style={[
-                  styles.bottomPill,
-                  styles.bottomPillLarge,
-                  { backgroundColor: colors.surfaceSecondary },
-                ]}
-              >
-                <ListeningIndicator
-                  state={listeningState}
-                  onPress={handleListeningIndicatorPress}
-                  showLabel={false}
-                />
-              </View>
-              <Pressable
-                onPress={handleBarcodeButtonPress}
-                style={[styles.bottomPill, { backgroundColor: colors.surfaceSecondary }]}
-                hitSlop={8}
-              >
-                <Ionicons
-                  name="barcode-outline"
-                  size={22}
-                  color={colors.textSecondary}
-                />
-              </Pressable>
-            </View>
+          </>
+        )}
+        <Animated.ScrollView
+          ref={scrollRef}
+          style={styles.scrollView}
+          contentContainerStyle={[
+            barcodeModeActive ? undefined : styles.scrollContent,
+            items.length === 0 && !barcodeModeActive && styles.scrollContentEmpty,
+          ]}
+          showsVerticalScrollIndicator={false}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { y: barcodeModeScrollY } } }],
+            { useNativeDriver: true },
           )}
-        </View>
-      )}
+          scrollEventThrottle={16}
+        >
+          {barcodeModeActive ? (
+            <>
+              {/* 0: transparent spacer — camera height minus half-pill so the bar straddles */}
+              <Pressable onPress={handleCameraAreaTap} style={{ height: feedHeight - MACRO_PILL_HALF_HEIGHT }} />
 
-      {/* Fixed bottom bar (only renders in classic variant) */}
-      {bottomBarVariant === 'classic' && (
-        <View style={[styles.bottomSection, { borderTopColor: colors.border }]}>
-          <View style={styles.listeningRow}>
-            <Pressable
-              onPress={handleCaptionToggle}
-              style={styles.keyboardIconButton}
-              hitSlop={8}
-            >
-              <Ionicons
-                name="text-outline"
-                size={24}
-                color={textDisplayMode !== 'off' ? colors.tint : colors.textSecondary}
-              />
-            </Pressable>
-            <View style={styles.listeningIndicatorCenter}>
-              <ListeningIndicator
-                state={listeningState}
-                onPress={handleListeningIndicatorPress}
-              />
-            </View>
-            <Pressable
-              onPress={handleBarcodeButtonPress}
-              style={styles.barcodeIconButton}
-              hitSlop={8}
-            >
-              <Ionicons
-                name="barcode-outline"
-                size={26}
-                color={colors.textSecondary}
-              />
-            </Pressable>
+              {/* 1: sheet header — rounded top corners, clears floating bar */}
+              <View style={[styles.sheetHeader, { backgroundColor: colors.background }]} />
+
+              {/* 2: sheet body — cards */}
+              <View style={[styles.sheetBody, { backgroundColor: colors.background, minHeight: screenHeight }]}>
+                {items.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Ionicons name="mic-outline" size={48} color={colors.textTertiary} />
+                    <ThemedText
+                      style={[
+                        Typography.body,
+                        {
+                          color: colors.textSecondary,
+                          textAlign: 'center',
+                          marginTop: Spacing.md,
+                        },
+                      ]}
+                    >
+                      Start speaking to log food.{'\n'}Try: "200 grams of chicken breast"
+                    </ThemedText>
+                  </View>
+                ) : (
+                  reversedItems.map((item) => (
+                    <DraftMealCard
+                      key={item.id}
+                      item={item}
+                      isActive={item.id === activeId}
+                      onSendTranscript={handleSendTranscript}
+                      onOpenBarcodeScanner={handleBarcodeButtonPress}
+                    />
+                  ))
+                )}
+              </View>
+            </>
+          ) : (
+            items.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="mic-outline" size={48} color={colors.textTertiary} />
+                <ThemedText
+                  style={[
+                    Typography.body,
+                    {
+                      color: colors.textSecondary,
+                      textAlign: 'center',
+                      marginTop: Spacing.md,
+                    },
+                  ]}
+                >
+                  Start speaking to log food.{'\n'}Try: "200 grams of chicken breast"
+                </ThemedText>
+              </View>
+            ) : (
+              reversedItems.map((item) => (
+                <DraftMealCard
+                  key={item.id}
+                  item={item}
+                  isActive={item.id === activeId}
+                  onSendTranscript={handleSendTranscript}
+                  onOpenBarcodeScanner={handleBarcodeButtonPress}
+                />
+              ))
+            )
+          )}
+        </Animated.ScrollView>
+
+        {/* Macro bar — animated overlay in barcode mode, static overlay in normal mode */}
+        {barcodeModeActive ? (
+          <Animated.View
+            pointerEvents="box-none"
+            style={[
+              styles.macroOverlay,
+              {
+                top: feedHeight - MACRO_PILL_HALF_HEIGHT,
+                transform: [{ translateY: barTranslateY }],
+              },
+            ]}
+          >
+            {renderMacroBar()}
+          </Animated.View>
+        ) : (
+          <View pointerEvents="box-none" style={styles.macroOverlay}>
+            {renderMacroBar()}
           </View>
+        )}
+
+        {/* Floating caption / edit row — above the bottom bar */}
+        {textDisplayMode !== 'off' && textDisplayMode === 'editing' && (
+          <KeyboardAvoidingView
+            style={[styles.floatingOverlay, styles.floatingAboveBottom]}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={0}
+            pointerEvents="box-none"
+          >
+            <View style={styles.floatingInner}>
+              <View
+                style={[
+                  styles.floatingEditRow,
+                  { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
+                ]}
+              >
+                <TextInput
+                  style={[styles.editingInput, { color: colors.text }]}
+                  placeholder="Type to send…"
+                  placeholderTextColor={colors.textTertiary}
+                  value={editText}
+                  onChangeText={setEditText}
+                  onSubmitEditing={handleEditSubmit}
+                  onBlur={exitEditMode}
+                  returnKeyType="send"
+                  blurOnSubmit={false}
+                  autoFocus
+                />
+                <Pressable onPress={handleEditSubmit} hitSlop={8}>
+                  <Ionicons name="arrow-up-circle" size={28} color={colors.tint} />
+                </Pressable>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        )}
+
+        {textDisplayMode !== 'off' && textDisplayMode !== 'editing' && (
+          <View
+            style={[styles.floatingOverlay, styles.floatingAboveBottom]}
+            pointerEvents="box-none"
+          >
+            <View style={styles.floatingInner}>
+              <View
+                style={[styles.floatingCaptionRow, { backgroundColor: colors.surfaceSecondary }]}
+              >
+                {captionText ? (
+                  <ThemedText
+                    style={[Typography.footnote, { color: colors.text, flex: 1 }]}
+                    numberOfLines={2}
+                  >
+                    {captionText}
+                  </ThemedText>
+                ) : null}
+                <Pressable onPress={handleCaptionTap} hitSlop={12} style={styles.captionEditButton}>
+                  <Ionicons name="create-outline" size={20} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        )}
+      </View>
+
+      {/* Bottom bar */}
+      <View style={[styles.bottomSection, { borderTopColor: colors.border }]}>
+        <View style={styles.listeningRow}>
+          <Pressable
+            onPress={handleCaptionToggle}
+            style={styles.keyboardIconButton}
+            hitSlop={8}
+          >
+            <Ionicons
+              name="text-outline"
+              size={24}
+              color={textDisplayMode !== 'off' ? colors.tint : colors.textSecondary}
+            />
+          </Pressable>
+          <View style={styles.listeningIndicatorCenter}>
+            <ListeningIndicator
+              state={listeningState}
+              onPress={handleListeningIndicatorPress}
+            />
+          </View>
+          <Pressable
+            onPress={handleBarcodeButtonPress}
+            style={styles.barcodeIconButton}
+            hitSlop={8}
+          >
+            <Ionicons
+              name="barcode-outline"
+              size={24}
+              color={barcodeModeActive ? colors.tint : colors.textSecondary}
+            />
+          </Pressable>
         </View>
-      )}
-    </SafeAreaView>
+      </View>
+    </View>
   );
 }
 
@@ -1080,25 +1123,64 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xs,
   },
-  hairline: {
-    height: StyleSheet.hairlineWidth,
+  contentArea: {
+    flex: 1,
   },
-  ringBar: {
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
+  macroOverlay: {
+    position: 'absolute',
+    top: Spacing.sm,
+    left: Spacing.md,
+    right: Spacing.md,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: Spacing.xs,
+    zIndex: 10,
   },
-  macroPreviewDetails: {
+  optionsButton: {
+    borderRadius: BorderRadius.full,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  macroPill: {
+    borderRadius: 999,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  squircleCard: {
+    borderRadius: 28,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  macroGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginTop: Spacing.sm,
-    paddingTop: Spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  macroColumn: {
+    flex: 1,
+    alignItems: 'center',
+    gap: Spacing.xs,
   },
   macroPreviewRow: {
-    flex: 1,
     alignItems: 'center',
     gap: 2,
   },
@@ -1112,10 +1194,57 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     gap: Spacing.md,
     paddingBottom: Spacing.lg,
+    paddingTop: 64, // clear the floating macro ring pill
   },
   scrollContentEmpty: {
     flex: 1,
     justifyContent: 'center',
+  },
+  cameraFeedPlaceholder: {
+    backgroundColor: '#007AFF',
+  },
+  cameraNavOverlay: {
+    position: 'absolute',
+    top: Spacing.md,
+    left: Spacing.lg,
+    right: Spacing.lg,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  cameraNavButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cameraFeedAbsolute: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 0,
+  },
+  sheetHeader: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: MACRO_PILL_HALF_HEIGHT + Spacing.sm,
+    paddingBottom: 0,
+    paddingHorizontal: Spacing.lg,
+  },
+  sheetBody: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.lg,
+    gap: Spacing.md,
+  },
+  macroBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
   },
   emptyState: {
     alignItems: 'center',
@@ -1126,59 +1255,17 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.lg,
-    gap: Spacing.lg,
     alignItems: 'stretch',
-  },
-  variantToggleRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: Spacing.xs,
-    marginBottom: Spacing.xs,
-  },
-  variantToggleChip: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
-  },
-  bottomPillsFloatingContainer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: Spacing.xxxl,
-    alignItems: 'center',
-    paddingHorizontal: Spacing.xl,
-  },
-  bottomPillsRowSpread: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '90%',
-    maxWidth: 360,
-    alignSelf: 'center',
-  },
-  bottomPillsRowCenter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.lg,
-  },
-  bottomPill: {
-    borderRadius: BorderRadius.full,
-    height: 44,
-    width: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bottomPillLarge: {
-    height: 72,
-    width: 72,
   },
   floatingOverlay: {
     position: 'absolute',
     left: 0,
     right: 0,
     width: '100%',
+  },
+  floatingAboveBottom: {
+    // Positions above the bottom edge of contentArea (above the bottomSection border)
+    bottom: Spacing.sm,
   },
   floatingInner: {
     paddingHorizontal: Spacing.xl,
@@ -1193,29 +1280,19 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  floatingAbovePills: {
-    bottom: Spacing.xxxl * 2.75,
-  },
-  floatingAboveClassic: {
-    bottom: Spacing.xxxl,
-  },
-  floatingCaptionPill: {
+  floatingCaptionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     alignSelf: 'center',
     borderRadius: BorderRadius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     gap: Spacing.xs,
+    minWidth: 44,
   },
-  captionTextContainer: {
-    maxWidth: '80%',
-    justifyContent: 'center',
+  captionEditButton: {
     alignItems: 'center',
-  },
-  captionEditIcon: {
-    marginLeft: Spacing.xs,
+    justifyContent: 'center',
   },
   editingInput: {
     flex: 1,
@@ -1224,50 +1301,29 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xs,
     ...Typography.body,
   },
-  discardButton: {
-    paddingHorizontal: Spacing.xs,
-    paddingVertical: Spacing.xs,
+  listeningRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    position: 'relative',
   },
+  listeningIndicatorCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  // Icons use paddingTop to visually center on the bars (36px tall), not the full
+  // indicator height (bars 36 + gap 8 + label 18 = 62px). Offset = (36 - 24) / 2 = 6
   keyboardIconButton: {
     position: 'absolute',
     left: 0,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
+    paddingTop: 6,
     padding: Spacing.xs,
   },
-  actionRow: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-    width: '100%',
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    gap: Spacing.xs,
-  },
-  cancelButton: {
-    borderWidth: 1.5,
-  },
-  saveButton: {},
-  topBarCancel: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-  },
-  topBarSave: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
-  },
-  topBarPill: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
-    borderWidth: StyleSheet.hairlineWidth,
+  barcodeIconButton: {
+    position: 'absolute',
+    right: 0,
+    paddingTop: 6,
+    padding: Spacing.xs,
   },
   errorState: {
     flex: 1,
@@ -1281,24 +1337,5 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.lg,
     marginTop: Spacing.sm,
-  },
-  listeningRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  listeningIndicatorCenter: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  barcodeIconButton: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    padding: Spacing.xs,
   },
 });
