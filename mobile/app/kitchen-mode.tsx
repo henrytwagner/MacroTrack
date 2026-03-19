@@ -207,9 +207,12 @@ export default function KitchenModeScreen() {
     }
   }, [barcodeModeActive, cameraPermission?.granted, requestCameraPermission]);
 
-  // Reset scroll tracker when leaving barcode mode so the bar returns to straddling position
+  // Reset scroll position and bar tracker when leaving barcode mode
   useEffect(() => {
-    if (!barcodeModeActive) barcodeModeScrollY.setValue(0);
+    if (!barcodeModeActive) {
+      barcodeModeScrollY.setValue(0);
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    }
   }, [barcodeModeActive, barcodeModeScrollY]);
 
   // ---------------------------------------------------------------------------
