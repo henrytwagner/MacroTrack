@@ -473,12 +473,20 @@ export interface WSBarcodeScanMessage {
   gtin: string;
 }
 
+export interface WSScaleConfirmMessage {
+  type: 'scale_confirm';
+  itemId: string;
+  quantity: number;
+  unit: string; // scale's unit: 'g' | 'ml' | 'oz'
+}
+
 export type WSClientMessage =
   | WSTranscriptMessage
   | WSAudioChunkMessage
   | WSSaveMessage
   | WSCancelMessage
-  | WSBarcodeScanMessage;
+  | WSBarcodeScanMessage
+  | WSScaleConfirmMessage;
 
 // Server → Client
 
@@ -490,7 +498,7 @@ export interface WSItemsAddedMessage {
 export interface WSItemEditedMessage {
   type: "item_edited";
   itemId: string;
-  changes: Partial<Pick<DraftItem, "name" | "quantity" | "unit" | "calories" | "proteinG" | "carbsG" | "fatG">>;
+  changes: Partial<Pick<DraftItem, "name" | "quantity" | "unit" | "calories" | "proteinG" | "carbsG" | "fatG" | "isAssumed">>;
 }
 
 export interface WSItemRemovedMessage {
@@ -639,6 +647,12 @@ export interface WSFoodSuggestionsMessage {
   suggestions: Array<{ name: string; macros: Macros; reason: string }>;
 }
 
+// Scale integration
+export interface WSPromptScaleConfirmMessage {
+  type: 'prompt_scale_confirm';
+  itemId: string;
+}
+
 // Phase 6 — AI Estimates
 export interface WSEstimateCardMessage {
   type: "estimate_card";
@@ -671,7 +685,8 @@ export type WSServerMessage =
   | WSMacroSummaryMessage
   | WSFoodInfoMessage
   | WSFoodSuggestionsMessage
-  | WSEstimateCardMessage;
+  | WSEstimateCardMessage
+  | WSPromptScaleConfirmMessage;
 
 // --- Gemini Intent Types ---
 
@@ -802,6 +817,12 @@ export interface GeminiConfirmFoodCreationIntent {
   };
 }
 
+// Scale integration
+export interface GeminiScaleConfirmIntent {
+  action: "SCALE_CONFIRM";
+  payload: { targetItem?: string }; // omit or null → means active item
+}
+
 export type GeminiIntent =
   | GeminiAddItemsIntent
   | GeminiEditItemIntent
@@ -821,7 +842,8 @@ export type GeminiIntent =
   | GeminiLookupFoodInfoIntent
   | GeminiSuggestFoodsIntent
   | GeminiEstimateFoodIntent
-  | GeminiConfirmFoodCreationIntent;
+  | GeminiConfirmFoodCreationIntent
+  | GeminiScaleConfirmIntent;
 
 // --- Gemini Request Context ---
 

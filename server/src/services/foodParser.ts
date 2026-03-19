@@ -695,6 +695,50 @@ function handleClarify(intent: GeminiClarifyIntent): WSServerMessage {
 }
 
 // ---------------------------------------------------------------------------
+// Scale confirm: recalculate macros from scale reading
+// ---------------------------------------------------------------------------
+
+export async function handleScaleConfirm(
+  itemId: string,
+  quantity: number,
+  unit: string,
+  currentDraft: DraftItem[],
+  userId: string,
+): Promise<WSItemEditedMessage | WSErrorMessage> {
+  const target = currentDraft.find((d) => d.id === itemId);
+  if (!target) {
+    return { type: "error", message: "Item not found for scale confirm." } satisfies WSErrorMessage;
+  }
+
+  const changes: WSItemEditedMessage["changes"] = {
+    quantity,
+    unit,
+    isAssumed: false,
+  };
+
+  const base = await getBaseFoodForEdit(
+    target.source,
+    target.customFoodId,
+    target.usdaFdcId,
+    target.communityFoodId,
+    userId,
+  );
+  if (base) {
+    const scaled = scaleMacros(base.baseMacros, base.baseServingSize, quantity, unit);
+    changes.calories = scaled.calories;
+    changes.proteinG = scaled.proteinG;
+    changes.carbsG = scaled.carbsG;
+    changes.fatG = scaled.fatG;
+  }
+
+  return {
+    type: "item_edited",
+    itemId,
+    changes,
+  } satisfies WSItemEditedMessage;
+}
+
+// ---------------------------------------------------------------------------
 // Main orchestrator entry point
 // ---------------------------------------------------------------------------
 

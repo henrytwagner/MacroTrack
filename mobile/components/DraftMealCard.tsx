@@ -11,6 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { DraftItem } from '@shared/types';
+import type { ScaleReading } from '@/features/scale/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -117,10 +118,16 @@ function ExpandedNormalCard({
   item,
   colors,
   flashAnims,
+  scaleReading,
+  onScaleConfirm,
+  onScaleSkip,
 }: {
   item: DraftItem;
   colors: (typeof Colors)['light'];
   flashAnims: FlashAnims;
+  scaleReading?: ScaleReading | null;
+  onScaleConfirm?: (quantity: number, unit: string) => void;
+  onScaleSkip?: () => void;
 }) {
   return (
     <>
@@ -132,7 +139,7 @@ function ExpandedNormalCard({
           {item.name}
         </ThemedText>
         <View style={styles.cardHeaderRight}>
-          {item.isAssumed && (
+          {item.isAssumed && !scaleReading && (
             <ThemedText style={[Typography.caption2, { color: colors.textTertiary }]}>
               ✦assumed
             </ThemedText>
@@ -140,13 +147,47 @@ function ExpandedNormalCard({
           <SourceIcon source={item.source} color={colors.textTertiary} />
         </View>
       </View>
-      <Animated.View
-        style={{ transform: [{ scale: flashAnims.quantityScale }], alignSelf: 'flex-start' }}
-      >
-        <ThemedText style={[Typography.subhead, { color: colors.textSecondary }]}>
-          {item.quantity} {item.unit}
-        </ThemedText>
-      </Animated.View>
+      {scaleReading ? (
+        <View style={styles.scaleChipRow}>
+          <Ionicons name="scale-outline" size={14} color={scaleReading.stable ? colors.tint : colors.textSecondary} />
+          <ThemedText style={[Typography.subhead, { color: scaleReading.stable ? colors.tint : colors.textSecondary }]}>
+            {' '}{scaleReading.display}
+          </ThemedText>
+          <ThemedText style={[Typography.caption2, { color: scaleReading.stable ? colors.tint : colors.textTertiary }]}>
+            {scaleReading.stable ? ' ● Stable' : ' ○ measuring…'}
+          </ThemedText>
+          {scaleReading.stable && (
+            <View style={styles.scaleButtonRow}>
+              <Pressable
+                onPress={() => onScaleConfirm?.(scaleReading.value, scaleReading.unit)}
+                style={({ pressed }) => [
+                  styles.scaleConfirmButton,
+                  { borderColor: colors.tint, backgroundColor: pressed ? colors.tint : 'transparent' },
+                ]}
+              >
+                {({ pressed }) => (
+                  <ThemedText style={[Typography.caption2, { color: pressed ? '#fff' : colors.tint, fontWeight: '600' }]}>
+                    ✓ Confirm
+                  </ThemedText>
+                )}
+              </Pressable>
+              <Pressable onPress={onScaleSkip} hitSlop={8}>
+                <ThemedText style={[Typography.caption2, { color: colors.textTertiary }]}>
+                  Skip
+                </ThemedText>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      ) : (
+        <Animated.View
+          style={{ transform: [{ scale: flashAnims.quantityScale }], alignSelf: 'flex-start' }}
+        >
+          <ThemedText style={[Typography.subhead, { color: colors.textSecondary }]}>
+            {item.quantity} {item.unit}
+          </ThemedText>
+        </Animated.View>
+      )}
       <View style={styles.macroRow}>
         <MacroChip
           label="cal"
@@ -1115,9 +1156,12 @@ interface DraftMealCardProps {
   isActive: boolean;
   onSendTranscript: (text: string) => void;
   onOpenBarcodeScanner?: () => void;
+  scaleReading?: ScaleReading | null;
+  onScaleConfirm?: (quantity: number, unit: string) => void;
+  onScaleSkip?: () => void;
 }
 
-export default function DraftMealCard({ item, isActive, onSendTranscript, onOpenBarcodeScanner }: DraftMealCardProps) {
+export default function DraftMealCard({ item, isActive, onSendTranscript, onOpenBarcodeScanner, scaleReading, onScaleConfirm, onScaleSkip }: DraftMealCardProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
@@ -1290,7 +1334,14 @@ export default function DraftMealCard({ item, isActive, onSendTranscript, onOpen
           <CompactNormalCard item={item} colors={colors} flashAnims={flashAnims} />
         )}
         {item.state === 'normal' && !isCompact && (
-          <ExpandedNormalCard item={item} colors={colors} flashAnims={flashAnims} />
+          <ExpandedNormalCard
+            item={item}
+            colors={colors}
+            flashAnims={flashAnims}
+            scaleReading={scaleReading}
+            onScaleConfirm={onScaleConfirm}
+            onScaleSkip={onScaleSkip}
+          />
         )}
         {item.state === 'clarifying' && <ClarifyingCard item={item} colors={colors} />}
         {item.state === 'creating' && (
@@ -1464,5 +1515,24 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
     backgroundColor: 'rgba(128,128,128,0.1)',
     flexShrink: 0,
+  },
+  scaleChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 2,
+  },
+  scaleButtonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginLeft: 4,
+  },
+  scaleConfirmButton: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1.5,
   },
 });

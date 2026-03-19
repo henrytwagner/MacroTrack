@@ -114,6 +114,8 @@ The Bluetooth scale provides the accuracy anchor for the entire system. Rather t
 
 A key behavioral signal is the zero-out event. When a user removes an item from the scale and it returns to zero (or near-zero), this can trigger a "new item ready" state. The app can use this as a natural transition point: the previous item is confirmed and logged, and the system is ready for the next.
 
+**Before/after eating weight delta (feature idea, suggested by Prof. Guo, March 2026):** Rather than only weighing food before eating, the user can weigh the plate (or container) before and after eating, and the app logs the difference as the consumed quantity. This is especially useful for meals eaten from a shared dish or bowl, where pre-portioning is inconvenient. Implementation: the user tares/weighs before eating, eats, then re-weighs; the app computes and logs `weight_before - weight_after`. The UX would expose this as a "weigh remainder" mode alongside the standard weighing flow.
+
 The hardest implementation problem is byte packet decoding. Each scale manufacturer uses a proprietary BLE packet format. There is no standard. Protocol reverse engineering typically involves:
 1. Connecting to the scale via nRF Connect or LightBlue
 2. Observing raw notifications from the weight characteristic
@@ -130,9 +132,15 @@ Two distinct identification pathways are planned depending on food type:
 
 **Visual food recognition** — For produce, whole foods, and prepared items without barcodes. A two-phase approach has been settled on after evaluating the available options:
 
-*Phase 1 — Gemini Flash vision (photo-tap logging):* The user taps a camera button, takes a photo, and the image is sent to the existing `gemini.ts` service as a base64-encoded frame with a structured identification prompt. Gemini returns a JSON food name, which routes directly into the existing `foodParser.ts` USDA lookup flow. No new dependencies. Slots into the current architecture in hours. Latency (~500–1000ms) is acceptable for a deliberate photo-tap interaction; it rules out live AR but is invisible in a tap-to-log flow.
+*Phase 1 — Gemini Flash vision (photo-tap logging):* The user taps a camera button, takes a photo, and the image is sent to the existing `gemini.ts` service as a base64-encoded frame with a structured identification prompt. Gemini returns a JSON food name, which routes directly into the existing `foodParser.ts` USDA lookup flow. No new dependencies. Slots into the current architecture in hours. Latency (~500–1000ms) is acceptable for a deliberate photo-tap interaction; it rules out live AR but is invisible in a tap-to-log flow. Gemini is also the recommended off-device fallback model for any phase where on-device inference is unavailable or insufficient.
 
-*Phase 2 — react-native-vision-camera + on-device CoreML model (live AR frames):* `react-native-vision-camera`'s Frame Processor API runs a JS function on every camera frame via JSI (no bridge overhead). A food classification model — EfficientNetB0 fine-tuned on Food-101, exported to `.mlmodelc` — runs entirely on the Neural Engine. Expected inference latency: ~50ms per frame. Zero marginal cost per frame. Full pipeline ownership. The model (~20MB) ships bundled in the app. AR overlays will be drawn in react-native-skia, which integrates cleanly with vision-camera's frame output.
+*Phase 2 — react-native-vision-camera + on-device model (live AR frames):* `react-native-vision-camera`'s Frame Processor API runs a JS function on every camera frame via JSI (no bridge overhead). **Recommended on-device model options (per faculty review, March 2026):**
+
+- **YOLO v10 / v11 / YOLO-World** — Prof. Guo's primary recommendation for on-device food detection. YOLO-World is particularly compelling because it supports open-vocabulary detection (arbitrary text labels at inference time rather than a fixed class list), which means it can handle novel food items without retraining. YOLO v10/v11 are strong choices for standard object detection if the class set is fixed. All variants export to CoreML (`.mlmodelc`) and run on the Neural Engine. Expected inference latency: ~30–60ms per frame.
+- **ARKit** — For Phase 3 AR anchoring specifically, ARKit's built-in scene understanding (plane detection, object anchoring) can provide spatial stability for overlay cards and may offer bounding-box primitives that reduce the vision model's anchoring workload.
+- **EfficientNetB0 fine-tuned on Food-101** — The original plan; still viable as a lightweight single-label classifier if YOLO proves overkill for the Phase 2 use case (single food item on a scale, not fridge scan). Revisit once YOLO is benchmarked.
+
+AR overlays will be drawn in react-native-skia on top of the vision-camera feed.
 
 *Why specialized nutrition APIs (Passio AI, LogMeal) were evaluated and rejected:* These platforms bundle nutrition data delivery with their vision inference. Passio's SDK, for example, couples an on-device CoreML vision model with a mandatory cloud call to fetch `PassioFoodItem` nutrition data after every identification. The tokens you pay for are mostly this cloud nutrition fetch — which MacroTrack discards, since nutrition data comes from USDA and user-created sources. You cannot cleanly extract just the food name without triggering the billing layer their SDK is designed around. LogMeal is purely cloud-based and has the same data-bundling problem. Both create per-call cost for a data layer this app intentionally owns independently.
 
@@ -151,6 +159,15 @@ Voice is already the primary input modality. In the AR-integrated flow, it is re
 The existing Gemini intent parsing pipeline handles these, but the intents may be simplified — a dedicated `CONFIRM_ITEM` action type may be added to `shared/types.ts` for the scale-camera confirmation flow, distinct from the full voice transcript parsing used in Kitchen Mode today.
 
 Tap confirmation is always available as a fallback for noisy environments or user preference.
+
+**Continuous streaming voice (recommended improvement, per faculty review March 2026):**
+
+The current pipeline batches transcript segments: the STT engine segments on pauses and each segment is sent to Gemini as a discrete call. A better model — demonstrated in Prof. Guo's HandProxy paper — is continuous streaming: the transcript stream stays open, the user can speak at any time (including over previous speech), and Gemini is called every N transcript update events rather than once per segment. This produces a more seamless, interruptible command experience. Key architectural implications:
+
+- The WebSocket client sends transcript deltas as they arrive (current behavior), but the server debounces Gemini calls (e.g., every 500ms or every 2–3 new words) rather than calling on every segment boundary.
+- Gemini receives a rolling context window of the last N seconds of transcript rather than an isolated segment.
+- The intent parser should be tolerant of mid-utterance calls — returning `null` or a `WAIT` signal if the transcript is still clearly incomplete.
+- This approach is more robust to noisy kitchens, natural speech patterns, and users who self-correct mid-sentence ("add two — no, three eggs").
 
 ---
 
@@ -296,7 +313,7 @@ This mode is computationally heavier and will likely require on-device inference
 | BLE scale stream | CoreBluetooth / react-native-ble-plx | In progress |
 | Barcode scan | Expo Camera / AVFoundation | Built (not integrated) |
 | Visual food ID (Phase 1) | Gemini Flash vision (photo → base64 → `gemini.ts`) | Not started |
-| Visual food ID (Phase 2) | react-native-vision-camera + EfficientNetB0 CoreML | Not started |
+| Visual food ID (Phase 2) | react-native-vision-camera + YOLO v10/v11/World CoreML (recommended) or EfficientNetB0 | Not started |
 | AR overlays | react-native-skia on vision-camera feed | Not started |
 | Packaged food DB | Open Food Facts / Nutritionix | Not started |
 
@@ -320,9 +337,30 @@ The following are observations from the design process that don't have settled a
 
 **On the phone-as-AR-window positioning**: This framing has been tested informally and resonates. The comparison to AR glasses is useful because it gives people a mental model of what the app is trying to do, without the baggage of "another macro tracker." Whether it survives contact with real users is unknown.
 
+**On a UI-context agent for richer Gemini input (suggested by Prof. Guo, March 2026):** Currently, the Gemini intent parser receives: current transcript, draft items array, time of day, and session state. A richer architecture would add a dedicated "context agent" that observes the current UI state — which screen is active, what's on the scale, what the camera currently sees, what draft cards are visible — and packages this into a structured context object that is injected into every Gemini call. This decouples the context-building concern from the intent-parsing concern: the context agent is responsible for understanding *what is happening*, and the intent parser is responsible for understanding *what the user wants to do about it*. This is especially important as more input modalities (scale, camera, touch) are added — the intent parser should not need to know the details of how each modality encodes its state.
+
 ---
 
-## 10. Immediate Next Steps
+## 10. iPad as a Kitchen Display Platform
+
+An iPad or iPad mini mounted in the kitchen is a compelling future target, particularly for the AR and camera-assisted logging phases. The form factor advantages are significant: a larger display makes AR overlay cards more readable at counter distance, the wider camera field of view can capture a full meal spread or fridge shelf in a single frame, and the device can sit in a stand hands-free while the user cooks — eliminating the "pick up phone, point, put down" gesture entirely.
+
+**Why this matters for the AR vision specifically:**
+- A mounted iPad running fridge scan or multi-object mode becomes a passive ambient display, not an active phone interaction. The user glances at it; it doesn't need to be held.
+- AR overlays at iPad scale (especially iPad Pro's 12.9" display) are legible from across a kitchen counter without needing to lean in.
+- The iPad mini form factor is particularly practical — small enough to prop against a backsplash or stick to a cabinet, large enough to display macro cards without squinting.
+
+**Technical considerations for iPad support:**
+- Expo/React Native supports iPad natively; the primary work is layout adaptation (the current mobile-first layouts will need responsive breakpoints or a dedicated tablet layout for Kitchen Mode and the AR camera view).
+- Split-view and Stage Manager compatibility may be worth targeting so the app can sit alongside a recipe app.
+- The iPad's Neural Engine runs the same CoreML models as iPhone — YOLO and any other on-device vision models require no changes.
+- A dedicated "kitchen stand mode" could be a distinct UI layout: larger draft cards, larger tap targets, persistent camera feed without needing to hold the device.
+
+**Implementation order:** iPad support should be layered on after the core AR pipeline (Phase 3) is stable on iPhone. The camera and model stack will be identical; the work is primarily layout and UX adaptation. Target as a Phase 3.5 or Phase 4 parallel track.
+
+---
+
+## 11. Immediate Next Steps
 
 1. **Complete BLE scale integration** — Connect to physical scale, observe raw BLE notifications via nRF Connect, decode packet format, wire live weight into the UI demo screen (`mobile/app/scale-demo.tsx`).
 

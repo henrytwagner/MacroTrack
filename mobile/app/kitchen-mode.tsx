@@ -161,6 +161,10 @@ export default function KitchenModeScreen() {
   const { goalsByDate, fetch: fetchGoals } = useGoalStore();
   const { items, projectedTotals, initSession, applyServerMessage, reset } = useDraftStore();
   const scale = useScale();
+  // Keep a ref so handleServerMessage (bound once at connect) always sees current reading
+  useEffect(() => {
+    scaleReadingRef.current = scale.reading;
+  }, [scale.reading]);
 
   // Reversed items so newest appears at top; activeId is the first non-normal card or topmost card
   const reversedItems = useMemo(() => [...items].reverse(), [items]);
@@ -177,6 +181,8 @@ export default function KitchenModeScreen() {
   useEffect(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
   }, [items]);
+
+  const [scaleSkippedIds, setScaleSkippedIds] = useState<Set<string>>(new Set());
 
   const [listeningState, setListeningState] = useState<ListeningState>('idle');
   const [barcodeModeActive, setBarcodeModeActive] = useState(false);
@@ -196,6 +202,7 @@ export default function KitchenModeScreen() {
 
   // Refs that don't need to trigger re-renders
   const sessionEndedRef = useRef(false);
+  const scaleReadingRef = useRef(scale.reading);
   const isSavingRef = useRef(false);
   const sttStrategyRef = useRef(createSTTStrategy());
   const listeningPausedByUserRef = useRef(false);
@@ -293,6 +300,49 @@ export default function KitchenModeScreen() {
     // No STT stop/start — barcode mode is non-interrupting like captions
   }, []);
 
+  const handleAddPress = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/add-food');
+  }, [router]);
+
+  const handleScaleToggle = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (scale.sessionState === 'connected') {
+      scale.disconnect();
+    } else if (scale.sessionState === 'scanning' || scale.sessionState === 'connecting') {
+      scale.cancelScan();
+    } else {
+      scale.connect();
+    }
+  }, [scale]);
+
+  // ---------------------------------------------------------------------------
+  // Scale → active card wiring
+  // ---------------------------------------------------------------------------
+
+  const activeItem = reversedItems.find((i) => i.id === activeId);
+  const showScaleOnCard =
+    Platform.OS !== 'web' &&
+    scale.sessionState === 'connected' &&
+    scale.reading != null &&
+    scale.reading.unit !== 'lb:oz' &&
+    activeItem != null &&
+    activeItem.state === 'normal' &&
+    activeItem.isAssumed !== false &&
+    !scaleSkippedIds.has(activeId ?? '');
+
+  const activeScaleReading = showScaleOnCard ? scale.reading : null;
+
+  const handleScaleConfirm = useCallback((quantity: number, unit: string) => {
+    if (!activeId) return;
+    voiceSession.sendScaleConfirm(activeId, quantity, unit);
+  }, [activeId]);
+
+  const handleScaleSkip = useCallback(() => {
+    if (!activeId) return;
+    setScaleSkippedIds((prev) => new Set(prev).add(activeId));
+  }, [activeId]);
+
   const handleServerMessage = useCallback(
     (msg: WSServerMessage) => {
       applyServerMessage(msg);
@@ -313,6 +363,11 @@ export default function KitchenModeScreen() {
         speakAndResume(msg.message);
       } else if (msg.type === 'open_barcode_scanner') {
         handleBarcodeButtonPress();
+      } else if (msg.type === 'prompt_scale_confirm') {
+        const r = scaleReadingRef.current;
+        if (r && r.unit !== 'lb:oz') {
+          voiceSession.sendScaleConfirm(msg.itemId, r.value, r.unit);
+        }
       } else if (msg.type === 'ask') {
         speakAndResume(msg.question);
       } else if (msg.type === 'clarify') {
@@ -914,7 +969,7 @@ export default function KitchenModeScreen() {
 
               {/* 2: sheet body — cards */}
               <View style={[styles.sheetBody, { backgroundColor: colors.background, minHeight: screenHeight }]}>
-                {Platform.OS !== 'web' && <KitchenScaleCard {...scale} />}
+                {Platform.OS !== 'web' && scale.sessionState !== 'idle' && scale.sessionState !== 'error' && <KitchenScaleCard {...scale} />}
                 {items.length === 0 ? (
                   <View style={styles.emptyState}>
                     <Ionicons name="scan-outline" size={48} color={colors.textTertiary} />
@@ -939,6 +994,9 @@ export default function KitchenModeScreen() {
                       isActive={item.id === activeId}
                       onSendTranscript={handleSendTranscript}
                       onOpenBarcodeScanner={handleBarcodeButtonPress}
+                      scaleReading={item.id === activeId ? activeScaleReading : null}
+                      onScaleConfirm={item.id === activeId ? handleScaleConfirm : undefined}
+                      onScaleSkip={item.id === activeId ? handleScaleSkip : undefined}
                     />
                   ))
                 )}
@@ -946,7 +1004,7 @@ export default function KitchenModeScreen() {
             </>
           ) : (
             <>
-              {Platform.OS !== 'web' && <KitchenScaleCard {...scale} />}
+              {Platform.OS !== 'web' && scale.sessionState !== 'idle' && scale.sessionState !== 'error' && <KitchenScaleCard {...scale} />}
               {items.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Ionicons name="mic-outline" size={48} color={colors.textTertiary} />
@@ -971,6 +1029,9 @@ export default function KitchenModeScreen() {
                     isActive={item.id === activeId}
                     onSendTranscript={handleSendTranscript}
                     onOpenBarcodeScanner={handleBarcodeButtonPress}
+                    scaleReading={item.id === activeId ? activeScaleReading : null}
+                    onScaleConfirm={item.id === activeId ? handleScaleConfirm : undefined}
+                    onScaleSkip={item.id === activeId ? handleScaleSkip : undefined}
                   />
                 ))
               )}
@@ -1062,34 +1123,49 @@ export default function KitchenModeScreen() {
       {/* Bottom bar */}
       <View style={[styles.bottomSection, { borderTopColor: colors.border }]}>
         <View style={styles.listeningRow}>
-          <Pressable
-            onPress={handleCaptionToggle}
-            style={styles.keyboardIconButton}
-            hitSlop={8}
-          >
+
+          {/* Text toggle */}
+          <Pressable onPress={handleCaptionToggle} style={styles.bottomBarIcon} hitSlop={8}>
             <Ionicons
               name="text-outline"
               size={24}
               color={textDisplayMode !== 'off' ? colors.tint : colors.textSecondary}
             />
           </Pressable>
-          <View style={styles.listeningIndicatorCenter}>
-            <ListeningIndicator
-              state={listeningState}
-              onPress={handleListeningIndicatorPress}
-            />
-          </View>
-          <Pressable
-            onPress={handleBarcodeButtonPress}
-            style={styles.barcodeIconButton}
-            hitSlop={8}
-          >
+
+          {/* Camera toggle (barcode + future food recognition) */}
+          <Pressable onPress={handleBarcodeButtonPress} style={styles.bottomBarIcon} hitSlop={8}>
             <Ionicons
-              name="barcode-outline"
+              name="camera-outline"
               size={24}
               color={barcodeModeActive ? colors.tint : colors.textSecondary}
             />
           </Pressable>
+
+          {/* Voice indicator — center */}
+          <ListeningIndicator
+            state={listeningState}
+            onPress={handleListeningIndicatorPress}
+          />
+
+          {/* Scale toggle */}
+          <Pressable onPress={handleScaleToggle} style={styles.bottomBarIcon} hitSlop={8}>
+            <Ionicons
+              name={
+                scale.sessionState === 'scanning' || scale.sessionState === 'connecting'
+                  ? 'hourglass-outline'
+                  : 'barbell-outline'
+              }
+              size={24}
+              color={scale.sessionState === 'connected' ? colors.tint : colors.textSecondary}
+            />
+          </Pressable>
+
+          {/* Add */}
+          <Pressable onPress={handleAddPress} style={styles.bottomBarIcon} hitSlop={8}>
+            <Ionicons name="add-circle-outline" size={24} color={colors.textSecondary} />
+          </Pressable>
+
         </View>
       </View>
     </View>
@@ -1316,24 +1392,11 @@ const styles = StyleSheet.create({
   listeningRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    justifyContent: 'center',
-    position: 'relative',
+    justifyContent: 'space-around',
   },
-  listeningIndicatorCenter: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  // Icons use paddingTop to visually center on the bars (36px tall), not the full
-  // indicator height (bars 36 + gap 8 + label 18 = 62px). Offset = (36 - 24) / 2 = 6
-  keyboardIconButton: {
-    position: 'absolute',
-    left: 0,
-    paddingTop: 6,
-    padding: Spacing.xs,
-  },
-  barcodeIconButton: {
-    position: 'absolute',
-    right: 0,
+  // Icons use paddingTop to visually align with the top of the voice bars (36px tall).
+  // Offset = (36 - 24) / 2 = 6
+  bottomBarIcon: {
     paddingTop: 6,
     padding: Spacing.xs,
   },

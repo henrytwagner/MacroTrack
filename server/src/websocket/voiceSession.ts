@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "@fastify/websocket";
 import { prisma } from "../db/client.js";
 import { getDefaultUserId } from "../db/defaultUser.js";
-import { processTranscript, lookupItemInUsda, lookupFoodInfoOnly, shouldDisambiguate } from "../services/foodParser.js";
+import { processTranscript, lookupItemInUsda, lookupFoodInfoOnly, shouldDisambiguate, handleScaleConfirm } from "../services/foodParser.js";
 import { parseTranscript, estimateFood, suggestFoodsFromCandidates } from "../services/gemini.js";
 import { searchFoods } from "../services/usda.js";
 
@@ -34,6 +34,7 @@ import type {
   WSFoodInfoMessage,
   WSFoodSuggestionsMessage,
   WSEstimateCardMessage,
+  WSPromptScaleConfirmMessage,
   GeminiRequestContext,
   GeminiCreateFoodResponseIntent,
   GeminiConfirmFoodCreationIntent,
@@ -464,6 +465,17 @@ async function handleNormalTranscript(
     }
     if (intent.action === "SUGGEST_FOODS") {
       await handleSuggestFoods(session, socket);
+      return;
+    }
+    if (intent.action === "SCALE_CONFIRM") {
+      // Find the active item (first non-normal or topmost)
+      const activeItem = session.draft.find((d) => d.state !== "normal") ?? session.draft[session.draft.length - 1];
+      if (activeItem) {
+        send(socket, {
+          type: "prompt_scale_confirm",
+          itemId: activeItem.id,
+        } satisfies WSPromptScaleConfirmMessage);
+      }
       return;
     }
     if (intent.action === "ESTIMATE_FOOD") {
@@ -1927,6 +1939,16 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
                 "[voiceSession] Received audio_chunk but cloud STT is disabled. Ignoring.",
               );
             }
+          } else if (msg.type === "scale_confirm") {
+            const result = await handleScaleConfirm(
+              msg.itemId,
+              msg.quantity,
+              msg.unit,
+              session.draft,
+              session.userId,
+            );
+            applyMessageToDraft(result, session);
+            send(socket, result);
           } else if (msg.type === "save") {
             await saveSession(session, socket);
           } else if (msg.type === "cancel") {
