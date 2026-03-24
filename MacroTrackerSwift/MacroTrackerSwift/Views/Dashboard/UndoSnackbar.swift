@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - UndoSnackbar
 
@@ -12,6 +13,16 @@ struct UndoSnackbar: View {
 
     @State private var autoDismissTask: Task<Void, Never>? = nil
 
+    private var snackbarBackground: Color {
+        Color(UIColor { traits in
+            if traits.userInterfaceStyle == .dark {
+                return UIColor(red: 44.0 / 255, green: 44.0 / 255, blue: 46.0 / 255, alpha: 1)
+            } else {
+                return UIColor(red: 0.196, green: 0.196, blue: 0.196, alpha: 1)
+            }
+        })
+    }
+
     var body: some View {
         VStack {
             Spacer()
@@ -20,7 +31,7 @@ struct UndoSnackbar: View {
                 HStack(spacing: Spacing.md) {
                     Text(message)
                         .font(.appSubhead)
-                        .foregroundStyle(Color.appText)
+                        .foregroundStyle(Color.white)
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -35,7 +46,7 @@ struct UndoSnackbar: View {
                 }
                 .padding(.horizontal, Spacing.lg)
                 .padding(.vertical, Spacing.md)
-                .background(Color.appSurface)
+                .background(snackbarBackground)
                 .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
                 .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 4)
                 .padding(.horizontal, Spacing.lg)

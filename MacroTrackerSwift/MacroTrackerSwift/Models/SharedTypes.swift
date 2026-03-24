@@ -109,6 +109,7 @@ struct UserPreferences: Codable, Sendable {
 struct CustomFood: Codable, Identifiable, Sendable {
     var id:              String
     var name:            String
+    var brandName:       String?
     var servingSize:     Double
     var servingUnit:     String
     var calories:        Double
@@ -266,6 +267,7 @@ struct UpdateFoodEntryRequest: Codable, Sendable {
 
 struct CreateCustomFoodRequest: Codable, Sendable {
     var name:           String
+    var brandName:      String?
     var servingSize:    Double
     var servingUnit:    String
     var calories:       Double
@@ -283,6 +285,7 @@ struct CreateCustomFoodRequest: Codable, Sendable {
 
 struct UpdateCustomFoodRequest: Codable, Sendable {
     var name:           String?
+    var brandName:      String?
     var servingSize:    Double?
     var servingUnit:    String?
     var calories:       Double?
@@ -511,6 +514,134 @@ struct DraftItem: Codable, Identifiable, Sendable {
         var totals:       Macros
         var addedToDraft: Bool
     }
+}
+
+// MARK: - AnyFood
+
+/// Unifying enum over all three food sources. No retroactive conformance hacks; exhaustive switch.
+enum AnyFood: Sendable {
+    case custom(CustomFood)
+    case community(CommunityFood)
+    case usda(USDASearchResult)
+
+    var displayName: String {
+        switch self {
+        case .custom(let f):    return f.name
+        case .community(let f): return f.brandName.map { "\($0) — \(f.name)" } ?? f.name
+        case .usda(let f):      return f.description
+        }
+    }
+
+    var baseServingSize: Double {
+        switch self {
+        case .custom(let f):    return f.servingSize
+        case .community(let f): return f.defaultServingSize
+        case .usda(let f):      return f.servingSize ?? 100
+        }
+    }
+
+    var baseServingUnit: String {
+        switch self {
+        case .custom(let f):    return f.servingUnit
+        case .community(let f): return f.defaultServingUnit
+        case .usda(let f):      return f.servingSizeUnit ?? "g"
+        }
+    }
+
+    var baseMacros: Macros {
+        switch self {
+        case .custom(let f):
+            return Macros(calories: f.calories, proteinG: f.proteinG, carbsG: f.carbsG, fatG: f.fatG)
+        case .community(let f):
+            return Macros(calories: f.calories, proteinG: f.proteinG, carbsG: f.carbsG, fatG: f.fatG)
+        case .usda(let f):
+            return f.macros
+        }
+    }
+
+    var foodSource: FoodSource {
+        switch self {
+        case .custom:    return .custom
+        case .community: return .community
+        case .usda:      return .database
+        }
+    }
+
+    var asCustomFood: CustomFood? {
+        guard case .custom(let f) = self else { return nil }
+        return f
+    }
+
+    var asCommunityFood: CommunityFood? {
+        guard case .community(let f) = self else { return nil }
+        return f
+    }
+
+    var asUSDA: USDASearchResult? {
+        guard case .usda(let f) = self else { return nil }
+        return f
+    }
+}
+
+// MARK: - IdentifiedFood
+
+/// Identifiable wrapper for AnyFood — keeps .sheet(item:) clean
+/// since AnyFood's three subtypes have different ID types.
+struct IdentifiedFood: Identifiable, Sendable {
+    let id = UUID()
+    let food: AnyFood
+}
+
+// MARK: - PendingUnitConversion
+
+/// Draft conversion used before a food ID exists (CreateFoodSheet).
+struct PendingUnitConversion: Identifiable, Sendable {
+    var id = UUID()
+    var unitName: String
+    var quantityInBaseServings: Double
+}
+
+// MARK: - FoodUnitConversionPanel
+
+/// Overlay state machine shared between FoodDetailSheet and CreateFoodSheet.
+enum FoodUnitConversionPanel: Equatable, Sendable {
+    case idle
+    case preview                        // list-all (FoodDetailSheet)
+    case unitPreview(unitName: String)  // per-unit compact card (CreateFoodSheet)
+    case picking
+    case form(editingUnit: String?)     // nil = new, non-nil = editing existing
+}
+
+// MARK: - Free Functions
+
+/// Scale factor relative to one base serving.
+/// - If a named conversion exists: `quantity × conversion.quantityInBaseServings`
+/// - If unit == "servings": `quantity`
+/// - Otherwise (weight/volume base unit): `quantity / baseServing.size`
+nonisolated func scaleFactorForQuantity(
+    quantity: Double,
+    unit: String,
+    baseServing: (size: Double, unit: String),
+    conversion: FoodUnitConversion?
+) -> Double {
+    if let conv = conversion {
+        return quantity * conv.quantityInBaseServings
+    }
+    if unit.lowercased() == "servings" {
+        return quantity
+    }
+    guard baseServing.size > 0 else { return 1 }
+    return quantity / baseServing.size
+}
+
+/// Returns the appropriate meal label for the current time of day.
+nonisolated func currentMealLabel() -> MealLabel {
+    let hour = Calendar.current.component(.hour, from: Date())
+    if hour >= 5  && hour < 11 { return .breakfast }
+    if hour >= 11 && hour < 14 { return .lunch }
+    if hour >= 14 && hour < 17 { return .snack }
+    if hour >= 17 && hour < 22 { return .dinner }
+    return .snack
 }
 
 // MARK: - WebSocket Messages (Client → Server)

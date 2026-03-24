@@ -11,7 +11,7 @@ struct DashboardView: View {
 
     @State private var refreshing:      Bool = false
     @State private var lastAddedEntry:  FoodEntry? = nil
-    @State private var showAddStub:     Bool = false
+    @State private var showAddFood:     Bool = false
     @State private var showEditDashStub: Bool = false
 
     private var today: String { todayString() }
@@ -49,8 +49,11 @@ struct DashboardView: View {
         .task {
             await fetchAll()
         }
-        .sheet(isPresented: $showAddStub) {
-            stubSheet("Add Food — Phase C")
+        .fullScreenCover(isPresented: $showAddFood) {
+            FoodSearchView(onDismiss: { showAddFood = false })
+                .environment(logStore)
+                .environment(goalStore)
+                .environment(dateStore)
         }
         .sheet(isPresented: $showEditDashStub) {
             stubSheet("Edit Dashboard — coming soon")
@@ -116,7 +119,7 @@ struct DashboardView: View {
                     .tracking(Typography.Tracking.headline)
                     .foregroundStyle(Color.appText)
                 Spacer()
-                Button("Search foods") { showAddStub = true }
+                Button("Search foods") { showAddFood = true }
                     .font(.appSubhead)
                     .foregroundStyle(Color.appTint)
                     .buttonStyle(.plain)
@@ -131,7 +134,7 @@ struct DashboardView: View {
                     }
                     FrequentFoodRow(
                         food: food,
-                        onPressName: { showAddStub = true },
+                        onPressName: { showAddFood = true },
                         onQuickAdd: handleQuickAdd)
                 }
             }
@@ -228,7 +231,7 @@ struct DashboardView: View {
                 .foregroundStyle(Color.appTextSecondary)
                 .multilineTextAlignment(.center)
             Button {
-                showAddStub = true
+                showAddFood = true
             } label: {
                 Label("Log Food", systemImage: "plus")
                     .font(.appSubhead)
@@ -295,7 +298,7 @@ struct DashboardView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { showAddStub = false; showEditDashStub = false }
+                        Button("Done") { showEditDashStub = false }
                     }
                 }
         }

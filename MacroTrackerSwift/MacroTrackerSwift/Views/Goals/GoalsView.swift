@@ -7,6 +7,7 @@ struct GoalsView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var showManualEdit: Bool = false
+    @State private var showGuided:     Bool = false
 
     var body: some View {
         NavigationStack {
@@ -25,7 +26,7 @@ struct GoalsView: View {
 
                     // Guided button (primary)
                     Button {
-                        // Phase D: guided flow stub
+                        showGuided = true
                     } label: {
                         HStack(spacing: Spacing.xs) {
                             Image(systemName: "sparkles")
@@ -73,6 +74,9 @@ struct GoalsView: View {
             }
             .navigationDestination(isPresented: $showManualEdit) {
                 GoalsEditView()
+            }
+            .navigationDestination(isPresented: $showGuided) {
+                GoalsGuidedView()
             }
         }
     }

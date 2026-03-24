@@ -70,12 +70,11 @@ struct ProfileView: View {
     @Environment(AppearanceStore.self) private var appearanceStore
 
     @State private var unitSystem:        String = "METRIC"
-    @State private var showGoalsStub:     Bool = false
-    @State private var showHealthStub:    Bool = false
-    @State private var showFoodsStub:     Bool = false
-    @State private var showBarcodeStub:   Bool = false
-    @State private var showScaleStub:     Bool = false
-    @State private var showCustomFoodsStub:  Bool = false
+    @State private var showGoalsStub:         Bool = false
+    @State private var showHealthProfile:     Bool = false
+    @State private var showFoodsStub:         Bool = false
+    @State private var showBarcodeStub:       Bool = false
+    @State private var showScaleStub:         Bool = false
     @State private var showCommunityFoodsStub: Bool = false
 
     private let appearanceModes: [(label: String, icon: String, value: String)] = [
@@ -104,13 +103,22 @@ struct ProfileView: View {
         .onChange(of: profileStore.profile?.preferredUnits.rawValue) { _, newVal in
             unitSystem = newVal ?? "METRIC"
         }
-        .sheet(isPresented: $showGoalsStub)          { GoalsView().environment(GoalStore.shared).environment(DateStore.shared) }
-        .sheet(isPresented: $showHealthStub)         { stubSheet("Health Profile") }
-        .sheet(isPresented: $showFoodsStub)          { stubSheet("My Foods") }
+        .sheet(isPresented: $showGoalsStub) {
+            GoalsView()
+                .environment(GoalStore.shared)
+                .environment(DateStore.shared)
+                .environment(ProfileStore.shared)
+        }
+        .sheet(isPresented: $showHealthProfile) {
+            NavigationStack {
+                HealthProfileView()
+            }
+            .environment(ProfileStore.shared)
+        }
+        .sheet(isPresented: $showFoodsStub)          { ManageCustomFoodsView() }
         .sheet(isPresented: $showBarcodeStub)        { stubSheet("Barcode Demo") }
         .sheet(isPresented: $showScaleStub)          { stubSheet("Scale Demo") }
-        .sheet(isPresented: $showCustomFoodsStub)    { stubSheet("Custom Foods") }
-        .sheet(isPresented: $showCommunityFoodsStub) { stubSheet("Community Foods") }
+        .sheet(isPresented: $showCommunityFoodsStub) { ManageCommunityFoodsView() }
     }
 
     // MARK: Sections
@@ -157,7 +165,7 @@ struct ProfileView: View {
         sectionGroup(label: "PROFILE") {
             SettingsRow(icon: "person.circle", label: "Health profile",
                         subtitle: "Gender, height, weight, age, activity") {
-                showHealthStub = true
+                showHealthProfile = true
             }
         }
     }
@@ -263,16 +271,9 @@ struct ProfileView: View {
 
     private var developmentSection: some View {
         sectionGroup(label: "DEVELOPMENT") {
-            VStack(spacing: 0) {
-                SettingsRow(icon: "ladybug", label: "Custom Foods",
-                            subtitle: "Edit and delete custom foods") {
-                    showCustomFoodsStub = true
-                }
-                RowSeparator()
-                SettingsRow(icon: "globe", label: "Community Foods",
-                            subtitle: "Edit and delete community foods") {
-                    showCommunityFoodsStub = true
-                }
+            SettingsRow(icon: "globe", label: "Community Foods",
+                        subtitle: "Edit and delete community foods") {
+                showCommunityFoodsStub = true
             }
         }
     }
@@ -367,11 +368,10 @@ struct ProfileView: View {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Done") {
                             showGoalsStub          = false
-                            showHealthStub         = false
+                            showHealthProfile      = false
                             showFoodsStub          = false
                             showBarcodeStub        = false
                             showScaleStub          = false
-                            showCustomFoodsStub    = false
                             showCommunityFoodsStub = false
                         }
                     }

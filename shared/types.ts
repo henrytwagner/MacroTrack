@@ -85,6 +85,7 @@ export interface UserProfile {
 export interface CustomFood extends Macros, ExtendedNutrition {
   id: string;
   name: string;
+  brandName?: string;
   servingSize: number;
   servingUnit: string;
   barcode?: string;
@@ -246,6 +247,7 @@ export interface UpdateFoodEntryRequest {
 
 export interface CreateCustomFoodRequest {
   name: string;
+  brandName?: string;
   servingSize: number;
   servingUnit: string;
   calories: number;

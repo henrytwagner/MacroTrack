@@ -42,6 +42,10 @@
     <key>UILaunchScreen</key>
     <dict/>
 
+    <!-- Camera permission for barcode scanner (DataScannerViewController / VisionKit) -->
+    <key>NSCameraUsageDescription</key>
+    <string>MacroTrack uses the camera to scan food barcodes.</string>
+
     <key>UIStatusBarStyle</key>
     <string>UIStatusBarStyleDefault</string>
 

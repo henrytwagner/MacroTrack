@@ -12,9 +12,7 @@ struct RootTabView: View {
                 }
                 .tag(0)
 
-            Text("Log — Phase C")
-                .font(.appHeadline)
-                .foregroundStyle(Color.appTextSecondary)
+            LogView()
                 .tabItem {
                     Label("Log", systemImage: "book.fill")
                 }

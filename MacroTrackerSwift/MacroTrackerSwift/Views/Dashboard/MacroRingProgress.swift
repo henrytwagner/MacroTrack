@@ -90,45 +90,87 @@ struct SingleMacroRing: View {
 
 // MARK: - MacroRingProgress
 
-/// Three macro rings (P/C/F) side by side plus a calorie summary line.
+/// P/C/F rings (optionally + Cal) with tap-to-expand detail.
+/// Tapping any ring expands all columns to show current/goal + remaining — same format as the Log tab pill.
+/// Pass `showCalorieRing: true` to prepend a calorie ring and suppress the text summary.
 struct MacroRingProgress: View {
-    let totals:  Macros
-    let goals:   DailyGoal?
-    let variant: RingVariant
+    let totals:          Macros
+    let goals:           DailyGoal?
+    let variant:         RingVariant
+    var showCalorieRing: Bool = false
 
-    private var hSpacing: CGFloat {
-        variant == .compact ? Spacing.xs : Spacing.sm
+    @State private var isExpanded: Bool = false
+
+    // MARK: - Ring data model
+
+    private struct RingData: Identifiable {
+        let id:            String
+        let label:         String
+        let current:       Double
+        let goal:          Double?
+        let unit:          String
+        let accentColor:   Color
+        let overflowColor: Color
     }
 
+    private var rings: [RingData] {
+        var r: [RingData] = []
+        if showCalorieRing {
+            r.append(RingData(id: "Cal", label: "Cal",
+                              current: totals.calories, goal: goals?.calories,
+                              unit: "", accentColor: .caloriesAccent, overflowColor: .caloriesOverflow))
+        }
+        r.append(RingData(id: "Pro", label: "Pro",
+                          current: totals.proteinG, goal: goals?.proteinG,
+                          unit: "g", accentColor: .proteinAccent, overflowColor: .proteinOverflow))
+        r.append(RingData(id: "Carb", label: "Carb",
+                          current: totals.carbsG,   goal: goals?.carbsG,
+                          unit: "g", accentColor: .carbsAccent, overflowColor: .carbsOverflow))
+        r.append(RingData(id: "Fat", label: "Fat",
+                          current: totals.fatG,     goal: goals?.fatG,
+                          unit: "g", accentColor: .fatAccent, overflowColor: .fatOverflow))
+        return r
+    }
+
+    private var hSpacing: CGFloat {
+        isExpanded ? Spacing.lg : (variant == .compact ? Spacing.xs : Spacing.sm)
+    }
+
+    // MARK: - Body
+
     var body: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                isExpanded.toggle()
+            }
+        } label: {
+            if isExpanded {
+                expandedContent
+            } else {
+                collapsedContent
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Collapsed
+
+    private var collapsedContent: some View {
         VStack(spacing: Spacing.sm) {
-            HStack(spacing: hSpacing) {
-                SingleMacroRing(
-                    label:         "Protein",
-                    current:       totals.proteinG,
-                    goal:          goals?.proteinG,
-                    accentColor:   .proteinAccent,
-                    overflowColor: .proteinOverflow,
-                    variant:       variant)
-
-                SingleMacroRing(
-                    label:         "Carbs",
-                    current:       totals.carbsG,
-                    goal:          goals?.carbsG,
-                    accentColor:   .carbsAccent,
-                    overflowColor: .carbsOverflow,
-                    variant:       variant)
-
-                SingleMacroRing(
-                    label:         "Fat",
-                    current:       totals.fatG,
-                    goal:          goals?.fatG,
-                    accentColor:   .fatAccent,
-                    overflowColor: .fatOverflow,
-                    variant:       variant)
+            HStack(spacing: variant == .compact ? Spacing.xs : Spacing.sm) {
+                ForEach(rings) { ring in
+                    SingleMacroRing(
+                        label:         ring.label,
+                        current:       ring.current,
+                        goal:          ring.goal,
+                        accentColor:   ring.accentColor,
+                        overflowColor: ring.overflowColor,
+                        variant:       variant)
+                }
             }
 
-            if variant != .compact {
+            if variant != .compact && !showCalorieRing {
                 let calGoal = Int(goals?.calories ?? 0)
                 Text("\(Int(totals.calories)) / \(calGoal) cal")
                     .font(.appFootnote)
@@ -137,14 +179,66 @@ struct MacroRingProgress: View {
             }
         }
     }
+
+    // MARK: - Expanded (LogView pill column format)
+
+    private var expandedContent: some View {
+        HStack(spacing: Spacing.lg) {
+            ForEach(rings) { ring in
+                macroPillColumn(ring)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func macroPillColumn(_ ring: RingData) -> some View {
+        let goal      = ring.goal ?? 0
+        let hasGoal   = goal > 0
+        let remaining = goal - ring.current
+        let remainText = remaining >= 0
+            ? "\(Int(remaining.rounded()))\(ring.unit) left"
+            : "\(Int((-remaining).rounded()))\(ring.unit) over"
+
+        VStack(spacing: 0) {
+            SingleMacroRing(
+                label:         ring.label,
+                current:       ring.current,
+                goal:          ring.goal,
+                accentColor:   ring.accentColor,
+                overflowColor: ring.overflowColor,
+                variant:       .compact)
+            Spacer().frame(height: Spacing.xs)
+            Text(hasGoal
+                 ? "\(Int(ring.current.rounded()))/\(Int(goal.rounded()))"
+                 : "\(Int(ring.current.rounded()))")
+                .font(.appCaption2)
+                .foregroundStyle(Color.appTextSecondary)
+                .lineLimit(1)
+            if hasGoal {
+                Spacer().frame(height: Spacing.xs)
+                Text(remainText)
+                    .font(.appCaption2)
+                    .foregroundStyle(remaining < 0 ? ring.overflowColor : Color.appTextTertiary)
+                    .lineLimit(1)
+            }
+        }
+    }
 }
 
 // MARK: - Preview
 
 #Preview("Default rings") {
-    MacroRingProgress(
-        totals: Macros(calories: 1350, proteinG: 95, carbsG: 160, fatG: 45),
-        goals:  DailyGoal(id: "1", calories: 2000, proteinG: 150, carbsG: 200, fatG: 65),
-        variant: .default)
+    VStack(spacing: 32) {
+        MacroRingProgress(
+            totals: Macros(calories: 1350, proteinG: 95, carbsG: 160, fatG: 45),
+            goals:  DailyGoal(id: "1", calories: 2000, proteinG: 150, carbsG: 200, fatG: 65),
+            variant: .default)
+
+        MacroRingProgress(
+            totals: Macros(calories: 1350, proteinG: 95, carbsG: 160, fatG: 45),
+            goals:  DailyGoal(id: "1", calories: 2000, proteinG: 150, carbsG: 200, fatG: 65),
+            variant: .default,
+            showCalorieRing: true)
+    }
     .padding()
 }
