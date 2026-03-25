@@ -17,9 +17,19 @@ struct LogView: View {
     @State private var deletedEntry:         FoodEntry? = nil
     @State private var editingEntry:         FoodEntry? = nil
     @State private var showAddFood:          Bool       = false
+    @State private var showKitchenMode:      Bool       = false
     @State private var scrollY:              CGFloat    = 0
     @State private var showMacroPill:        Bool       = false
     @State private var macroPreviewExpanded: Bool       = false
+
+    // Multi-select state
+    @State private var isSelectionMode:    Bool        = false
+    @State private var selectedEntryIds:   Set<String> = []
+    @State private var bulkDeletedEntries: [FoodEntry] = []
+
+    // Save as Meal
+    @State private var showSaveAsMeal:  Bool           = false
+    @State private var saveAsMealItems: [SavedMealItem] = []
 
     // MARK: - Body
 
@@ -56,16 +66,25 @@ struct LogView: View {
                     }
             )
             .overlay(alignment: .bottomTrailing) {
-                fabStack
-                    .padding(.trailing, Spacing.xxl)
-                    .padding(.bottom, Spacing.xxl)
+                if !isSelectionMode {
+                    fabStack
+                        .padding(.trailing, Spacing.xxl)
+                        .padding(.bottom, Spacing.xxl)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomTrailing)))
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if isSelectionMode {
+                    selectionToolbar
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
             .overlay(alignment: .bottom) {
                 UndoSnackbar(
-                    message: deletedEntry.map { "\($0.name) deleted" } ?? "",
-                    visible: deletedEntry != nil,
-                    onUndo: handleUndo,
-                    onDismiss: handleSnackbarDismiss
+                    message:   snackbarMessage,
+                    visible:   hasSnackbar,
+                    onUndo:    deletedEntry != nil ? handleUndo : handleBulkUndo,
+                    onDismiss: deletedEntry != nil ? handleSnackbarDismiss : handleBulkSnackbarDismiss
                 )
             }
         }
@@ -74,16 +93,32 @@ struct LogView: View {
                 .environment(dailyLogStore)
                 .environment(goalStore)
                 .environment(dateStore)
+                .environment(MealsStore.shared)
+        }
+        .sheet(isPresented: $showSaveAsMeal) {
+            MealCreationView(initialItems: saveAsMealItems)
+                .environment(MealsStore.shared)
+        }
+        .fullScreenCover(isPresented: $showKitchenMode) {
+            KitchenModeView(onDismiss: { showKitchenMode = false })
+                .environment(dailyLogStore)
+                .environment(goalStore)
+                .environment(dateStore)
+                .environment(DraftStore.shared)
         }
         .sheet(item: $editingEntry) { entry in
-            EditEntrySheet(entry: entry, onDismiss: { editingEntry = nil })
+            FoodDetailSheet(entry: entry, onDismiss: { editingEntry = nil })
                 .environment(dailyLogStore)
+                .environment(goalStore)
+                .environment(dateStore)
         }
         .task(id: dateStore.selectedDate) {
             await dailyLogStore.fetch(date: dateStore.selectedDate)
             await goalStore.fetch(date: dateStore.selectedDate)
         }
         .onChange(of: dateStore.selectedDate) { _, _ in
+            isSelectionMode = false
+            selectedEntryIds.removeAll()
             scrollY = 0
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 showMacroPill = false
@@ -135,11 +170,15 @@ struct LogView: View {
                     ForEach(mealOrder, id: \.self) { meal in
                         let entries = dailyLogStore.entriesByMeal[meal] ?? []
                         MealGroup(
-                            meal:     meal,
-                            entries:  entries,
-                            onDelete: handleDelete,
-                            onTap:    { entry in editingEntry = entry })
-                            .padding(.horizontal, Spacing.lg)
+                            meal:            meal,
+                            entries:         entries,
+                            onDelete:        handleDelete,
+                            onTap:           { entry in editingEntry = entry },
+                            isSelectionMode: isSelectionMode,
+                            selectedIds:     selectedEntryIds,
+                            onSelect:        handleSelect
+                        )
+                        .padding(.horizontal, Spacing.lg)
                     }
                 }
 
@@ -317,7 +356,7 @@ struct LogView: View {
             // Primary FAB: tint circle with white fork.knife
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                // Phase E: Kitchen Mode
+                showKitchenMode = true
             } label: {
                 Image(systemName: "fork.knife")
                     .font(.system(size: 24, weight: .semibold))
@@ -331,7 +370,141 @@ struct LogView: View {
         }
     }
 
-    // MARK: - Delete / Undo Actions
+    // MARK: - Selection Toolbar
+
+    private var selectionToolbar: some View {
+        HStack {
+            Text(selectedEntryIds.isEmpty ? "Select items" : "\(selectedEntryIds.count) selected")
+                .font(.appSubhead)
+                .foregroundStyle(Color.appText)
+
+            Spacer()
+
+            // Save as Meal
+            Button {
+                handleSaveAsMeal()
+            } label: {
+                Image(systemName: "fork.knife.circle")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(selectedEntryIds.isEmpty ? Color.appTextTertiary : Color.appTint)
+            }
+            .disabled(selectedEntryIds.isEmpty)
+
+            // Delete
+            Button {
+                handleBulkDelete()
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(selectedEntryIds.isEmpty ? Color.appTextTertiary : Color.appDestructive)
+            }
+            .disabled(selectedEntryIds.isEmpty)
+            .padding(.leading, Spacing.md)
+
+            Button("Cancel") {
+                exitSelectionMode()
+            }
+            .font(.appSubhead)
+            .foregroundStyle(Color.appTint)
+            .padding(.leading, Spacing.md)
+        }
+        .padding(.horizontal, Spacing.xl)
+        .padding(.top, Spacing.md)
+        .padding(.bottom, Spacing.lg)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    // MARK: - Snackbar Helpers
+
+    private var snackbarMessage: String {
+        if let e = deletedEntry { return "\(e.name) deleted" }
+        let n = bulkDeletedEntries.count
+        if n == 1 { return "\(bulkDeletedEntries[0].name) deleted" }
+        return "\(n) entries deleted"
+    }
+
+    private var hasSnackbar: Bool {
+        deletedEntry != nil || !bulkDeletedEntries.isEmpty
+    }
+
+    // MARK: - Selection Actions
+
+    private func handleSelect(_ id: String) {
+        withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+            if !isSelectionMode { isSelectionMode = true }
+            if selectedEntryIds.contains(id) {
+                selectedEntryIds.remove(id)
+                if selectedEntryIds.isEmpty { exitSelectionMode() }
+            } else {
+                selectedEntryIds.insert(id)
+            }
+        }
+    }
+
+    private func exitSelectionMode() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            isSelectionMode = false
+            selectedEntryIds.removeAll()
+        }
+    }
+
+    private func handleSaveAsMeal() {
+        let selected = dailyLogStore.entries.filter { selectedEntryIds.contains($0.id) }
+        saveAsMealItems = selected.map { entry in
+            SavedMealItem(
+                id:              UUID().uuidString,
+                name:            entry.name,
+                quantity:        entry.quantity,
+                unit:            entry.unit,
+                calories:        entry.calories,
+                proteinG:        entry.proteinG,
+                carbsG:          entry.carbsG,
+                fatG:            entry.fatG,
+                source:          entry.source,
+                usdaFdcId:       entry.usdaFdcId,
+                customFoodId:    entry.customFoodId,
+                communityFoodId: entry.communityFoodId)
+        }
+        exitSelectionMode()
+        showSaveAsMeal = true
+    }
+
+    // MARK: - Bulk Delete / Undo
+
+    private func handleBulkDelete() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        // Flush any pending single-entry undo first
+        if let prev = deletedEntry {
+            let id = prev.id
+            deletedEntry = nil
+            Task { try? await dailyLogStore.commitDelete(id: id) }
+        }
+        bulkDeletedEntries = dailyLogStore.removeEntries(ids: selectedEntryIds)
+        exitSelectionMode()
+    }
+
+    private func handleBulkUndo() {
+        guard !bulkDeletedEntries.isEmpty else { return }
+        dailyLogStore.restoreEntries(bulkDeletedEntries)
+        bulkDeletedEntries = []
+    }
+
+    private func handleBulkSnackbarDismiss() {
+        guard !bulkDeletedEntries.isEmpty else { return }
+        let entries = bulkDeletedEntries
+        bulkDeletedEntries = []
+        Task {
+            await withThrowingTaskGroup(of: Void.self) { group in
+                for entry in entries {
+                    group.addTask { try await dailyLogStore.commitDelete(id: entry.id) }
+                }
+                try? await group.waitForAll()
+            }
+        }
+    }
+
+    // MARK: - Single Delete / Undo
 
     private func handleDelete(_ id: String) {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()

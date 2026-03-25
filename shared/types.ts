@@ -165,7 +165,58 @@ export interface FoodEntry extends Macros {
   usdaFdcId?: number;
   customFoodId?: string;
   communityFoodId?: string;
+  savedMealId?: string;
+  mealInstanceId?: string;
   createdAt: string;
+}
+
+// --- Saved Meals ---
+
+export interface SavedMealItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  source: FoodSource;
+  usdaFdcId?: number;
+  customFoodId?: string;
+  communityFoodId?: string;
+}
+
+export interface SavedMeal {
+  id: string;
+  name: string;
+  items: SavedMealItem[];
+  createdAt: string;
+}
+
+export interface CreateSavedMealItemRequest {
+  name: string;
+  quantity: number;
+  unit: string;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  source: FoodSource;
+  usdaFdcId?: number;
+  customFoodId?: string;
+  communityFoodId?: string;
+}
+
+export interface CreateSavedMealRequest {
+  name: string;
+  items: CreateSavedMealItemRequest[];
+}
+
+export interface LogMealRequest {
+  date: string; // YYYY-MM-DD
+  mealLabel: MealLabel;
+  scaleFactor: number; // 1.0 = full meal
 }
 
 // --- USDA API Types ---
@@ -500,13 +551,40 @@ export interface WSScaleConfirmMessage {
   unit: string; // scale's unit: 'g' | 'ml' | 'oz'
 }
 
+export interface WSTouchEditItemMessage {
+  type: "touch_edit_item";
+  itemId: string;
+  quantity: number;
+  unit: string;
+}
+
+export interface WSTouchRemoveItemMessage {
+  type: "touch_remove_item";
+  itemId: string;
+}
+
+export interface WSTouchCompleteCreationMessage {
+  type: "touch_complete_creation";
+  itemId: string;
+  name: string;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  servingSize: number;
+  servingUnit: string;
+}
+
 export type WSClientMessage =
   | WSTranscriptMessage
   | WSAudioChunkMessage
   | WSSaveMessage
   | WSCancelMessage
   | WSBarcodeScanMessage
-  | WSScaleConfirmMessage;
+  | WSScaleConfirmMessage
+  | WSTouchEditItemMessage
+  | WSTouchRemoveItemMessage
+  | WSTouchCompleteCreationMessage;
 
 // Server → Client
 

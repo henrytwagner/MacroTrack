@@ -106,7 +106,7 @@ Session exit outcomes:
 
 Every Gemini response must be `{ action, payload }`. Valid actions: `ADD_ITEMS`, `EDIT_ITEM`, `REMOVE_ITEM`, `CLARIFY`, `CREATE_FOOD_RESPONSE`, `SESSION_END`. Context passed with every request: current transcript, draft items array, time of day (for meal label assignment), and current session state.
 
-Meal label assignment by time: Breakfast 5–10:59 AM, Lunch 11 AM–1:59 PM, Snack 2–4:59 PM, Dinner 5–9:59 PM, Snack 10 PM–4:59 AM. Food context can override (e.g. "breakfast burrito" at 1 PM → Breakfast).
+Meal labels are auto-categorized by `server/src/services/mealCategorizer.ts`. Entries are clustered by time proximity (>1 hour gap = new cluster), then ranked by total calories within broad time gates (morning < 11am, midday 11am–3pm, evening > 3pm). The highest-calorie cluster in each gate gets the primary label (breakfast/lunch/dinner); all others get "snack". Labels are recalculated on every entry create/update/delete. Kitchen Mode session entries are always grouped as one cluster via `voiceSessionId`.
 
 ## Barcode Scanner
 

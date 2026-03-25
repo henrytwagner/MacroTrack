@@ -262,6 +262,28 @@ struct ApiError: Error, LocalizedError, Sendable {
         return try? decoder.decode(BarcodeScanResult.self, from: data)
     }
 
+    // MARK: - Saved Meals
+
+    func getMeals() async throws -> [SavedMeal] {
+        return try await get("/api/meals")
+    }
+
+    func createMeal(_ data: CreateSavedMealRequest) async throws -> SavedMeal {
+        return try await post("/api/meals", body: data)
+    }
+
+    func updateMeal(id: String, data: CreateSavedMealRequest) async throws -> SavedMeal {
+        return try await post("/api/meals/\(id)", method: "PUT", body: data)
+    }
+
+    func deleteMeal(id: String) async throws {
+        try await delete("/api/meals/\(id)")
+    }
+
+    func logMeal(savedMealId: String, req: LogMealRequest) async throws -> [FoodEntry] {
+        return try await post("/api/meals/\(savedMealId)/log", body: req)
+    }
+
     // MARK: - Community Food Reporting
 
     func reportCommunityFood(id: String, reason: String, details: String? = nil) async throws {

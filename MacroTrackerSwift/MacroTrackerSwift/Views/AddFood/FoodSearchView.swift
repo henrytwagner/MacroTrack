@@ -27,14 +27,22 @@ struct FoodSearchView: View {
     @Environment(DateStore.self)     private var dateStore
 
     let onDismiss: () -> Void
+    /// When non-nil, the view is in ingredient-picker mode: FoodDetailSheet commits SavedMealItems
+    /// instead of FoodEntries, and tapping a saved meal copies its items individually.
+    var onAddIngredient: ((SavedMealItem) -> Void)? = nil
 
-    @State private var vm           = FoodSearchViewModel()
-    @State private var selectedTab  = 0
-    @State private var detailFood:  IdentifiedFood?      = nil
-    @State private var showBarcode: Bool                 = false
-    @State private var createFoodMode: CreateFoodMode?   = nil
-    @State private var barcodeError: String?             = nil
-    @State private var showBarcodeError: Bool            = false
+    @Environment(MealsStore.self) private var mealsStore
+
+    private var isIngredientMode: Bool { onAddIngredient != nil }
+
+    @State private var vm              = FoodSearchViewModel()
+    @State private var selectedTab     = 0
+    @State private var detailFood:     IdentifiedFood?    = nil
+    @State private var showBarcode:    Bool               = false
+    @State private var createFoodMode: CreateFoodMode?    = nil
+    @State private var barcodeError:   String?            = nil
+    @State private var showBarcodeError: Bool             = false
+    @State private var showMealCreation: Bool             = false
 
     @FocusState private var searchFocused: Bool
 
@@ -95,7 +103,8 @@ struct FoodSearchView: View {
                 onPublishCustom: { food in
                     detailFood = nil
                     createFoodMode = .publishFromCustom(food)
-                })
+                },
+                onAddToMeal: onAddIngredient)
             .environment(logStore)
             .environment(goalStore)
             .environment(dateStore)
@@ -119,6 +128,10 @@ struct FoodSearchView: View {
                 },
                 onDismiss: { showBarcode = false })
         }
+        .fullScreenCover(isPresented: $showMealCreation) {
+            MealCreationView(initialItems: [])
+                .environment(mealsStore)
+        }
         .alert("Barcode Not Found", isPresented: $showBarcodeError) {
             Button("Create Food") {
                 createFoodMode = .new(prefillName: nil, prefillBarcode: barcodeError)
@@ -136,12 +149,21 @@ struct FoodSearchView: View {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             onDismiss()
         } label: {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color.appTint)
-                .frame(width: Chrome.backButtonSize, height: Chrome.backButtonSize)
-                .contentShape(Circle())
-                .glassEffect(.regular.interactive(), in: Circle())
+            if isIngredientMode {
+                Text("Done")
+                    .font(.appSubhead).fontWeight(.semibold)
+                    .foregroundStyle(Color.appTint)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, 10)
+                    .glassEffect(.regular.interactive(), in: Capsule())
+            } else {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.appTint)
+                    .frame(width: Chrome.backButtonSize, height: Chrome.backButtonSize)
+                    .contentShape(Circle())
+                    .glassEffect(.regular.interactive(), in: Circle())
+            }
         }
         .buttonStyle(.plain)
     }
@@ -196,7 +218,11 @@ struct FoodSearchView: View {
 
                 Button {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    createFoodMode = .new(prefillName: nil, prefillBarcode: nil)
+                    if selectedTab == 2 {
+                        showMealCreation = true
+                    } else {
+                        createFoodMode = .new(prefillName: nil, prefillBarcode: nil)
+                    }
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 19, weight: .semibold))
@@ -259,7 +285,7 @@ struct FoodSearchView: View {
                             if i > 0 { Divider().padding(.leading, Spacing.lg) }
                             FoodSearchResultRow(
                                 food:         anyFood(from: food),
-                                showQuickAdd: true,
+                                showQuickAdd: !isIngredientMode,
                                 onTap:        { detailFood = IdentifiedFood(food: anyFood(from: food)) },
                                 onQuickAdd:   { Task { await quickAdd(food: anyFood(from: food)) } })
                         }
@@ -276,7 +302,7 @@ struct FoodSearchView: View {
                             if i > 0 { Divider().padding(.leading, Spacing.lg) }
                             FoodSearchResultRow(
                                 food:         anyFood(from: food),
-                                showQuickAdd: true,
+                                showQuickAdd: !isIngredientMode,
                                 onTap:        { detailFood = IdentifiedFood(food: anyFood(from: food)) },
                                 onQuickAdd:   { Task { await quickAdd(food: anyFood(from: food)) } })
                         }
@@ -475,24 +501,19 @@ struct FoodSearchView: View {
         }
     }
 
-    // MARK: - Meals Tab (stub)
+    // MARK: - Meals Tab
 
     private var mealsTab: some View {
-        VStack(spacing: 0) {
-            tabPageHeader("Meals")
-                .padding(.top, Spacing.sm)
-            Spacer()
-            VStack(spacing: Spacing.md) {
-                Image(systemName: "fork.knife.circle")
-                    .font(.system(size: 40))
-                    .foregroundStyle(Color.appTextTertiary)
-                Text("Saved meals coming soon.")
-                    .font(.appSubhead)
-                    .foregroundStyle(Color.appTextSecondary)
-            }
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        MealsListView(
+            scrollBottomInset: scrollBottomInset,
+            onCreateMeal:      { showMealCreation = true },
+            onDismiss:         onDismiss,
+            onPickMeal:        isIngredientMode
+                ? { meal in meal.items.forEach { onAddIngredient?($0) } }
+                : nil)
+        .environment(mealsStore)
+        .environment(logStore)
+        .environment(dateStore)
     }
 
     // MARK: - Barcode Handler

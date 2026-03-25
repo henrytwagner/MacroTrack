@@ -17,6 +17,7 @@ struct MacroTrackerSwiftApp: App {
     private let layoutStore      = DashboardLayoutStore.shared
     private let profileStore     = ProfileStore.shared
     private let tabRouter        = TabRouter.shared
+    private let mealsStore       = MealsStore.shared
 
     var body: some Scene {
         WindowGroup {
@@ -29,6 +30,7 @@ struct MacroTrackerSwiftApp: App {
                 .environment(layoutStore)
                 .environment(profileStore)
                 .environment(tabRouter)
+                .environment(mealsStore)
                 .preferredColorScheme(appearanceStore.colorScheme)
         }
     }

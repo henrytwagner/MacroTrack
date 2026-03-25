@@ -137,3 +137,105 @@ nonisolated func tryAutoConvert(
 
     return nil
 }
+
+// MARK: - Unit Conversion
+
+/// Converts fromQty in fromUnit to the equivalent quantity in toUnit.
+/// Handles same-system (weight↔weight, volume↔volume) via ratio tables.
+/// Handles cross-type (weight↔volume) when density (g/mL) is provided.
+/// Returns nil for abstract units or when density is needed but absent.
+nonisolated func convertUnit(
+    fromUnit: String,
+    fromQty: Double,
+    toUnit: String,
+    density: Double? = nil
+) -> Double? {
+    if let fromG = _Ratios.weightG[fromUnit], let toG = _Ratios.weightG[toUnit] {
+        return fromQty * fromG / toG
+    }
+    if let fromMl = _Ratios.volumeMl[fromUnit], let toMl = _Ratios.volumeMl[toUnit] {
+        return fromQty * fromMl / toMl
+    }
+    if let d = density {
+        if let fromG = _Ratios.weightG[fromUnit], let toMl = _Ratios.volumeMl[toUnit] {
+            return (fromQty * fromG) / (d * toMl)
+        }
+        if let fromMl = _Ratios.volumeMl[fromUnit], let toG = _Ratios.weightG[toUnit] {
+            return (d * fromQty * fromMl) / toG
+        }
+    }
+    return nil
+}
+
+// MARK: - Cross-Type Density
+
+/// Derives the established weight/volume density (g/mL) from existing conversions.
+/// Returns nil if no weight↔volume anchor exists or baseServingSize is 0.
+nonisolated func deriveDensity(
+    baseServingUnit: String,
+    baseServingSize: Double,
+    existingConversions: [(unitName: String, quantityInBaseServings: Double)]
+) -> Double? {
+    guard baseServingSize > 0 else { return nil }
+    if let baseG = _Ratios.weightG[baseServingUnit] {
+        for conv in existingConversions {
+            if let convMl = _Ratios.volumeMl[conv.unitName] {
+                return (conv.quantityInBaseServings * baseServingSize * baseG) / convMl
+            }
+        }
+    } else if let baseMl = _Ratios.volumeMl[baseServingUnit] {
+        for conv in existingConversions {
+            if let convG = _Ratios.weightG[conv.unitName] {
+                return convG / (conv.quantityInBaseServings * baseServingSize * baseMl)
+            }
+        }
+    }
+    return nil
+}
+
+/// Pre-fills form values for a cross-type conversion using an established density (g/mL).
+/// Returns (fromUnit, fromQty, toQty) anchored to baseServingSize — same convention as tryAutoConvert.
+/// Returns nil if toUnit is not a recognized weight or volume unit, or density is 0.
+nonisolated func suggestCrossTypeConversion(
+    toUnit: String,
+    baseServingUnit: String,
+    baseServingSize: Double,
+    density: Double
+) -> (fromUnit: String, fromQty: Double, toQty: Double)? {
+    guard density > 0, baseServingSize > 0 else { return nil }
+    if let baseG = _Ratios.weightG[baseServingUnit],
+       let toMl  = _Ratios.volumeMl[toUnit] {
+        let toQty = (baseServingSize * baseG) / (density * toMl)
+        return (fromUnit: baseServingUnit, fromQty: baseServingSize, toQty: toQty)
+    }
+    if let baseMl = _Ratios.volumeMl[baseServingUnit],
+       let toG    = _Ratios.weightG[toUnit] {
+        let toQty = (density * baseServingSize * baseMl) / toG
+        return (fromUnit: baseServingUnit, fromQty: baseServingSize, toQty: toQty)
+    }
+    return nil
+}
+
+/// Checks if newQIBS for toUnit implies a density that deviates >5% from establishedDensity.
+/// Returns (established, implied) if inconsistent, nil otherwise.
+nonisolated func checkCrossTypeConsistency(
+    toUnit: String,
+    newQIBS: Double,
+    baseServingUnit: String,
+    baseServingSize: Double,
+    establishedDensity: Double
+) -> (established: Double, implied: Double)? {
+    guard establishedDensity > 0, baseServingSize > 0, newQIBS > 0 else { return nil }
+    let implied: Double
+    if let baseG = _Ratios.weightG[baseServingUnit],
+       let toMl  = _Ratios.volumeMl[toUnit] {
+        implied = (newQIBS * baseServingSize * baseG) / toMl
+    } else if let baseMl = _Ratios.volumeMl[baseServingUnit],
+              let toG    = _Ratios.weightG[toUnit] {
+        implied = toG / (newQIBS * baseServingSize * baseMl)
+    } else {
+        return nil
+    }
+    let deviation = abs(implied - establishedDensity) / establishedDensity
+    return deviation > 0.05 ? (established: establishedDensity, implied: implied) : nil
+}

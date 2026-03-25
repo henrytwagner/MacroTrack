@@ -37,15 +37,10 @@ export function resetTmpIdCounter(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Meal label assignment based on time of day
+// Provisional meal label — overwritten by recategorizeMealsForDay on save
 // ---------------------------------------------------------------------------
 
-function getMealLabel(timeOfDay: string): MealLabel {
-  const [h] = timeOfDay.split(":").map(Number);
-  if (h >= 5 && h < 11) return "breakfast";
-  if (h >= 11 && h < 14) return "lunch";
-  if (h >= 14 && h < 17) return "snack";
-  if (h >= 17 && h < 22) return "dinner";
+function getProvisionalMealLabel(): MealLabel {
   return "snack";
 }
 
@@ -618,7 +613,15 @@ export async function lookupFoodForKitchenMode(
     };
   }
 
-  // Tier 3: USDA — check for disambiguation
+  // USDA is not searched automatically — user must explicitly request it.
+  return { status: "not_found", name };
+}
+
+/**
+ * Explicit USDA search for Kitchen Mode. Only called when the user has
+ * actively chosen to search USDA (via the food_choice card or voice).
+ */
+export async function searchUsdaForKitchenMode(name: string): Promise<KitchenLookupResult> {
   const usdaResults = await searchFoods(name);
   if (usdaResults.length === 0) {
     return { status: "not_found", name };
@@ -756,7 +759,7 @@ async function handleAddItems(
     return messages;
   }
 
-  const mealLabel = getMealLabel(context.timeOfDay);
+  const mealLabel = getProvisionalMealLabel();
 
   const foundItems: DraftItem[] = [];
   const assumedItems: DraftItem[] = [];

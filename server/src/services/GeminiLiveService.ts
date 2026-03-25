@@ -89,7 +89,12 @@ WORKFLOW:
 - When user mentions food → call lookup_food() immediately, do not wait.
 - lookup_food returns a single match → immediately call add_to_draft() with the returned food_ref, quantity=1 (or whatever quantity the user specified), and the serving_unit from the lookup result. Do NOT ask the user how much they want — just use 1 serving as the default. Say the name briefly after adding. Go silent.
 - lookup_food returns multiple matches → present the options verbally (briefly), wait for user choice, then call add_to_draft().
-- lookup_food returns not found → ask the user to tell you the macros per serving (calories, protein, carbs, fat, serving size and unit).
+- lookup_food returns not found → briefly tell the user the food wasn't found in their personal or community foods. Ask: "Would you like to create a custom food, or try the USDA database?" Wait for their answer. Do not proceed until they respond.
+- User says "create it" or similar → call begin_custom_food_creation(). Then ask for each nutrition value one at a time. Call report_nutrition_field() for EACH value as it is provided — call it separately for each field even if the user states multiple values at once. Required: calories, protein_g, carbs_g, fat_g, serving_size, serving_unit. When all required values have been reported, call create_custom_food().
+- User says "try USDA" or "search USDA" or similar → call search_usda(name) with the food name.
+- search_usda returns a single match → call add_to_draft() with the returned food_ref.
+- search_usda returns multiple matches → present the options briefly, wait for user choice, then call add_to_draft().
+- search_usda returns not found → tell the user and ask if they'd like to create a custom food.
 - User provides all macro values → call create_custom_food() with the exact values they stated. Do not fill in any values yourself.
 - User says "done", "save", "that's it", "all done" → call save_session().
 - User says "cancel", "never mind", "start over" → call cancel_session().
@@ -131,7 +136,7 @@ const FUNCTION_DECLARATIONS: GeminiFunctionDeclaration[] = [
         food_ref: { type: "STRING", description: "The foodRef string from lookup_food (e.g. 'custom:abc123', 'usda:12345', 'community:xyz')" } as object,
         quantity: { type: "NUMBER", description: "Amount to add" } as object,
         unit: { type: "STRING", description: "Unit for the amount" } as object,
-        meal_label: { type: "STRING", description: "Meal label. If omitted, inferred from time of day.", enum: ["breakfast", "lunch", "dinner", "snack"] } as object,
+        meal_label: { type: "STRING", description: "Meal label. Auto-categorized by the server based on time clustering — only provide if the user explicitly names a meal.", enum: ["breakfast", "lunch", "dinner", "snack"] } as object,
       },
       required: ["food_ref", "quantity", "unit"],
     } as object,
@@ -154,6 +159,43 @@ const FUNCTION_DECLARATIONS: GeminiFunctionDeclaration[] = [
         unit: { type: "STRING", description: "Unit for the logged quantity" } as object,
       },
       required: ["name", "calories", "protein_g", "carbs_g", "fat_g", "serving_size", "serving_unit"],
+    } as object,
+  },
+  {
+    name: "report_nutrition_field",
+    description:
+      "Report a single nutrition value the user has provided during custom food creation. Call once per value — even if the user states multiple values in one utterance, call this function separately for each field. Do NOT call create_custom_food until all required fields have been reported via this function.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        field_name: {
+          type: "STRING",
+          description: "One of: calories, protein_g, carbs_g, fat_g, serving_size, serving_unit, brand, barcode",
+        } as object,
+        value: {
+          type: "STRING",
+          description: "The value exactly as stated by the user (numeric for macros, string for serving_unit/brand/barcode)",
+        } as object,
+      },
+      required: ["field_name", "value"],
+    } as object,
+  },
+  {
+    name: "begin_custom_food_creation",
+    description:
+      "Start the custom food creation flow after the user has chosen to create a new food (following a lookup_food not_found result). Shows a creation card. Call this before asking for nutrition values.",
+    parameters: { type: "OBJECT", properties: {} } as object,
+  },
+  {
+    name: "search_usda",
+    description:
+      "Explicitly search the USDA database for a food. Only call this when the user has chosen to try USDA after lookup_food returned not_found. USDA data may be inconsistent — mention this briefly.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        name: { type: "STRING", description: "The food name to search in USDA" } as object,
+      },
+      required: ["name"],
     } as object,
   },
   {

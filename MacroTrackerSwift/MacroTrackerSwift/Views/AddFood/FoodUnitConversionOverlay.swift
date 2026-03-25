@@ -31,9 +31,11 @@ struct FoodUnitConversionOverlay: View {
     @State private var formFromQty:     String = "1"
     @State private var formToQty:       String = ""
     @State private var formPickingFrom: Bool   = false
-    @State private var cascadeWarning:  [ConflictItem] = []
-    @State private var formError:       String? = nil
-    @State private var isSaving:        Bool   = false
+    @State private var cascadeWarning:   [ConflictItem] = []
+    @State private var crossTypeWarning: (established: Double, implied: Double)? = nil
+    @State private var crossTypeSuggested: Bool = false
+    @State private var formError:        String? = nil
+    @State private var isSaving:         Bool   = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -302,7 +304,7 @@ struct FoodUnitConversionOverlay: View {
                         .foregroundStyle(Color.appTextSecondary)
 
                     // To qty
-                    TextField("1", text: $formToQty)
+                    TextField(toQtyPlaceholder, text: $formToQty)
                         .font(.appBody)
                         .keyboardType(.decimalPad)
                         .padding(Spacing.md)
@@ -324,9 +326,18 @@ struct FoodUnitConversionOverlay: View {
                     VStack(spacing: 0) {
                         ForEach(fromUnitOptions, id: \.self) { unit in
                             Button {
-                                formFromUnit    = unit
-                                cascadeWarning  = []
-                                formPickingFrom = false
+                                formPickingFrom  = false
+                                cascadeWarning   = []
+                                crossTypeWarning = nil
+                                crossTypeSuggested = false
+                                // Recalculate toQty for the new fromUnit when a conversion path exists
+                                if let fq = Double(formFromQty), fq > 0,
+                                   let toQty = suggestedToQty(fromUnit: unit, fromQty: fq) {
+                                    formToQty = Self.fmt(toQty)
+                                } else {
+                                    formToQty = ""
+                                }
+                                formFromUnit = unit
                             } label: {
                                 HStack {
                                     Text(unit)
@@ -351,6 +362,18 @@ struct FoodUnitConversionOverlay: View {
                     .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
                 }
 
+                // Density suggestion hint
+                if crossTypeSuggested {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.appTint)
+                        Text("Suggested based on existing conversions.")
+                            .font(.appCaption1)
+                            .foregroundStyle(Color.appTextSecondary)
+                    }
+                }
+
                 // Cascade warning box
                 if !cascadeWarning.isEmpty {
                     VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -368,6 +391,25 @@ struct FoodUnitConversionOverlay: View {
                     }
                     .padding(Spacing.md)
                     .background(Color.orange.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
+                }
+
+                // Cross-type density mismatch warning
+                if let ctw = crossTypeWarning {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("Density mismatch")
+                            .font(.appCaption1)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(Color.appWarning)
+                        Text("This implies \(Self.fmtDensity(ctw.implied)) g/mL, but existing conversions suggest \(Self.fmtDensity(ctw.established)) g/mL.")
+                            .font(.appCaption1)
+                            .foregroundStyle(Color.appTextSecondary)
+                        Text("Tap \"Save anyway\" to keep this value.")
+                            .font(.appCaption1)
+                            .foregroundStyle(Color.appTextSecondary)
+                    }
+                    .padding(Spacing.md)
+                    .background(Color.appWarning.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
                 }
 
@@ -399,10 +441,13 @@ struct FoodUnitConversionOverlay: View {
                 // Save (or Save + update related)
                 Button {
                     Task {
-                        if cascadeWarning.isEmpty {
+                        if cascadeWarning.isEmpty && crossTypeWarning == nil {
                             await saveForm(editingUnit: editingUnit)
-                        } else {
+                        } else if !cascadeWarning.isEmpty {
                             await saveForm(editingUnit: editingUnit, cascade: cascadeWarning)
+                        } else {
+                            // crossTypeWarning acknowledged — cleared inside saveForm
+                            await saveForm(editingUnit: editingUnit)
                         }
                     }
                 } label: {
@@ -410,7 +455,9 @@ struct FoodUnitConversionOverlay: View {
                         if isSaving {
                             ProgressView().tint(.white)
                         } else {
-                            Text(cascadeWarning.isEmpty ? "Save" : "Save + update related")
+                            Text(cascadeWarning.isEmpty && crossTypeWarning == nil
+                                 ? "Save"
+                                 : (!cascadeWarning.isEmpty ? "Save + update related" : "Save anyway"))
                                 .font(.appSubhead)
                                 .fontWeight(.semibold)
                         }
@@ -449,8 +496,31 @@ struct FoodUnitConversionOverlay: View {
 
     private var formCanSave: Bool {
         guard let fq = Double(formFromQty), fq > 0 else { return false }
-        guard let tq = Double(formToQty),   tq > 0 else { return false }
+        let tqStr = formToQty.isEmpty ? toQtyPlaceholder : formToQty
+        guard let tq = Double(tqStr), tq > 0 else { return false }
         return !pendingToUnit.isEmpty
+    }
+
+    /// Dynamic placeholder for the to-qty field: the auto-computed equivalent of
+    /// the current fromQty/fromUnit in pendingToUnit. Empty when fromQty is empty
+    /// or no conversion path exists.
+    private var toQtyPlaceholder: String {
+        guard let fq = Double(formFromQty), fq > 0 else { return "" }
+        guard let suggested = suggestedToQty(fromUnit: formFromUnit, fromQty: fq) else { return "" }
+        return Self.fmt(suggested)
+    }
+
+    /// Converts fromQty in fromUnit to pendingToUnit, routing through the base
+    /// serving unit and using density for cross-type pairs if available.
+    private func suggestedToQty(fromUnit: String, fromQty: Double) -> Double? {
+        let baseServings = fromQtyToBaseServings(fromUnit, fromQty)
+        let absAmount    = baseServings * baseServingSize
+        let existing     = allQIBSTuples().filter { $0.unitName != pendingToUnit }
+        let density      = deriveDensity(
+            baseServingUnit:     baseServingUnit,
+            baseServingSize:     baseServingSize,
+            existingConversions: existing)
+        return convertUnit(fromUnit: baseServingUnit, fromQty: absAmount, toUnit: pendingToUnit, density: density)
     }
 
     private func allQIBSTuples() -> [(unitName: String, quantityInBaseServings: Double)] {
@@ -475,8 +545,27 @@ struct FoodUnitConversionOverlay: View {
             formToQty    = Self.fmt(auto.toQty)
         } else {
             formFromUnit = baseServingUnit
-            formFromQty  = ""
-            formToQty    = "1"
+            let allQIBS  = allQIBSTuples()
+            if let density = deriveDensity(
+                    baseServingUnit:     baseServingUnit,
+                    baseServingSize:     baseServingSize,
+                    existingConversions: allQIBS),
+               let suggested = suggestCrossTypeConversion(
+                    toUnit:          unit,
+                    baseServingUnit: baseServingUnit,
+                    baseServingSize: baseServingSize,
+                    density:         density)
+            {
+                formFromUnit       = suggested.fromUnit
+                formFromQty        = Self.fmt(suggested.fromQty)
+                formToQty          = Self.fmt(suggested.toQty)
+                crossTypeSuggested = true
+            } else {
+                // Abstract or unknown cross-type unit — user must fill in both values
+                formFromQty        = ""
+                formToQty          = ""
+                crossTypeSuggested = false
+            }
         }
         overlayPanel = .form(editingUnit: nil)
     }
@@ -489,10 +578,12 @@ struct FoodUnitConversionOverlay: View {
         formFromUnit    = baseServingUnit
         formFromQty     = Self.fmt(qibs * baseServingSize)
         formToQty       = "1"
-        cascadeWarning  = []
-        formPickingFrom = false
-        formError       = nil
-        overlayPanel    = .form(editingUnit: unitName)
+        cascadeWarning     = []
+        crossTypeWarning   = nil
+        crossTypeSuggested = false
+        formPickingFrom    = false
+        formError          = nil
+        overlayPanel       = .form(editingUnit: unitName)
     }
 
     private func deleteUnit(_ unitName: String) {
@@ -517,17 +608,19 @@ struct FoodUnitConversionOverlay: View {
     }
 
     private func saveForm(editingUnit: String?, cascade: [ConflictItem] = []) async {
+        let toQtyStr = formToQty.isEmpty ? toQtyPlaceholder : formToQty
         guard let fromQty = Double(formFromQty), fromQty > 0,
-              let toQty   = Double(formToQty),   toQty   > 0,
+              let toQty   = Double(toQtyStr),    toQty   > 0,
               !pendingToUnit.isEmpty
         else { formError = "Please enter valid numbers."; return }
 
         let qibs = computeQIBS(fromUnit: formFromUnit, fromQty: fromQty, toQty: toQty)
         guard qibs > 0 else { formError = "Invalid conversion."; return }
 
-        // Conflict check (only when no cascade override was provided)
-        if cascade.isEmpty {
+        // Conflict checks (only when no override has been provided/acknowledged)
+        if cascade.isEmpty && crossTypeWarning == nil {
             let existingForConflict = allQIBSTuples().filter { $0.unitName != pendingToUnit }
+            // 1. Same-type cascade check (existing)
             let conflicts = checkConflicts(
                 toUnit:              pendingToUnit,
                 newQIBS:             qibs,
@@ -536,7 +629,23 @@ struct FoodUnitConversionOverlay: View {
                 cascadeWarning = conflicts
                 return
             }
+            // 2. Cross-type density consistency check
+            if let density = deriveDensity(
+                    baseServingUnit:     baseServingUnit,
+                    baseServingSize:     baseServingSize,
+                    existingConversions: existingForConflict),
+               let mismatch = checkCrossTypeConsistency(
+                    toUnit:              pendingToUnit,
+                    newQIBS:             qibs,
+                    baseServingUnit:     baseServingUnit,
+                    baseServingSize:     baseServingSize,
+                    establishedDensity:  density)
+            {
+                crossTypeWarning = mismatch
+                return
+            }
         }
+        crossTypeWarning = nil
 
         isSaving = true
         if isDraftMode {
@@ -573,13 +682,15 @@ struct FoodUnitConversionOverlay: View {
     }
 
     private func resetFormState() {
-        pendingToUnit   = ""
-        formFromUnit    = ""
-        formFromQty     = "1"
-        formToQty       = ""
-        formPickingFrom = false
-        cascadeWarning  = []
-        formError       = nil
+        pendingToUnit      = ""
+        formFromUnit       = ""
+        formFromQty        = "1"
+        formToQty          = ""
+        formPickingFrom    = false
+        cascadeWarning     = []
+        crossTypeWarning   = nil
+        crossTypeSuggested = false
+        formError          = nil
     }
 
     // MARK: - QIBS Computation
@@ -601,6 +712,10 @@ struct FoodUnitConversionOverlay: View {
     }
 
     // MARK: - Formatting
+
+    private static func fmtDensity(_ d: Double) -> String {
+        String(format: "%.2f", d)
+    }
 
     private static func fmt(_ v: Double) -> String {
         let r = (v * 1000).rounded() / 1000

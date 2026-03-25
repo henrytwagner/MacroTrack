@@ -3,42 +3,103 @@ import UIKit
 
 // MARK: - FoodDetailSheet
 
-/// Add/edit sheet for a food item. Presented via .sheet(item: $detailFood).
+/// Add/edit sheet for a food item.
+/// - Add mode: presented via .sheet(item: $detailFood) from FoodSearchView.
+/// - Edit mode: presented via .sheet(item: $editingEntry) from LogView — uses ratio-based scaling
+///   over the originally logged macros, no food lookup required.
 @MainActor
 struct FoodDetailSheet: View {
     @Environment(DailyLogStore.self) private var logStore
     @Environment(GoalStore.self)     private var goalStore
     @Environment(DateStore.self)     private var dateStore
 
-    let identifiedFood: IdentifiedFood
-    let onDismiss:      () -> Void
-    let onEditCustom:   ((CustomFood) -> Void)?
+    let identifiedFood:  IdentifiedFood
+    let editingEntry:    FoodEntry?       // non-nil when editing an existing log entry
+    let onDismiss:       () -> Void
+    let onEditCustom:    ((CustomFood) -> Void)?
     let onPublishCustom: ((CustomFood) -> Void)?
+    /// When non-nil, the sheet is in "ingredient picker" mode: the button says "Add to Meal"
+    /// and calls this closure instead of writing a FoodEntry to the log.
+    let onAddToMeal:     ((SavedMealItem) -> Void)?
 
     @State private var vm: FoodDetailViewModel
     @State private var showCustomizeConfirm: Bool = false
 
+    // MARK: - Inits
+
+    /// Add mode — called from FoodSearchView.
     init(identifiedFood: IdentifiedFood,
          onDismiss: @escaping () -> Void,
-         onEditCustom: ((CustomFood) -> Void)? = nil,
-         onPublishCustom: ((CustomFood) -> Void)? = nil) {
+         onEditCustom:    ((CustomFood) -> Void)? = nil,
+         onPublishCustom: ((CustomFood) -> Void)? = nil,
+         onAddToMeal:     ((SavedMealItem) -> Void)? = nil) {
         self.identifiedFood  = identifiedFood
+        self.editingEntry    = nil
         self.onDismiss       = onDismiss
         self.onEditCustom    = onEditCustom
         self.onPublishCustom = onPublishCustom
+        self.onAddToMeal     = onAddToMeal
         _vm = State(initialValue: FoodDetailViewModel(food: identifiedFood.food, mode: .add))
     }
 
-    // Computed preview: today's logged totals + this food portion
+    /// Edit mode — called from LogView when tapping a logged entry.
+    /// Synthesizes an AnyFood from the entry so the existing VM's ratio-based scaling works correctly:
+    /// `scaleFactor = newQty / entry.quantity`, `scaledMacros = entryMacros × scaleFactor`.
+    init(entry: FoodEntry,
+         onDismiss: @escaping () -> Void) {
+        // Build a synthetic CustomFood whose base serving == entry's logged amount.
+        // This makes scaleFactor = newQty / entry.quantity = pure ratio scaling.
+        let syntheticFood = CustomFood(
+            id:            entry.customFoodId ?? entry.id,
+            name:          entry.name,
+            brandName:     nil,
+            servingSize:   entry.quantity,
+            servingUnit:   entry.unit,
+            calories:      entry.calories,
+            proteinG:      entry.proteinG,
+            carbsG:        entry.carbsG,
+            fatG:          entry.fatG,
+            sodiumMg:      nil,
+            cholesterolMg: nil,
+            fiberG:        nil,
+            sugarG:        nil,
+            saturatedFatG: nil,
+            transFatG:     nil,
+            barcode:       nil,
+            createdAt:     "",
+            updatedAt:     "")
+        let anyFood = AnyFood.custom(syntheticFood)
+        self.identifiedFood  = IdentifiedFood(food: anyFood, sourceOverride: entry.source)
+        self.editingEntry    = entry
+        self.onDismiss       = onDismiss
+        self.onEditCustom    = nil
+        self.onPublishCustom = nil
+        self.onAddToMeal     = nil
+        _vm = State(initialValue: FoodDetailViewModel(food: anyFood, mode: .edit(entry)))
+    }
+
+    // MARK: - Computed preview totals
+
     private var previewTotals: Macros {
         let t = logStore.totals
         let m = vm.scaledMacros
+        if let old = editingEntry {
+            // Edit mode: subtract the old logged values, add the new scaled values
+            return Macros(
+                calories: t.calories - old.calories + m.calories,
+                proteinG: t.proteinG - old.proteinG + m.proteinG,
+                carbsG:   t.carbsG   - old.carbsG   + m.carbsG,
+                fatG:     t.fatG     - old.fatG      + m.fatG)
+        }
+        // Add mode: day totals + this portion
         return Macros(
             calories: t.calories + m.calories,
             proteinG: t.proteinG + m.proteinG,
             carbsG:   t.carbsG   + m.carbsG,
             fatG:     t.fatG     + m.fatG)
     }
+
+    private var isEditMode: Bool { editingEntry != nil }
 
     var body: some View {
         ZStack {
@@ -48,7 +109,7 @@ struct FoodDetailSheet: View {
                     macroSection
                     foodInfoSection
                     quantitySection
-                    customFoodActionsSection
+                    if !isEditMode { customFoodActionsSection }
                     Spacer(minLength: 100)
                 }
                 .padding(.top, Spacing.lg)
@@ -85,28 +146,29 @@ struct FoodDetailSheet: View {
             }
         }
         .safeAreaInset(edge: .bottom) { saveButton }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .task {
             await vm.loadConversions()
-            await vm.loadPreferences()
+            if !isEditMode { await vm.loadPreferences() }
         }
     }
 
-    // MARK: - Food Info (name + serving, shown below macro section)
+    // MARK: - Food Info
 
     private var foodInfoSection: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
+        let source = identifiedFood.sourceOverride ?? identifiedFood.food.foodSource
+        return VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack(spacing: Spacing.sm) {
                 Text(identifiedFood.food.displayName)
                     .font(.appTitle2)
                     .foregroundStyle(Color.appText)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                Image(systemName: FoodSourceIndicator.systemImage(for: identifiedFood.food.foodSource))
+                Image(systemName: FoodSourceIndicator.systemImage(for: source))
                     .font(.system(size: 20))
-                    .foregroundStyle(FoodSourceIndicator.accentColor(for: identifiedFood.food.foodSource))
-                    .accessibilityLabel(sourceAccessibilityLabel)
+                    .foregroundStyle(FoodSourceIndicator.accentColor(for: source))
+                    .accessibilityLabel(sourceAccessibilityLabel(source))
             }
 
             Text("Serving: \(Self.fmt(identifiedFood.food.baseServingSize)) \(identifiedFood.food.baseServingUnit)")
@@ -116,8 +178,8 @@ struct FoodDetailSheet: View {
         .padding(.horizontal, Spacing.lg)
     }
 
-    private var sourceAccessibilityLabel: String {
-        switch identifiedFood.food.foodSource {
+    private func sourceAccessibilityLabel(_ source: FoodSource) -> String {
+        switch source {
         case .custom:    return "My food"
         case .community: return "Community food"
         case .database:  return "USDA database food"
@@ -131,7 +193,7 @@ struct FoodDetailSheet: View {
         let goals = goalStore.goalsByDate[dateStore.selectedDate] ?? nil
 
         return VStack(spacing: Spacing.lg) {
-            // Progress rings — day preview (today's totals + this portion)
+            // Progress rings — day preview
             MacroRingProgress(
                 totals:          previewTotals,
                 goals:           goals,
@@ -206,21 +268,22 @@ struct FoodDetailSheet: View {
                 }
             }
 
-            // Manage unit conversions (custom/USDA foods)
-            Button {
-                vm.overlayPanel = .preview
-            } label: {
-                Text("Manage units")
-                    .font(.appCaption1)
-                    .foregroundStyle(Color.appTextSecondary)
+            // Manage unit conversions — only shown in add mode (edit mode uses logged units)
+            if !isEditMode {
+                Button {
+                    vm.overlayPanel = .preview
+                } label: {
+                    Text("Manage units")
+                        .font(.appCaption1)
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, Spacing.lg)
     }
 
-
-    // MARK: - Custom Food Actions
+    // MARK: - Custom Food Actions (add mode only)
 
     @ViewBuilder
     private var customFoodActionsSection: some View {
@@ -355,12 +418,37 @@ struct FoodDetailSheet: View {
     private var saveButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            Task {
-                do {
-                    _ = try await vm.saveEntry(date: dateStore.selectedDate, logStore: logStore)
-                    onDismiss()
-                } catch {
-                    // TODO: surface error
+            if let addToMeal = onAddToMeal {
+                // Ingredient-picker mode: build a SavedMealItem and hand it back.
+                let m    = vm.scaledMacros
+                let food = identifiedFood.food
+                let item = SavedMealItem(
+                    id:              UUID().uuidString,
+                    name:            food.displayName,
+                    quantity:        vm.quantity,
+                    unit:            vm.selectedUnit,
+                    calories:        m.calories,
+                    proteinG:        m.proteinG,
+                    carbsG:          m.carbsG,
+                    fatG:            m.fatG,
+                    source:          food.foodSource,
+                    usdaFdcId:       food.asUSDA?.fdcId,
+                    customFoodId:    food.asCustomFood?.id,
+                    communityFoodId: food.asCommunityFood?.id)
+                addToMeal(item)
+                onDismiss()
+            } else {
+                Task {
+                    do {
+                        if let entry = editingEntry {
+                            _ = try await vm.updateEntry(id: entry.id, logStore: logStore)
+                        } else {
+                            _ = try await vm.saveEntry(date: dateStore.selectedDate, logStore: logStore)
+                        }
+                        onDismiss()
+                    } catch {
+                        // TODO: surface error
+                    }
                 }
             }
         } label: {
@@ -368,7 +456,10 @@ struct FoodDetailSheet: View {
                 if vm.isSaving {
                     ProgressView().tint(.white)
                 } else {
-                    Text("Add to Log")
+                    let label = onAddToMeal != nil ? "Add to Meal"
+                               : isEditMode       ? "Save"
+                               :                    "Add to Log"
+                    Text(label)
                         .font(.appSubhead)
                         .fontWeight(.semibold)
                 }

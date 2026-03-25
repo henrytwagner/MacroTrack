@@ -15,6 +15,10 @@ enum AudioCaptureError: Error {
 /// resamples to 16 kHz int16 mono, and streams base64 audioChunk messages
 /// over the active WSClient connection.
 ///
+/// **Pre-roll buffer:** To avoid clipping the onset of short commands ("add", "done"),
+/// the last ~300ms of audio is continuously buffered. When VAD fires, the pre-roll
+/// is flushed first so Gemini receives the full utterance including the leading consonant.
+///
 /// Isolation note: `engine`, `converter`, and VAD state are marked
 /// `@ObservationIgnored nonisolated(unsafe)` because they are read from the real-time
 /// audio tap callback (which runs on a non-MainActor thread). All writes happen only
@@ -50,6 +54,13 @@ final class AudioCaptureService: @unchecked Sendable {
     @ObservationIgnored nonisolated private let silenceGracePeriod: TimeInterval = 0.6
     @ObservationIgnored nonisolated(unsafe) private var tapSequence = 0
 
+    // MARK: - Pre-roll ring buffer (captures ~300ms before VAD trigger)
+    /// At 16 kHz with 1024-frame taps, each chunk is ~64ms. 5 chunks ≈ 320ms of pre-roll.
+    @ObservationIgnored nonisolated private let preRollCapacity = 5
+    @ObservationIgnored nonisolated(unsafe) private var preRollBuffer: [Data] = []
+    /// Whether we were in "sending" state on the previous tap (VAD was active).
+    @ObservationIgnored nonisolated(unsafe) private var wasSending = false
+
     private init() {}
 
     // MARK: - Permission
@@ -68,7 +79,7 @@ final class AudioCaptureService: @unchecked Sendable {
         guard !isCapturing else { return }
 
         let avSession = AVAudioSession.sharedInstance()
-        try avSession.setCategory(.playAndRecord, mode: .measurement,
+        try avSession.setCategory(.playAndRecord, mode: .voiceChat,
                                   options: [.defaultToSpeaker, .allowBluetoothHFP, .mixWithOthers])
         try avSession.setActive(true)
 
@@ -81,6 +92,8 @@ final class AudioCaptureService: @unchecked Sendable {
         converter     = conv
         lastVoiceTime = Date().timeIntervalSinceReferenceDate
         tapSequence   = 0
+        preRollBuffer = []
+        wasSending    = false
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: hwFormat) { [weak self] buffer, _ in
             self?.processTap(buffer: buffer)
@@ -104,6 +117,8 @@ final class AudioCaptureService: @unchecked Sendable {
         converter   = nil
         isCapturing = false
         vadActive   = false
+        preRollBuffer = []
+        wasSending    = false
         // AVAudioSession remains active — managed by KitchenModeViewModel lifecycle
     }
 
@@ -123,15 +138,10 @@ final class AudioCaptureService: @unchecked Sendable {
         let rms = sqrtf(sumSq / Float(frameCount))
 
         let now = Date().timeIntervalSinceReferenceDate
-        let isVoicedNow = rms >= silenceThresholdRMS  // true only for frames above threshold
+        let isVoicedNow = rms >= silenceThresholdRMS
         if isVoicedNow { lastVoiceTime = now }
-        // Drop the buffer if we've been silent longer than the grace period
-        guard now - lastVoiceTime < silenceGracePeriod else {
-            Task { @MainActor in AudioCaptureService.shared.vadActive = false }
-            return
-        }
 
-        // Downsample hardware format → 16 kHz int16
+        // Downsample hardware format → 16 kHz int16 (always, even during silence — needed for pre-roll)
         guard let conv = converter else { return }
 
         let outCapacity = AVAudioFrameCount(
@@ -152,17 +162,49 @@ final class AudioCaptureService: @unchecked Sendable {
               let int16Ptr = outBuf.int16ChannelData else { return }
 
         let byteCount = Int(outBuf.frameLength) * MemoryLayout<Int16>.size
-        let rawData   = Data(bytes: int16Ptr[0], count: byteCount)
-        let b64       = rawData.base64EncodedString()
+        let chunkData = Data(bytes: int16Ptr[0], count: byteCount)
 
-        let seq = tapSequence
-        tapSequence += 1
+        let shouldSend = now - lastVoiceTime < silenceGracePeriod
 
-        // Hop to MainActor only for the WS send and observable state updates — very cheap
-        Task { @MainActor in
-            WSClient.shared.send(.audioChunk(data: b64, sequence: seq))
-            AudioCaptureService.shared.chunksSent += 1
-            AudioCaptureService.shared.vadActive = isVoicedNow
+        if shouldSend {
+            // VAD active — send audio
+
+            // If we just transitioned from silent→voiced, flush the pre-roll buffer first.
+            // This captures the speech onset that was buffered before VAD triggered.
+            if !wasSending && !preRollBuffer.isEmpty {
+                let preRollChunks = preRollBuffer
+                preRollBuffer = []
+                for chunk in preRollChunks {
+                    let b64 = chunk.base64EncodedString()
+                    let seq = tapSequence
+                    tapSequence += 1
+                    Task { @MainActor in
+                        WSClient.shared.send(.audioChunk(data: b64, sequence: seq))
+                        AudioCaptureService.shared.chunksSent += 1
+                    }
+                }
+            }
+            wasSending = true
+
+            // Send the current chunk
+            let b64 = chunkData.base64EncodedString()
+            let seq = tapSequence
+            tapSequence += 1
+
+            Task { @MainActor in
+                WSClient.shared.send(.audioChunk(data: b64, sequence: seq))
+                AudioCaptureService.shared.chunksSent += 1
+                AudioCaptureService.shared.vadActive = isVoicedNow
+            }
+        } else {
+            // Silent — buffer for pre-roll, don't send
+            wasSending = false
+            preRollBuffer.append(chunkData)
+            if preRollBuffer.count > preRollCapacity {
+                preRollBuffer.removeFirst(preRollBuffer.count - preRollCapacity)
+            }
+
+            Task { @MainActor in AudioCaptureService.shared.vadActive = false }
         }
     }
 }

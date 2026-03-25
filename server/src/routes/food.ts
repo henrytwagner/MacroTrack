@@ -3,6 +3,7 @@ import { prisma } from "../db/client.js";
 import { getDefaultUserId } from "../db/defaultUser.js";
 import { searchFoods } from "../services/usda.js";
 import { mapCommunityFood } from "./communityFood.js";
+import { recategorizeMealsForDay } from "../services/mealCategorizer.js";
 import type {
   FoodEntry,
   CreateFoodEntryRequest,
@@ -38,6 +39,8 @@ function mapEntry(entry: {
   usdaFdcId: number | null;
   customFoodId: string | null;
   communityFoodId: string | null;
+  savedMealId?: string | null;
+  mealInstanceId?: string | null;
   createdAt: Date;
 }): FoodEntry {
   return {
@@ -55,6 +58,8 @@ function mapEntry(entry: {
     usdaFdcId: entry.usdaFdcId ?? undefined,
     customFoodId: entry.customFoodId ?? undefined,
     communityFoodId: entry.communityFoodId ?? undefined,
+    savedMealId: entry.savedMealId ?? undefined,
+    mealInstanceId: entry.mealInstanceId ?? undefined,
     createdAt: entry.createdAt.toISOString(),
   };
 }
@@ -267,7 +272,11 @@ export async function foodRoutes(app: FastifyInstance) {
         }).catch(() => {});
       }
 
-      return reply.code(201).send(mapEntry(entry));
+      await recategorizeMealsForDay(userId, new Date(body.date));
+
+      // Re-fetch the entry to get the updated mealLabel
+      const updated = await prisma.foodEntry.findUnique({ where: { id: entry.id } });
+      return reply.code(201).send(mapEntry(updated ?? entry));
     },
   );
 
@@ -295,6 +304,13 @@ export async function foodRoutes(app: FastifyInstance) {
         },
       });
 
+      // Recategorize if calories changed (could shift meal rankings)
+      if (body.calories !== undefined) {
+        await recategorizeMealsForDay(existing.userId, existing.date);
+        const updated = await prisma.foodEntry.findUnique({ where: { id } });
+        return reply.send(mapEntry(updated ?? entry));
+      }
+
       return reply.send(mapEntry(entry));
     },
   );
@@ -311,6 +327,7 @@ export async function foodRoutes(app: FastifyInstance) {
       }
 
       await prisma.foodEntry.delete({ where: { id } });
+      await recategorizeMealsForDay(existing.userId, existing.date);
       return reply.code(204).send();
     },
   );

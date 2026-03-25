@@ -25,6 +25,10 @@ final class AudioPlaybackService: @unchecked Sendable {
     // MARK: - Public state (MainActor — observed by SwiftUI)
     private(set) var isGeminiSpeaking = false
 
+    /// When true, incoming audio chunks are silently dropped and isGeminiSpeaking stays false.
+    /// Used during inline card editing to prevent Gemini audio from triggering view re-renders.
+    var muted = false
+
     // MARK: - Private state (MainActor)
     @ObservationIgnored private var isEngineRunning = false
     @ObservationIgnored private var scheduledCount  = 0
@@ -54,7 +58,7 @@ final class AudioPlaybackService: @unchecked Sendable {
     func startEngine() throws {
         guard !isEngineRunning else { return }
         let avSession = AVAudioSession.sharedInstance()
-        try avSession.setCategory(.playAndRecord, mode: .measurement,
+        try avSession.setCategory(.playAndRecord, mode: .voiceChat,
                                   options: [.defaultToSpeaker, .allowBluetoothHFP, .mixWithOthers])
         try avSession.setActive(true)
         engine.prepare()
@@ -85,6 +89,7 @@ final class AudioPlaybackService: @unchecked Sendable {
             print("[AudioPlayback] enqueue called but engine not running — dropping")
             return
         }
+        guard !muted else { return }
         guard let rawData = Data(base64Encoded: base64Data), !rawData.isEmpty else {
             print("[AudioPlayback] enqueue: base64 decode failed, len=\(base64Data.count)")
             return

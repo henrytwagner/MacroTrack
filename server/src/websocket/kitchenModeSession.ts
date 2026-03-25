@@ -16,16 +16,20 @@ import { prisma } from "../db/client.js";
 import { getDefaultUserId } from "../db/defaultUser.js";
 import {
   lookupFoodForKitchenMode,
+  searchUsdaForKitchenMode,
   buildDraftItemFromRef,
   handleScaleConfirm,
   shouldDisambiguate,
 } from "../services/foodParser.js";
 import { GeminiLiveService } from "../services/GeminiLiveService.js";
 import { searchFoods } from "../services/usda.js";
+import { recategorizeMealsForDay } from "../services/mealCategorizer.js";
 
 import type {
   DraftItem,
   MealLabel,
+  CreatingFoodProgress,
+  CreatingFoodField,
   WSClientMessage,
   WSServerMessage,
   WSItemsAddedMessage,
@@ -36,7 +40,10 @@ import type {
   WSSessionSavedMessage,
   WSSessionCancelledMessage,
   WSDraftReplacedMessage,
+  WSCreateFoodPromptMessage,
+  WSCreateFoodFieldMessage,
   WSCreateFoodCompleteMessage,
+  WSFoodChoiceMessage,
   WSDisambiguateMessage,
   WSAudioDataMessage,
   WSServerTranscriptMessage,
@@ -49,6 +56,7 @@ import type {
 interface KitchenSession {
   userId: string;
   date: string;
+  voiceSessionId: string;
   items: DraftItem[];
   customFoodsCreatedThisSession: string[];
   draftHistory: DraftItem[][];
@@ -56,6 +64,13 @@ interface KitchenSession {
   gemini: GeminiLiveService;
   socket: WebSocket;
   completed: boolean;
+  /** Tracks a food_choice card awaiting user decision (create vs USDA) */
+  pendingChoiceId: string | null;
+  pendingChoiceName: string | null;
+  /** Tracks a food currently being created via report_nutrition_field calls */
+  pendingCreationId: string | null;
+  pendingCreationName: string | null;
+  pendingCreationValues: Partial<CreatingFoodProgress>;
 }
 
 // ---------------------------------------------------------------------------
@@ -68,18 +83,8 @@ function send(socket: WebSocket, message: WSServerMessage): void {
   }
 }
 
-function getTimeOfDay(): string {
-  const now = new Date();
-  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-}
-
-function getMealLabel(timeOfDay?: string): MealLabel {
-  const t = timeOfDay ?? getTimeOfDay();
-  const [h] = t.split(":").map(Number);
-  if (h >= 5 && h < 11) return "breakfast";
-  if (h >= 11 && h < 14) return "lunch";
-  if (h >= 14 && h < 17) return "snack";
-  if (h >= 17 && h < 22) return "dinner";
+/** Provisional meal label for draft items — overwritten by recategorizeMealsForDay on save. */
+function getProvisionalMealLabel(): MealLabel {
   return "snack";
 }
 
@@ -105,11 +110,22 @@ async function handleLookupFood(
   const result = await lookupFoodForKitchenMode(name, session.userId);
 
   if (result.status === "not_found") {
+    const choiceId = `tmp-choice-${Date.now()}`;
+    session.pendingChoiceId = choiceId;
+    session.pendingChoiceName = name;
+
+    send(session.socket, {
+      type: "food_choice",
+      itemId: choiceId,
+      foodName: name,
+      question: "",
+    } satisfies WSFoodChoiceMessage);
+
     return {
       status: "not_found",
       name,
       message:
-        "Food not found in any database. Ask the user to provide nutrition values per serving (calories, protein, carbs, fat, serving size, and serving unit).",
+        "Food not found in this user's personal or community foods. A choice card is already shown to the user. Briefly tell the user it wasn't found, then ask whether they'd like to create a custom food (say 'create it') or search the USDA database (say 'try USDA', note that USDA data can be unreliable). Wait for their choice — do not proceed until they respond.",
     };
   }
 
@@ -154,7 +170,19 @@ async function handleLookupFood(
     };
   }
 
-  // Single match
+  // Single match — check if USDA and whether to verbally warn
+  let usdaNote: string | undefined;
+  if (result.source === "DATABASE") {
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { suppressUsdaWarning: true },
+    });
+    if (!user?.suppressUsdaWarning) {
+      usdaNote =
+        "This food came from the USDA database, which can have inconsistent serving sizes and nutrient data. Briefly mention this to the user before confirming.";
+    }
+  }
+
   return {
     status: "found",
     food_ref: result.foodRef,
@@ -166,6 +194,7 @@ async function handleLookupFood(
     fat_g_per_serving: result.fatGPerServing,
     serving_size: result.servingSize,
     serving_unit: result.servingUnit,
+    ...(usdaNote ? { note: usdaNote } : {}),
   };
 }
 
@@ -177,7 +206,7 @@ async function handleAddToDraft(
   const quantity = Number(args.quantity ?? 1);
   const unit = String(args.unit ?? "servings");
   const mealLabelArg = args.meal_label as MealLabel | undefined;
-  const mealLabel: MealLabel = mealLabelArg ?? getMealLabel();
+  const mealLabel: MealLabel = mealLabelArg ?? getProvisionalMealLabel();
 
   if (!foodRef) return { error: "food_ref is required" };
 
@@ -211,6 +240,180 @@ async function handleAddToDraft(
   };
 }
 
+function handleBeginCustomFoodCreation(
+  _args: Record<string, unknown>,
+  session: KitchenSession,
+): unknown {
+  if (!session.pendingChoiceId) {
+    return { error: "No pending food choice. Call lookup_food first." };
+  }
+
+  // Remove the food_choice card, then add a creating card with the same ID
+  const creationId = session.pendingChoiceId;
+  const foodName = session.pendingChoiceName ?? "";
+  send(session.socket, { type: "item_removed", itemId: creationId } satisfies WSItemRemovedMessage);
+  send(session.socket, {
+    type: "create_food_prompt",
+    itemId: creationId,
+    foodName,
+    question: "",
+  } satisfies WSCreateFoodPromptMessage);
+
+  session.pendingCreationId = creationId;
+  session.pendingCreationName = foodName;
+  session.pendingCreationValues = {};
+  session.pendingChoiceId = null;
+  session.pendingChoiceName = null;
+
+  return {
+    success: true,
+    message:
+      "Creation card is shown. Ask for each nutrition value one at a time. Call report_nutrition_field() for every value as it is stated. Required: calories, protein_g, carbs_g, fat_g, serving_size, serving_unit. When all are collected, call create_custom_food().",
+  };
+}
+
+async function handleSearchUsda(
+  args: Record<string, unknown>,
+  session: KitchenSession,
+): Promise<unknown> {
+  const name = String(args.name ?? session.pendingChoiceName ?? "");
+  if (!name) return { error: "name is required" };
+
+  // Remove the food_choice card
+  if (session.pendingChoiceId) {
+    send(session.socket, {
+      type: "item_removed",
+      itemId: session.pendingChoiceId,
+    } satisfies WSItemRemovedMessage);
+    session.pendingChoiceId = null;
+    session.pendingChoiceName = null;
+  }
+
+  const result = await searchUsdaForKitchenMode(name);
+
+  if (result.status === "not_found") {
+    return {
+      status: "not_found",
+      name,
+      message: "No results found in USDA for this food. Tell the user and ask if they'd like to create a custom food instead.",
+    };
+  }
+
+  if (result.status === "multiple") {
+    send(session.socket, {
+      type: "disambiguate",
+      itemId: `tmp-dis-${Date.now()}`,
+      foodName: name,
+      question: "Multiple USDA matches found. Which did you mean?",
+      options: result.options.map((o) => ({
+        label: `${o.name} — ${o.caloriesPerServing} cal / serving`,
+        usdaResult: {
+          fdcId: parseInt(o.foodRef.split(":")[1], 10),
+          description: o.name,
+          servingSize: o.servingSize,
+          servingSizeUnit: o.servingUnit,
+          macros: {
+            calories: o.caloriesPerServing,
+            proteinG: o.proteinGPerServing,
+            carbsG: o.carbsGPerServing,
+            fatG: o.fatGPerServing,
+          },
+        },
+      })),
+    } satisfies WSDisambiguateMessage);
+
+    return {
+      status: "multiple_matches",
+      options: result.options.map((o) => ({
+        food_ref: o.foodRef,
+        name: o.name,
+        calories_per_serving: o.caloriesPerServing,
+        serving_size: o.servingSize,
+        serving_unit: o.servingUnit,
+      })),
+      message:
+        "Multiple USDA matches are shown to the user. Present options briefly and wait for their choice, then call add_to_draft with the chosen food_ref.",
+    };
+  }
+
+  // Single match — return to Gemini to call add_to_draft
+  return {
+    status: "found",
+    food_ref: result.foodRef,
+    name: result.name,
+    source: result.source,
+    calories_per_serving: result.caloriesPerServing,
+    protein_g_per_serving: result.proteinGPerServing,
+    carbs_g_per_serving: result.carbsGPerServing,
+    fat_g_per_serving: result.fatGPerServing,
+    serving_size: result.servingSize,
+    serving_unit: result.servingUnit,
+    note: "This is a USDA result — USDA data can have inconsistent serving sizes. Briefly mention this before adding.",
+  };
+}
+
+function handleReportNutritionField(
+  args: Record<string, unknown>,
+  session: KitchenSession,
+): unknown {
+  if (!session.pendingCreationId) {
+    return { error: "No food creation in progress. Call lookup_food first." };
+  }
+
+  const fieldName = String(args.field_name ?? "");
+  const rawValue = args.value;
+
+  // Map Gemini field names → CreatingFoodProgress keys
+  const progressKeyMap: Partial<Record<string, keyof Omit<CreatingFoodProgress, "currentField">>> = {
+    calories:     "calories",
+    protein_g:    "proteinG",
+    carbs_g:      "carbsG",
+    fat_g:        "fatG",
+    serving_size: "servingSize",
+    serving_unit: "servingUnit",
+    brand:        "brand",
+    barcode:      "barcode",
+  };
+
+  // Map Gemini field names → CreatingFoodField enum values (for the card state label)
+  const cardFieldMap: Partial<Record<string, CreatingFoodField>> = {
+    calories:     "calories",
+    protein_g:    "protein",
+    carbs_g:      "carbs",
+    fat_g:        "fat",
+    serving_size: "servingSize",
+    serving_unit: "servingSize",
+    brand:        "brand",
+    barcode:      "barcode",
+  };
+
+  const progressKey = progressKeyMap[fieldName];
+  if (progressKey) {
+    const numericFields = new Set(["calories", "protein_g", "carbs_g", "fat_g", "serving_size"]);
+    const coerced = numericFields.has(fieldName)
+      ? Number(rawValue)
+      : String(rawValue);
+    (session.pendingCreationValues as Record<string, unknown>)[progressKey] = coerced;
+  }
+
+  const cardField: CreatingFoodField = cardFieldMap[fieldName] ?? "calories";
+  const collectedValues: CreatingFoodProgress = {
+    ...session.pendingCreationValues,
+    currentField: cardField,
+  };
+
+  send(session.socket, {
+    type: "create_food_field",
+    itemId: session.pendingCreationId,
+    foodName: session.pendingCreationName ?? "",
+    field: cardField,
+    question: "",
+    collectedValues,
+  } satisfies WSCreateFoodFieldMessage);
+
+  return { success: true, field: fieldName };
+}
+
 async function handleCreateCustomFood(
   args: Record<string, unknown>,
   session: KitchenSession,
@@ -226,6 +429,12 @@ async function handleCreateCustomFood(
   const unit = String(args.unit ?? servingUnit);
 
   if (!name) return { error: "name is required" };
+
+  // Capture and clear pending creation state so the draft card is replaced correctly
+  const draftItemId = session.pendingCreationId ?? `tmp-${Date.now()}`;
+  session.pendingCreationId = null;
+  session.pendingCreationName = null;
+  session.pendingCreationValues = {};
 
   // Create the custom food
   const customFood = await prisma.customFood.create({
@@ -246,11 +455,11 @@ async function handleCreateCustomFood(
   // Compute macros for the logged quantity
   const isServings = unit.toLowerCase() === "servings" || unit.toLowerCase() === "serving";
   const ratio = isServings ? quantity : servingSize <= 0 ? 1 : quantity / servingSize;
-  const mealLabel = getMealLabel();
+  const mealLabel = getProvisionalMealLabel();
 
   snapshotDraft(session);
   const draftItem: DraftItem = {
-    id: `tmp-${Date.now()}`,
+    id: draftItemId,
     name: customFood.name,
     quantity,
     unit,
@@ -374,10 +583,11 @@ async function handleSaveSession(session: KitchenSession): Promise<unknown> {
 
   const entries = session.items.filter((i) => i.state === "normal" || i.state === "pending");
   if (entries.length > 0) {
+    const entryDate = new Date(session.date);
     await prisma.foodEntry.createMany({
       data: entries.map((item) => ({
         userId: session.userId,
-        date: session.date,
+        date: entryDate,
         name: item.name,
         calories: item.calories,
         proteinG: item.proteinG,
@@ -390,8 +600,10 @@ async function handleSaveSession(session: KitchenSession): Promise<unknown> {
         usdaFdcId: item.usdaFdcId ?? null,
         customFoodId: item.customFoodId ?? null,
         communityFoodId: item.communityFoodId ?? null,
+        voiceSessionId: session.voiceSessionId,
       })),
     });
+    await recategorizeMealsForDay(session.userId, entryDate);
   }
 
   send(session.socket, {
@@ -437,6 +649,12 @@ async function dispatchFunctionCall(
       return handleLookupFood(args, session);
     case "add_to_draft":
       return handleAddToDraft(args, session);
+    case "begin_custom_food_creation":
+      return handleBeginCustomFoodCreation(args, session);
+    case "search_usda":
+      return handleSearchUsda(args, session);
+    case "report_nutrition_field":
+      return handleReportNutritionField(args, session);
     case "create_custom_food":
       return handleCreateCustomFood(args, session);
     case "edit_draft_item":
@@ -506,9 +724,14 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
 
       console.log(`[KitchenMode] new session — user: ${userId}, date: ${date}`);
 
+      const voiceSessionRecord = await prisma.voiceSession.create({
+        data: { userId },
+      });
+
       const session: KitchenSession = {
         userId,
         date,
+        voiceSessionId: voiceSessionRecord.id,
         items: [],
         customFoodsCreatedThisSession: [],
         draftHistory: [],
@@ -516,6 +739,11 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
         completed: false,
         socket,
         gemini: null as unknown as GeminiLiveService, // set below
+        pendingChoiceId: null,
+        pendingChoiceName: null,
+        pendingCreationId: null,
+        pendingCreationName: null,
+        pendingCreationValues: {},
       };
 
       // Create Gemini Live service
@@ -654,6 +882,110 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
             // Old protocol: RN app sends text transcripts.
             // Not used by Swift client (which sends audio_chunk), but kept for compatibility.
             console.log("[KitchenMode] received legacy transcript (ignored — use audio_chunk)");
+            break;
+
+          case "touch_edit_item":
+            void (async () => {
+              const editMsg = await handleScaleConfirm(
+                msg.itemId,
+                msg.quantity,
+                msg.unit,
+                session.items,
+                session.userId,
+              );
+              if (editMsg.type === "item_edited") {
+                snapshotDraft(session);
+                const idx = session.items.findIndex((i) => i.id === msg.itemId);
+                const itemName = idx !== -1 ? session.items[idx].name : msg.itemId;
+                if (idx !== -1) {
+                  session.items[idx] = { ...session.items[idx], ...editMsg.changes };
+                }
+                send(socket, editMsg);
+                session.gemini.sendText(
+                  `User edited ${itemName} quantity to ${msg.quantity} ${msg.unit} via touch.`
+                );
+              } else {
+                send(socket, {
+                  type: "error",
+                  message: `Failed to edit item: ${msg.itemId}`,
+                } satisfies WSErrorMessage);
+              }
+            })();
+            break;
+
+          case "touch_remove_item": {
+            const idx = session.items.findIndex((i) => i.id === msg.itemId);
+            if (idx !== -1) {
+              const itemName = session.items[idx].name;
+              snapshotDraft(session);
+              session.items.splice(idx, 1);
+              send(socket, {
+                type: "item_removed",
+                itemId: msg.itemId,
+              } satisfies WSItemRemovedMessage);
+              session.gemini.sendText(`User removed ${itemName} via touch.`);
+            }
+            break;
+          }
+
+          case "touch_complete_creation":
+            void (async () => {
+              // Clear pending creation state if this item was mid-creation via voice
+              if (session.pendingCreationId === msg.itemId) {
+                session.pendingCreationId = null;
+                session.pendingCreationName = null;
+                session.pendingCreationValues = {};
+              }
+
+              const customFood = await prisma.customFood.create({
+                data: {
+                  userId: session.userId,
+                  name: msg.name,
+                  servingSize: msg.servingSize,
+                  servingUnit: msg.servingUnit,
+                  calories: msg.calories,
+                  proteinG: msg.proteinG,
+                  carbsG: msg.carbsG,
+                  fatG: msg.fatG,
+                },
+              });
+
+              session.customFoodsCreatedThisSession.push(customFood.id);
+              const mealLabel = getProvisionalMealLabel();
+
+              snapshotDraft(session);
+              const draftItem: DraftItem = {
+                id: msg.itemId,
+                name: customFood.name,
+                quantity: 1,
+                unit: "servings",
+                calories: Math.round(msg.calories),
+                proteinG: Math.round(msg.proteinG * 10) / 10,
+                carbsG: Math.round(msg.carbsG * 10) / 10,
+                fatG: Math.round(msg.fatG * 10) / 10,
+                source: "CUSTOM",
+                customFoodId: customFood.id,
+                mealLabel,
+                state: "normal",
+              };
+
+              // Replace creating item if it exists, otherwise push
+              const existingIdx = session.items.findIndex((i) => i.id === msg.itemId);
+              if (existingIdx !== -1) {
+                session.items[existingIdx] = draftItem;
+              } else {
+                session.items.push(draftItem);
+              }
+
+              send(socket, {
+                type: "create_food_complete",
+                item: draftItem,
+              } satisfies WSCreateFoodCompleteMessage);
+
+              session.gemini.sendText(
+                `User manually completed food creation for ${msg.name} via touch. The creation card has been resolved. Do not ask for nutrition values.`
+              );
+            })();
             break;
 
           default:

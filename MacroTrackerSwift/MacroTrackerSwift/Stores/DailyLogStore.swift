@@ -70,6 +70,15 @@ final class DailyLogStore {
         try await APIClient.shared.deleteEntry(id: id)
     }
 
+    @discardableResult
+    func removeEntries(ids: Set<String>) -> [FoodEntry] {
+        ids.compactMap { removeEntry(id: $0) }
+    }
+
+    func restoreEntries(_ entries: [FoodEntry]) {
+        entries.forEach { restoreEntry($0) }
+    }
+
     /// Creates an entry via the API, inserts it locally, and returns it.
     /// Throws on network failure so callers can handle undo / error feedback.
     @discardableResult

@@ -108,6 +108,10 @@ final class DraftStore {
         case .createFoodComplete(let completed):
             if let idx = items.firstIndex(where: { $0.id == completed.id }) {
                 items[idx] = completed
+            } else {
+                // No pending creation card — append directly (Gemini called create_custom_food
+                // before any report_nutrition_field calls, e.g. user spoke all values at once)
+                items.append(completed)
             }
 
         case .createFoodConfirm(let itemId, _, let collectedValues, let initQty, let initUnit, let mismatch):
@@ -243,13 +247,8 @@ final class DraftStore {
             creatingProgress: progress)
     }
 
+    /// Provisional label — server recategorizes after save.
     private func currentMealLabel() -> MealLabel {
-        let h = Calendar.current.component(.hour, from: Date())
-        switch h {
-        case  5..<11: return .breakfast
-        case 11..<14: return .lunch
-        case 17..<22: return .dinner
-        default:      return .snack
-        }
+        return .snack
     }
 }

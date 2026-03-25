@@ -191,12 +191,77 @@ struct FoodEntry: Codable, Identifiable, Sendable {
     var usdaFdcId:       Int?
     var customFoodId:    String?
     var communityFoodId: String?
+    var savedMealId:     String?
+    var mealInstanceId:  String?
     var createdAt:       String
+}
+
+// MARK: - Saved Meals
+
+struct SavedMealItem: Codable, Identifiable, Sendable {
+    var id:              String
+    var name:            String
+    var quantity:        Double
+    var unit:            String
+    var calories:        Double
+    var proteinG:        Double
+    var carbsG:          Double
+    var fatG:            Double
+    var source:          FoodSource
+    var usdaFdcId:       Int?
+    var customFoodId:    String?
+    var communityFoodId: String?
+
+    var macros: Macros {
+        Macros(calories: calories, proteinG: proteinG, carbsG: carbsG, fatG: fatG)
+    }
+}
+
+struct SavedMeal: Codable, Identifiable, Sendable {
+    var id:        String
+    var name:      String
+    var items:     [SavedMealItem]
+    var createdAt: String
+
+    var totalMacros: Macros {
+        items.reduce(.zero) { acc, item in
+            Macros(
+                calories: acc.calories + item.calories,
+                proteinG: acc.proteinG + item.proteinG,
+                carbsG:   acc.carbsG   + item.carbsG,
+                fatG:     acc.fatG     + item.fatG)
+        }
+    }
+}
+
+struct CreateSavedMealItemRequest: Codable, Sendable {
+    var name:            String
+    var quantity:        Double
+    var unit:            String
+    var calories:        Double
+    var proteinG:        Double
+    var carbsG:          Double
+    var fatG:            Double
+    var source:          FoodSource
+    var usdaFdcId:       Int?
+    var customFoodId:    String?
+    var communityFoodId: String?
+}
+
+struct CreateSavedMealRequest: Codable, Sendable {
+    var name:  String
+    var items: [CreateSavedMealItemRequest]
+}
+
+struct LogMealRequest: Codable, Sendable {
+    var date:        String
+    var mealLabel:   MealLabel
+    var scaleFactor: Double
 }
 
 // MARK: - USDA
 
-struct USDASearchResult: Codable, Sendable {
+struct USDASearchResult: Codable, Sendable, Equatable {
     var fdcId:           Int
     var description:     String
     var brandName:       String?
@@ -446,7 +511,7 @@ enum CreatingFoodField: String, Codable, Sendable {
     case confirm, servingSize, calories, protein, carbs, fat, brand, barcode, complete
 }
 
-struct CreatingFoodProgress: Codable, Sendable {
+struct CreatingFoodProgress: Codable, Sendable, Equatable {
     var servingSize:  Double?
     var servingUnit:  String?
     var calories:     Double?
@@ -458,19 +523,19 @@ struct CreatingFoodProgress: Codable, Sendable {
     var currentField: CreatingFoodField
 }
 
-struct DisambiguationOption: Codable, Sendable {
+struct DisambiguationOption: Codable, Sendable, Equatable {
     var label:      String
     var usdaResult: USDASearchResult
 }
 
-struct HistoryFoodEntry: Codable, Sendable {
+struct HistoryFoodEntry: Codable, Sendable, Equatable {
     var name:     String
     var quantity: Double
     var unit:     String
     var macros:   Macros
 }
 
-struct MacroSummary: Codable, Sendable {
+struct MacroSummary: Codable, Sendable, Equatable {
     var calories: Double
     var proteinG: Double
     var carbsG:   Double
@@ -478,7 +543,7 @@ struct MacroSummary: Codable, Sendable {
     var goals:    Macros?
 }
 
-struct DraftItem: Codable, Identifiable, Sendable {
+struct DraftItem: Codable, Identifiable, Sendable, Equatable {
     var id:              String
     var name:            String
     var quantity:        Double
@@ -504,12 +569,12 @@ struct DraftItem: Codable, Identifiable, Sendable {
     var disambiguationOptions:  [DisambiguationOption]?
     var historyData:            HistoryData?
 
-    struct ConfirmingData: Codable, Sendable {
+    struct ConfirmingData: Codable, Sendable, Equatable {
         var quantityMismatch:  Bool
         var collectedValues:   CreatingFoodProgress
     }
 
-    struct HistoryData: Codable, Sendable {
+    struct HistoryData: Codable, Sendable, Equatable {
         var dateLabel:    String
         var entries:      [HistoryFoodEntry]
         var totals:       Macros
@@ -591,6 +656,8 @@ enum AnyFood: Sendable {
 struct IdentifiedFood: Identifiable, Sendable {
     let id = UUID()
     let food: AnyFood
+    /// Overrides `food.foodSource` for display when the food is a synthetic wrapper around a logged entry.
+    var sourceOverride: FoodSource? = nil
 }
 
 // MARK: - PendingUnitConversion
@@ -654,9 +721,15 @@ enum WSClientMessage: Encodable, Sendable {
     case cancel
     case barcodeScan(gtin: String)
     case scaleConfirm(itemId: String, quantity: Double, unit: String)
+    case touchEditItem(itemId: String, quantity: Double, unit: String)
+    case touchRemoveItem(itemId: String)
+    case touchCompleteCreation(itemId: String, name: String, calories: Double,
+                               proteinG: Double, carbsG: Double, fatG: Double,
+                               servingSize: Double, servingUnit: String)
 
     private enum CodingKeys: String, CodingKey {
         case type, text, data, sequence, gtin, itemId, quantity, unit
+        case name, calories, proteinG, carbsG, fatG, servingSize, servingUnit
     }
 
     func encode(to encoder: Encoder) throws {
@@ -681,6 +754,26 @@ enum WSClientMessage: Encodable, Sendable {
             try c.encode(itemId, forKey: .itemId)
             try c.encode(quantity, forKey: .quantity)
             try c.encode(unit, forKey: .unit)
+        case .touchEditItem(let itemId, let quantity, let unit):
+            try c.encode("touch_edit_item", forKey: .type)
+            try c.encode(itemId, forKey: .itemId)
+            try c.encode(quantity, forKey: .quantity)
+            try c.encode(unit, forKey: .unit)
+        case .touchRemoveItem(let itemId):
+            try c.encode("touch_remove_item", forKey: .type)
+            try c.encode(itemId, forKey: .itemId)
+        case .touchCompleteCreation(let itemId, let name, let calories,
+                                     let proteinG, let carbsG, let fatG,
+                                     let servingSize, let servingUnit):
+            try c.encode("touch_complete_creation", forKey: .type)
+            try c.encode(itemId, forKey: .itemId)
+            try c.encode(name, forKey: .name)
+            try c.encode(calories, forKey: .calories)
+            try c.encode(proteinG, forKey: .proteinG)
+            try c.encode(carbsG, forKey: .carbsG)
+            try c.encode(fatG, forKey: .fatG)
+            try c.encode(servingSize, forKey: .servingSize)
+            try c.encode(servingUnit, forKey: .servingUnit)
         }
     }
 }
