@@ -1,10 +1,10 @@
 import Foundation
 
-// MARK: - WSClient (Phase A skeleton — full implementation in Phase E)
+// MARK: - WSClient (Phase E — full implementation)
 
-/// Manages the WebSocket connection to /ws/voice-session.
+/// Manages the WebSocket connection to /ws/kitchen-mode.
 /// Encodes outgoing WSClientMessage and decodes incoming WSServerMessage.
-/// DraftStore integration deferred to Phase E.
+/// Routes all incoming messages to DraftStore.shared.applyServerMessage.
 @MainActor
 final class WSClient: NSObject {
     static let shared = WSClient()
@@ -26,15 +26,18 @@ final class WSClient: NSObject {
 
     // MARK: - Connect / Disconnect
 
-    func connect(sessionId: String) {
+    func connect(date: String) {
         guard !isConnected else { return }
 
         let wsBase = Config.baseURL
             .replacingOccurrences(of: "http://", with: "ws://")
             .replacingOccurrences(of: "https://", with: "wss://")
-        guard let url = URL(string: "\(wsBase)/ws/voice-session?sessionId=\(sessionId)") else {
+        guard let url = URL(string: "\(wsBase)/ws/kitchen-mode?date=\(date)") else {
             return
         }
+
+        // Wire all incoming messages to DraftStore
+        onMessage = { DraftStore.shared.applyServerMessage($0) }
 
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         urlSession  = session

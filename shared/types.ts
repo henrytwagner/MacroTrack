@@ -345,20 +345,38 @@ export interface DailySummary {
 
 // --- Kitchen Mode Draft State ---
 
+/**
+ * Active states used by the Gemini Live (Phase E) server.
+ * The `pending` state is new: card is shown while Gemini is looking up / speaking options.
+ */
 export type DraftCardState =
   | "normal"
+  | "pending"       // Phase E: item acknowledged, lookup in progress
+  | "disambiguate"  // multiple USDA matches — visual option card
+  // --- DEPRECATED: only used by the React Native app (pre-Phase E) ---
+  /** @deprecated Phase E server no longer emits this. */
   | "clarifying"
+  /** @deprecated Phase E server no longer emits this. */
   | "creating"
-  | "confirming"  // nutrition collected, awaiting save confirmation
+  /** @deprecated Phase E server no longer emits this. */
+  | "confirming"
+  /** @deprecated Phase E server no longer emits this. */
   | "choice"
+  /** @deprecated Phase E server no longer emits this. */
   | "usda_pending"
-  | "disambiguate"
+  /** @deprecated Phase E server no longer emits this. */
   | "confirm_clear"
-  | "community_submit_prompt"  // deprecated — new server never triggers this
+  /** @deprecated never triggered. */
+  | "community_submit_prompt"
+  /** @deprecated Phase E server no longer emits this. */
   | "history_results"
+  /** @deprecated Phase E server no longer emits this. */
   | "macro_summary"
+  /** @deprecated Phase E server no longer emits this. */
   | "food_info"
+  /** @deprecated Phase E server no longer emits this. */
   | "food_suggestions"
+  /** @deprecated Phase E server no longer emits this. */
   | "estimate_card";
 
 export interface DraftItem extends Macros {
@@ -662,6 +680,26 @@ export interface WSEstimateCardMessage {
   canAddAnyway: boolean;
 }
 
+// Phase E (Gemini Live) — new server→client messages
+/** Raw PCM audio from Gemini's voice, base64-encoded. iOS plays this via AVAudioPlayerNode. */
+export interface WSAudioDataMessage {
+  type: "audio_data";
+  /** Base64-encoded PCM audio. MIME type is audio/pcm;rate=24000 unless noted otherwise. */
+  data: string;
+  mimeType: string;
+}
+
+/**
+ * Live transcript from Gemini (for on-screen captions).
+ * Note: the client→server message also has type "transcript" (WSTranscriptMessage) but lives in
+ * WSClientMessage — no collision at the union level.
+ */
+export interface WSServerTranscriptMessage {
+  type: "transcript";
+  text: string;
+  isFinal: boolean;
+}
+
 export type WSServerMessage =
   | WSItemsAddedMessage
   | WSItemEditedMessage
@@ -688,7 +726,10 @@ export type WSServerMessage =
   | WSFoodInfoMessage
   | WSFoodSuggestionsMessage
   | WSEstimateCardMessage
-  | WSPromptScaleConfirmMessage;
+  | WSPromptScaleConfirmMessage
+  // Phase E (Gemini Live)
+  | WSAudioDataMessage
+  | WSServerTranscriptMessage;
 
 // --- Gemini Intent Types ---
 

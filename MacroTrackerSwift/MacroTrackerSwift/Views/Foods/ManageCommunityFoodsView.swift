@@ -154,16 +154,11 @@ struct ManageCommunityFoodsView: View {
         } label: {
             HStack(spacing: Spacing.md) {
                 VStack(alignment: .leading, spacing: 4) {
-                    // Name + status badge
-                    HStack(spacing: Spacing.xs) {
-                        Text(food.name)
-                            .font(.appSubhead)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(Color.appText)
-                            .lineLimit(1)
-
-                        statusBadge(food.status)
-                    }
+                    Text(food.name)
+                        .font(.appSubhead)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.appText)
+                        .lineLimit(1)
 
                     // Brand name (if available)
                     if let brand = food.brandName, !brand.isEmpty {
@@ -191,9 +186,16 @@ struct ManageCommunityFoodsView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Image(systemName: "chevron.forward")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.appTextTertiary)
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: CommunityFoodStatusIndicator.systemImage(for: food.status))
+                        .font(.system(size: 16))
+                        .foregroundStyle(CommunityFoodStatusIndicator.accentColor(for: food.status))
+                        .accessibilityLabel(CommunityFoodStatusIndicator.accessibilityLabel(for: food.status))
+
+                    Image(systemName: "chevron.forward")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.appTextTertiary)
+                }
             }
             .padding(.horizontal, Spacing.lg)
             .padding(.vertical, Spacing.md)
@@ -201,27 +203,6 @@ struct ManageCommunityFoodsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    // MARK: - Status Badge
-
-    private func statusBadge(_ status: CommunityFoodStatus) -> some View {
-        let (label, color): (String, Color) = switch status {
-        case .active:  ("ACTIVE",  Color.appSuccess)
-        case .pending: ("PENDING", Color.appWarning)
-        case .retired: ("RETIRED", Color.appTextSecondary)
-        }
-        return Text(label)
-            .font(.appCaption2)
-            .fontWeight(.semibold)
-            .foregroundStyle(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.12))
-            .overlay(
-                Capsule().stroke(color.opacity(0.4), lineWidth: 1)
-            )
-            .clipShape(Capsule())
     }
 
     // MARK: - Helper

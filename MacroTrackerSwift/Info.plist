@@ -46,6 +46,10 @@
     <key>NSCameraUsageDescription</key>
     <string>MacroTrack uses the camera to scan food barcodes.</string>
 
+    <!-- Microphone permission for Kitchen Mode voice logging -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>MacroTrack uses the microphone to log food by voice in Kitchen Mode.</string>
+
     <key>UIStatusBarStyle</key>
     <string>UIStatusBarStyleDefault</string>
 

@@ -426,6 +426,7 @@ enum BarcodeLookupResult: Decodable, Sendable {
 
 enum DraftCardState: String, Codable, Sendable {
     case normal
+    case pending                       // Phase E: item acknowledged, lookup in progress
     case clarifying
     case creating
     case confirming
@@ -721,6 +722,10 @@ enum WSServerMessage: Decodable, Sendable {
     case foodSuggestions(itemId: String, suggestions: [FoodSuggestion])
     case estimateCard(item: DraftItem, canAddAnyway: Bool)
     case promptScaleConfirm(itemId: String)
+    /// Server → client: base64 PCM audio from Gemini (mimeType e.g. "audio/pcm;rate=24000")
+    case audioData(data: String, mimeType: String)
+    /// Server → client: live transcript text from Gemini's model turn
+    case serverTranscript(text: String, isFinal: Bool)
 
     struct ItemChanges: Decodable, Sendable {
         var name:      String?
@@ -745,6 +750,7 @@ enum WSServerMessage: Decodable, Sendable {
         case usdaDescription, usdaResult, message, draft, options
         case dateLabel, mealLabel, entries, totals, addedToDraft
         case summary, suggestions, canAddAnyway, entriesCount
+        case text, data, mimeType, isFinal
     }
 
     init(from decoder: Decoder) throws {
@@ -881,6 +887,16 @@ enum WSServerMessage: Decodable, Sendable {
 
         case "prompt_scale_confirm":
             self = .promptScaleConfirm(itemId: try c.decode(String.self, forKey: .itemId))
+
+        case "audio_data":
+            self = .audioData(
+                data:     try c.decode(String.self, forKey: .data),
+                mimeType: try c.decode(String.self, forKey: .mimeType))
+
+        case "transcript":
+            self = .serverTranscript(
+                text:    try c.decode(String.self, forKey: .text),
+                isFinal: try c.decode(Bool.self,   forKey: .isFinal))
 
         default:
             throw DecodingError.dataCorruptedError(

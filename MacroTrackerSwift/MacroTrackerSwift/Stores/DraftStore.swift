@@ -9,6 +9,8 @@ final class DraftStore {
 
     var items:          [DraftItem] = []
     var savedTotals:    Macros = .zero
+    /// Live transcript from Gemini's model turn (cleared on session reset)
+    var captionText:    String = ""
 
     private init() {}
 
@@ -37,11 +39,13 @@ final class DraftStore {
     func initSession(savedTotals: Macros) {
         self.items       = []
         self.savedTotals = savedTotals
+        self.captionText = ""
     }
 
     func reset() {
         items       = []
         savedTotals = .zero
+        captionText = ""
     }
 
     // MARK: - Apply Server Message
@@ -202,7 +206,13 @@ final class DraftStore {
             items.append(item)
 
         case .promptScaleConfirm:
-            break // handled by WSClient → UI layer in Phase E
+            break // handled by KitchenModeViewModel in Phase E3
+
+        case .audioData(let data, let mimeType):
+            AudioPlaybackService.shared.enqueue(base64Data: data, mimeType: mimeType)
+
+        case .serverTranscript(let text, _):
+            captionText = text
 
         // Non-draft-mutating messages — ignored here
         case .openBarcodeScanner, .ask, .error,
