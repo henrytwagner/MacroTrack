@@ -23,6 +23,7 @@ interface PublishCustomFoodBody {
 export function mapCustomFood(food: {
   id: string;
   name: string;
+  brandName?: string | null;
   servingSize: number;
   servingUnit: string;
   calories: number;
@@ -42,6 +43,7 @@ export function mapCustomFood(food: {
   return {
     id: food.id,
     name: food.name,
+    brandName: food.brandName ?? undefined,
     servingSize: food.servingSize,
     servingUnit: food.servingUnit,
     calories: food.calories,
@@ -103,6 +105,7 @@ export async function customFoodRoutes(app: FastifyInstance) {
         data: {
           userId,
           name: body.name,
+          brandName: body.brandName?.trim() || null,
           servingSize: body.servingSize,
           servingUnit: body.servingUnit,
           calories: body.calories,
@@ -139,6 +142,7 @@ export async function customFoodRoutes(app: FastifyInstance) {
         where: { id },
         data: {
           ...(body.name !== undefined && { name: body.name }),
+          ...(body.brandName !== undefined && { brandName: body.brandName?.trim() || null }),
           ...(body.servingSize !== undefined && {
             servingSize: body.servingSize,
           }),

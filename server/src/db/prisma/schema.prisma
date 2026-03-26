@@ -32,6 +32,7 @@ model User {
   createdBarcodes       CommunityFoodBarcode[] @relation("BarcodeCreator")
   foodReports           CommunityFoodReport[]  @relation("FoodReporter")
   suppressUsdaWarning   Boolean                @default(false)
+  savedMeals            SavedMeal[]
 }
 
 model DailyGoal {
@@ -60,13 +61,18 @@ model FoodEntry {
   usdaFdcId       Int?
   customFoodId    String?
   communityFoodId String?
+  voiceSessionId  String?
+  savedMealId     String?
+  mealInstanceId  String?
   createdAt       DateTime @default(now())
 
   user          User           @relation(fields: [userId], references: [id])
   customFood    CustomFood?    @relation(fields: [customFoodId], references: [id])
   communityFood CommunityFood? @relation(fields: [communityFoodId], references: [id])
+  voiceSession  VoiceSession?  @relation(fields: [voiceSessionId], references: [id])
 
   @@index([userId, date])
+  @@index([userId, date, voiceSessionId])
   @@index([userId, name])
 }
 
@@ -99,13 +105,43 @@ model CustomFood {
   @@index([userId, barcode])
 }
 
-model VoiceSession {
-  id        String        @id @default(uuid())
+model SavedMeal {
+  id        String          @id @default(uuid())
   userId    String
-  startedAt DateTime      @default(now())
-  endedAt   DateTime?
-  status    SessionStatus @default(active)
-  user      User          @relation(fields: [userId], references: [id])
+  name      String
+  items     SavedMealItem[]
+  user      User            @relation(fields: [userId], references: [id])
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([userId])
+}
+
+model SavedMealItem {
+  id              String    @id @default(uuid())
+  savedMealId     String
+  savedMeal       SavedMeal @relation(fields: [savedMealId], references: [id], onDelete: Cascade)
+  name            String
+  quantity        Float
+  unit            String
+  calories        Float
+  proteinG        Float
+  carbsG          Float
+  fatG            Float
+  source          FoodSource
+  usdaFdcId       Int?
+  customFoodId    String?
+  communityFoodId String?
+}
+
+model VoiceSession {
+  id          String        @id @default(uuid())
+  userId      String
+  startedAt   DateTime      @default(now())
+  endedAt     DateTime?
+  status      SessionStatus @default(active)
+  user        User          @relation(fields: [userId], references: [id])
+  foodEntries FoodEntry[]
 
   @@index([userId])
 }

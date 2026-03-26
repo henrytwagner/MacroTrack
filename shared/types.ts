@@ -85,6 +85,7 @@ export interface UserProfile {
 export interface CustomFood extends Macros, ExtendedNutrition {
   id: string;
   name: string;
+  brandName?: string;
   servingSize: number;
   servingUnit: string;
   barcode?: string;
@@ -164,7 +165,58 @@ export interface FoodEntry extends Macros {
   usdaFdcId?: number;
   customFoodId?: string;
   communityFoodId?: string;
+  savedMealId?: string;
+  mealInstanceId?: string;
   createdAt: string;
+}
+
+// --- Saved Meals ---
+
+export interface SavedMealItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  source: FoodSource;
+  usdaFdcId?: number;
+  customFoodId?: string;
+  communityFoodId?: string;
+}
+
+export interface SavedMeal {
+  id: string;
+  name: string;
+  items: SavedMealItem[];
+  createdAt: string;
+}
+
+export interface CreateSavedMealItemRequest {
+  name: string;
+  quantity: number;
+  unit: string;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  source: FoodSource;
+  usdaFdcId?: number;
+  customFoodId?: string;
+  communityFoodId?: string;
+}
+
+export interface CreateSavedMealRequest {
+  name: string;
+  items: CreateSavedMealItemRequest[];
+}
+
+export interface LogMealRequest {
+  date: string; // YYYY-MM-DD
+  mealLabel: MealLabel;
+  scaleFactor: number; // 1.0 = full meal
 }
 
 // --- USDA API Types ---
@@ -246,6 +298,7 @@ export interface UpdateFoodEntryRequest {
 
 export interface CreateCustomFoodRequest {
   name: string;
+  brandName?: string;
   servingSize: number;
   servingUnit: string;
   calories: number;
@@ -343,20 +396,38 @@ export interface DailySummary {
 
 // --- Kitchen Mode Draft State ---
 
+/**
+ * Active states used by the Gemini Live (Phase E) server.
+ * The `pending` state is new: card is shown while Gemini is looking up / speaking options.
+ */
 export type DraftCardState =
   | "normal"
+  | "pending"       // Phase E: item acknowledged, lookup in progress
+  | "disambiguate"  // multiple USDA matches — visual option card
+  // --- DEPRECATED: only used by the React Native app (pre-Phase E) ---
+  /** @deprecated Phase E server no longer emits this. */
   | "clarifying"
+  /** @deprecated Phase E server no longer emits this. */
   | "creating"
-  | "confirming"  // nutrition collected, awaiting save confirmation
+  /** @deprecated Phase E server no longer emits this. */
+  | "confirming"
+  /** @deprecated Phase E server no longer emits this. */
   | "choice"
+  /** @deprecated Phase E server no longer emits this. */
   | "usda_pending"
-  | "disambiguate"
+  /** @deprecated Phase E server no longer emits this. */
   | "confirm_clear"
-  | "community_submit_prompt"  // deprecated — new server never triggers this
+  /** @deprecated never triggered. */
+  | "community_submit_prompt"
+  /** @deprecated Phase E server no longer emits this. */
   | "history_results"
+  /** @deprecated Phase E server no longer emits this. */
   | "macro_summary"
+  /** @deprecated Phase E server no longer emits this. */
   | "food_info"
+  /** @deprecated Phase E server no longer emits this. */
   | "food_suggestions"
+  /** @deprecated Phase E server no longer emits this. */
   | "estimate_card";
 
 export interface DraftItem extends Macros {
@@ -473,12 +544,47 @@ export interface WSBarcodeScanMessage {
   gtin: string;
 }
 
+export interface WSScaleConfirmMessage {
+  type: 'scale_confirm';
+  itemId: string;
+  quantity: number;
+  unit: string; // scale's unit: 'g' | 'ml' | 'oz'
+}
+
+export interface WSTouchEditItemMessage {
+  type: "touch_edit_item";
+  itemId: string;
+  quantity: number;
+  unit: string;
+}
+
+export interface WSTouchRemoveItemMessage {
+  type: "touch_remove_item";
+  itemId: string;
+}
+
+export interface WSTouchCompleteCreationMessage {
+  type: "touch_complete_creation";
+  itemId: string;
+  name: string;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  servingSize: number;
+  servingUnit: string;
+}
+
 export type WSClientMessage =
   | WSTranscriptMessage
   | WSAudioChunkMessage
   | WSSaveMessage
   | WSCancelMessage
-  | WSBarcodeScanMessage;
+  | WSBarcodeScanMessage
+  | WSScaleConfirmMessage
+  | WSTouchEditItemMessage
+  | WSTouchRemoveItemMessage
+  | WSTouchCompleteCreationMessage;
 
 // Server → Client
 
@@ -490,7 +596,7 @@ export interface WSItemsAddedMessage {
 export interface WSItemEditedMessage {
   type: "item_edited";
   itemId: string;
-  changes: Partial<Pick<DraftItem, "name" | "quantity" | "unit" | "calories" | "proteinG" | "carbsG" | "fatG">>;
+  changes: Partial<Pick<DraftItem, "name" | "quantity" | "unit" | "calories" | "proteinG" | "carbsG" | "fatG" | "isAssumed">>;
 }
 
 export interface WSItemRemovedMessage {
@@ -639,11 +745,37 @@ export interface WSFoodSuggestionsMessage {
   suggestions: Array<{ name: string; macros: Macros; reason: string }>;
 }
 
+// Scale integration
+export interface WSPromptScaleConfirmMessage {
+  type: 'prompt_scale_confirm';
+  itemId: string;
+}
+
 // Phase 6 — AI Estimates
 export interface WSEstimateCardMessage {
   type: "estimate_card";
   item: DraftItem;
   canAddAnyway: boolean;
+}
+
+// Phase E (Gemini Live) — new server→client messages
+/** Raw PCM audio from Gemini's voice, base64-encoded. iOS plays this via AVAudioPlayerNode. */
+export interface WSAudioDataMessage {
+  type: "audio_data";
+  /** Base64-encoded PCM audio. MIME type is audio/pcm;rate=24000 unless noted otherwise. */
+  data: string;
+  mimeType: string;
+}
+
+/**
+ * Live transcript from Gemini (for on-screen captions).
+ * Note: the client→server message also has type "transcript" (WSTranscriptMessage) but lives in
+ * WSClientMessage — no collision at the union level.
+ */
+export interface WSServerTranscriptMessage {
+  type: "transcript";
+  text: string;
+  isFinal: boolean;
 }
 
 export type WSServerMessage =
@@ -671,7 +803,11 @@ export type WSServerMessage =
   | WSMacroSummaryMessage
   | WSFoodInfoMessage
   | WSFoodSuggestionsMessage
-  | WSEstimateCardMessage;
+  | WSEstimateCardMessage
+  | WSPromptScaleConfirmMessage
+  // Phase E (Gemini Live)
+  | WSAudioDataMessage
+  | WSServerTranscriptMessage;
 
 // --- Gemini Intent Types ---
 
@@ -802,6 +938,12 @@ export interface GeminiConfirmFoodCreationIntent {
   };
 }
 
+// Scale integration
+export interface GeminiScaleConfirmIntent {
+  action: "SCALE_CONFIRM";
+  payload: { targetItem?: string }; // omit or null → means active item
+}
+
 export type GeminiIntent =
   | GeminiAddItemsIntent
   | GeminiEditItemIntent
@@ -821,7 +963,8 @@ export type GeminiIntent =
   | GeminiLookupFoodInfoIntent
   | GeminiSuggestFoodsIntent
   | GeminiEstimateFoodIntent
-  | GeminiConfirmFoodCreationIntent;
+  | GeminiConfirmFoodCreationIntent
+  | GeminiScaleConfirmIntent;
 
 // --- Gemini Request Context ---
 

@@ -3,3 +3,11 @@ dist/
 .env
 .expo/
 *.tsbuildinfo
+
+# macOS
+.DS_Store
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/

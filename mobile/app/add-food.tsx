@@ -45,12 +45,8 @@ import * as api from '@/services/api';
 const DEBOUNCE_MS = 300;
 const MIN_QUERY_LENGTH = 2;
 
+/** Provisional label — server recategorizes after save. */
 function getMealLabel(): MealLabel {
-  const hour = new Date().getHours();
-  if (hour >= 5 && hour < 11) return 'breakfast';
-  if (hour >= 11 && hour < 14) return 'lunch';
-  if (hour >= 14 && hour < 17) return 'snack';
-  if (hour >= 17 && hour < 22) return 'dinner';
   return 'snack';
 }
 

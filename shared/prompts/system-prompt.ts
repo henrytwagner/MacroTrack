@@ -110,6 +110,11 @@ AVAILABLE ACTIONS:
     Return: { "action": "SUGGEST_FOODS", "payload": null }
     - Trigger phrases: "what should I eat", "suggest something", "what fits my macros", "recommendations".
 
+20. SCALE_CONFIRM — User wants to confirm the current scale reading as the quantity for the active item.
+    Return: { "action": "SCALE_CONFIRM", "payload": { "targetItem": null } }
+    - Trigger phrases: "use this weight", "confirm weight", "use scale reading", "use that", "that's the weight", "use scale".
+    - Target is always the active item — omit targetItem or set to null.
+
 18. ESTIMATE_FOOD — User wants to log a food that couldn't be found in the database and wants an AI estimate.
     Return: { "action": "ESTIMATE_FOOD", "payload": { "name": "<food name>", "quantity": <number or null>, "unit": "<unit or null>", "context": "<optional context>" } }
     - Trigger phrases: "estimate [food]", "guess the macros for [food]", "approximate [food]".

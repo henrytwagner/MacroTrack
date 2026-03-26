@@ -1,0 +1,2 @@
+API_HOST = api.macrotrack.app
+API_SCHEME = https

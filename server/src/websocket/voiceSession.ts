@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "@fastify/websocket";
 import { prisma } from "../db/client.js";
 import { getDefaultUserId } from "../db/defaultUser.js";
-import { processTranscript, lookupItemInUsda, lookupFoodInfoOnly, shouldDisambiguate } from "../services/foodParser.js";
+import { processTranscript, lookupItemInUsda, lookupFoodInfoOnly, shouldDisambiguate, handleScaleConfirm } from "../services/foodParser.js";
 import { parseTranscript, estimateFood, suggestFoodsFromCandidates } from "../services/gemini.js";
 import { searchFoods } from "../services/usda.js";
 
@@ -34,6 +34,7 @@ import type {
   WSFoodInfoMessage,
   WSFoodSuggestionsMessage,
   WSEstimateCardMessage,
+  WSPromptScaleConfirmMessage,
   GeminiRequestContext,
   GeminiCreateFoodResponseIntent,
   GeminiConfirmFoodCreationIntent,
@@ -44,6 +45,7 @@ import type {
   HistoryFoodEntry,
 } from "../../../shared/types.js";
 import { createCloudSttSession, type CloudSttSession } from "../voice/sttCloudClient.js";
+import { recategorizeMealsForDay } from "../services/mealCategorizer.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -94,6 +96,7 @@ function nextField(current: CreatingFoodField): CreatingFoodField {
 interface VoiceSessionState {
   userId: string;
   date: string;
+  voiceSessionId: string;
   draft: DraftItem[];
   sessionState:
     | "normal"
@@ -143,12 +146,8 @@ function getTimeOfDay(): string {
   return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 }
 
-function getMealLabel(timeOfDay: string): MealLabel {
-  const [h] = timeOfDay.split(":").map(Number);
-  if (h >= 5 && h < 11) return "breakfast";
-  if (h >= 11 && h < 14) return "lunch";
-  if (h >= 14 && h < 17) return "snack";
-  if (h >= 17 && h < 22) return "dinner";
+/** Provisional meal label for draft items — overwritten by recategorizeMealsForDay on save. */
+function getProvisionalMealLabel(): MealLabel {
   return "snack";
 }
 
@@ -220,10 +219,11 @@ async function saveSession(session: VoiceSessionState, socket: WebSocket) {
 
   const itemsToSave = session.draft.filter((item) => item.state === "normal");
   if (itemsToSave.length > 0) {
+    const entryDate = new Date(session.date + "T12:00:00");
     await prisma.foodEntry.createMany({
       data: itemsToSave.map((item) => ({
         userId: session.userId,
-        date: new Date(session.date + "T12:00:00"),
+        date: entryDate,
         mealLabel: item.mealLabel,
         name: item.name,
         calories: item.calories,
@@ -236,8 +236,10 @@ async function saveSession(session: VoiceSessionState, socket: WebSocket) {
         usdaFdcId: item.usdaFdcId ?? null,
         customFoodId: item.customFoodId ?? null,
         communityFoodId: item.communityFoodId ?? null,
+        voiceSessionId: session.voiceSessionId,
       })),
     });
+    await recategorizeMealsForDay(session.userId, entryDate);
   }
 
   send(socket, {
@@ -466,6 +468,17 @@ async function handleNormalTranscript(
       await handleSuggestFoods(session, socket);
       return;
     }
+    if (intent.action === "SCALE_CONFIRM") {
+      // Find the active item (first non-normal or topmost)
+      const activeItem = session.draft.find((d) => d.state !== "normal") ?? session.draft[session.draft.length - 1];
+      if (activeItem) {
+        send(socket, {
+          type: "prompt_scale_confirm",
+          itemId: activeItem.id,
+        } satisfies WSPromptScaleConfirmMessage);
+      }
+      return;
+    }
     if (intent.action === "ESTIMATE_FOOD") {
       const { name, quantity, unit, context: foodContext } = intent.payload;
       await handleEstimateFood(name, quantity, unit, foodContext, session, socket);
@@ -475,7 +488,7 @@ async function handleNormalTranscript(
       const { name } = intent.payload;
       const tmpId = `direct-${Date.now()}`;
       const timeOfDay = getTimeOfDay();
-      const mealLabel = getMealLabel(timeOfDay);
+      const mealLabel = getProvisionalMealLabel();
       const creatingItem: DraftItem = {
         id: tmpId,
         name,
@@ -590,7 +603,7 @@ async function handleAwaitingChoiceTranscript(
       carbsG: 0,
       fatG: 0,
       source: "CUSTOM",
-      mealLabel: getMealLabel(timeOfDay),
+      mealLabel: getProvisionalMealLabel(),
       state: "creating",
       creatingProgress: { currentField: "confirm" },
     };
@@ -671,7 +684,7 @@ async function handleAwaitingChoiceTranscript(
         ...macros,
         source: "DATABASE",
         usdaFdcId: best.fdcId,
-        mealLabel: getMealLabel(getTimeOfDay()),
+        mealLabel: getProvisionalMealLabel(),
         state: "normal",
         isAssumed: true,
       };
@@ -708,7 +721,7 @@ async function handleAwaitingChoiceTranscript(
     type: "food_choice",
     itemId: tmpId,
     foodName: session.pendingUsdaItemName,
-    question: `Say 'create it' to add '${session.pendingUsdaItemName}' manually, or 'try USDA' to search the database.`,
+    question: `I couldn't find '${session.pendingUsdaItemName}' in your foods. Say 'create it' to add a custom food, or 'try USDA' to search the USDA database — note that USDA data can be unreliable.`,
   } satisfies WSFoodChoiceMessage);
 }
 
@@ -740,7 +753,7 @@ async function handleUsdaPendingTranscript(
       session.pendingUsdaItemName,
       undefined,
       undefined,
-      getMealLabel(getTimeOfDay()),
+      getProvisionalMealLabel(),
     );
     if (usdaResult.found) {
       const item = { ...usdaResult.draft, id: tmpId };
@@ -772,7 +785,7 @@ async function handleUsdaPendingTranscript(
       type: "food_choice",
       itemId: tmpId,
       foodName: session.pendingUsdaItemName,
-      question: `Say 'create it' to add '${session.pendingUsdaItemName}' manually, or 'try USDA' to search the database.`,
+      question: `I couldn't find '${session.pendingUsdaItemName}' in your foods. Say 'create it' to add a custom food, or 'try USDA' to search the USDA database — note that USDA data can be unreliable.`,
     } satisfies WSFoodChoiceMessage);
     return;
   }
@@ -888,7 +901,7 @@ async function handleDisambiguatingTranscript(
     ...macros,
     source: "DATABASE",
     usdaFdcId: best.fdcId,
-    mealLabel: getMealLabel(getTimeOfDay()),
+    mealLabel: getProvisionalMealLabel(),
     state: "normal",
     isAssumed: true,
   };
@@ -1073,7 +1086,7 @@ async function handleConfirmingTranscript(
       fatG: Math.round((progress.fatG ?? 0) * ratio * 10) / 10,
       source: "CUSTOM",
       customFoodId: created.id,
-      mealLabel: baseItem?.mealLabel ?? getMealLabel(getTimeOfDay()),
+      mealLabel: baseItem?.mealLabel ?? getProvisionalMealLabel(),
       state: "normal",
     };
 
@@ -1225,8 +1238,7 @@ async function handleQueryHistory(
 
   if (addToDraft && historyEntries.length > 0) {
     // Add entries as normal draft items
-    const now = getTimeOfDay();
-    const meal = getMealLabel(now);
+    const meal = getProvisionalMealLabel();
     const newItems: DraftItem[] = historyEntries.map((e, i) => ({
       id: `history-item-${Date.now()}-${i}`,
       name: e.name,
@@ -1441,7 +1453,7 @@ async function handleEstimateFood(
 ) {
   const tmpId = `estimate-${Date.now()}`;
   const timeOfDay = getTimeOfDay();
-  const mealLabel = getMealLabel(timeOfDay);
+  const mealLabel = getProvisionalMealLabel();
 
   let estimate: Awaited<ReturnType<typeof estimateFood>>;
   try {
@@ -1590,7 +1602,7 @@ async function handleBarcodeScan(
       fatG: food.fatG,
       source: "COMMUNITY",
       communityFoodId: food.id,
-      mealLabel: getMealLabel(getTimeOfDay()),
+      mealLabel: getProvisionalMealLabel(),
       state: "normal",
     };
     session.draft.push(item);
@@ -1613,7 +1625,7 @@ async function handleBarcodeScan(
         fatG: customFood.fatG,
         source: "CUSTOM",
         customFoodId: customFood.id,
-        mealLabel: getMealLabel(getTimeOfDay()),
+        mealLabel: getProvisionalMealLabel(),
         state: "normal",
       };
       session.draft.push(item);
@@ -1676,7 +1688,7 @@ async function handleBarcodeNamingTranscript(
     carbsG: 0,
     fatG: 0,
     source: "CUSTOM",
-    mealLabel: getMealLabel(getTimeOfDay()),
+    mealLabel: getProvisionalMealLabel(),
     state: "creating",
     creatingProgress: { currentField: "servingSize" },
   };
@@ -1737,7 +1749,7 @@ function applyMessageToDraft(
       carbsG: 0,
       fatG: 0,
       source: "CUSTOM",
-      mealLabel: getMealLabel(timeOfDay),
+      mealLabel: getProvisionalMealLabel(),
       state: "creating",
       creatingProgress: { currentField: "confirm" },
     };
@@ -1760,7 +1772,7 @@ function applyMessageToDraft(
       carbsG: 0,
       fatG: 0,
       source: "CUSTOM",
-      mealLabel: getMealLabel(timeOfDay),
+      mealLabel: getProvisionalMealLabel(),
       state: "choice",
     };
     session.draft.push(choiceItem);
@@ -1787,7 +1799,7 @@ function applyMessageToDraft(
       carbsG: 0,
       fatG: 0,
       source: "DATABASE",
-      mealLabel: getMealLabel(timeOfDay),
+      mealLabel: getProvisionalMealLabel(),
       state: "disambiguate",
       disambiguationOptions: msg.options,
     };
@@ -1817,9 +1829,14 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
         "local";
       const useCloudStt = sttMode === "cloud";
 
+      const voiceSessionRecord = await prisma.voiceSession.create({
+        data: { userId },
+      });
+
       const session: VoiceSessionState = {
         userId,
         date,
+        voiceSessionId: voiceSessionRecord.id,
         draft: [],
         sessionState: "normal",
         creatingFoodName: "",
@@ -1927,6 +1944,16 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
                 "[voiceSession] Received audio_chunk but cloud STT is disabled. Ignoring.",
               );
             }
+          } else if (msg.type === "scale_confirm") {
+            const result = await handleScaleConfirm(
+              msg.itemId,
+              msg.quantity,
+              msg.unit,
+              session.draft,
+              session.userId,
+            );
+            applyMessageToDraft(result, session);
+            send(socket, result);
           } else if (msg.type === "save") {
             await saveSession(session, socket);
           } else if (msg.type === "cancel") {

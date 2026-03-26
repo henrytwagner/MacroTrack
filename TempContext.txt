@@ -1,0 +1,158 @@
+Project Context: BLE Nutrition Scale Integration
+I'm building a nutrition/fitness app and want to integrate a Bluetooth smart scale to stream live weight data. The goal for now is a simple demo: a live feed displaying real-time weight readings from a BLE scale.
+Key decisions made:
+
+Use BLE notifications (not polling) — the scale pushes weight updates automatically, which is more efficient and lower latency
+Build a clean BluetoothScaleService class that exposes a data stream the rest of the app can subscribe to
+The hardest part will be parsing the raw byte packets from the specific scale model, since each manufacturer uses a proprietary format
+
+The core BLE flow to implement:
+
+Scan for the scale's BLE advertisement
+Connect to the device
+Discover services & characteristics
+Subscribe to notifications on the weight characteristic
+Parse raw byte packets into usable weight values
+Expose a clean stream (Combine publisher on iOS / Flow on Android)
+
+To figure out the packet format:
+
+Use nRF Connect or LightBlue to observe raw BLE packets from the scale while it's active
+Search GitHub for the scale model + "BLE protocol" or "reverse engineer" — many are already documented
+Paste a sample raw packet into Claude Code and ask it to write the parser
+
+Useful APIs/tools if scale hardware isn't available:
+
+Nutritionix, Edamam, USDA FoodData Central, Open Food Facts — nutrition databases
+Apple HealthKit / Google Fit — read nutrition/weight data aggregated from other apps
+Passio AI, LogMeal — camera-based food recognition
+
+Demo goal:
+A simple live weight feed UI — connect to a BLE scale, display the streaming weight value in real time. No nutrition logic yet, just prove the data pipeline works end to end.
+Tell Claude Code:
+
+Your specific scale model (so it can look up or help reverse-engineer the BLE protocol)
+Your platform (iOS Swift, Android Kotlin, React Native, Flutter, etc.)
+Whether you have nRF Connect packet samples ready
+
+Got it! Here's the full encoding spec and a JS parser:
+
+## Packet Encoding Spec
+
+```
+FE EF C0 A2 D0 05 00 [unit] [weight_lo] [weight_hi] [??] [??]
+ 0   1   2   3   4   5   6      7            8          9   10  11
+```
+
+| Byte(s) | Meaning |
+|---|---|
+| `[0-1]` | Header — always `FE EF` |
+| `[2-3]` | Device ID — always `C0 A2` |
+| `[4-5]` | Status — `D0 05` = live/stable, `D3 01` = idle |
+| `[6]` | Always `00` |
+| `[7]` | **Unit flag** |
+| `[8-9]` | **Weight** — little-endian `UInt16 ÷ 10` for metric; split bytes for imperial |
+| `[10-11]` | Likely checksum / sequence — not yet decoded |
+
+**Unit flag values:**
+
+| `bytes[7]` | Unit |
+|---|---|
+| `0x00` | Grams |
+| `0x04` | Milliliters (water density mode) |
+| `0x06` | Ounces |
+| `0x01` | Lb : Oz |
+
+**Weight encoding:**
+- **Grams / ml:** `(bytes[9] << 8 | bytes[8]) / 10.0` → e.g. `B4 00` = 180 → 18.0g
+- **Oz:** `bytes[8] / 100.0` → e.g. `46` = 70 → 0.70oz *(needs heavier sample to confirm high byte)*
+- **Lb:Oz:** `bytes[9]` = whole lbs, `bytes[8] / 100.0` = oz remainder
+
+---
+
+## JavaScript Parser
+
+```js
+const ScaleUnit = {
+  GRAMS: 'g',
+  MILLILITERS: 'ml',
+  OUNCES: 'oz',
+  POUNDS_OUNCES: 'lb:oz',
+};
+
+/**
+ * Parse a raw BLE notification from the Etekcity Nutrition Scale (2C12)
+ * @param {Uint8Array | number[]} data - raw bytes from the characteristic
+ * @returns {{ value: number, unit: string, display: string, stable: boolean } | null}
+ */
+function parseScalePacket(data) {
+  const bytes = Array.from(data);
+
+  // Validate header
+  if (bytes.length < 10) return null;
+  if (bytes[0] !== 0xFE || bytes[1] !== 0xEF) return null;
+
+  const stable = bytes[4] === 0xD0 && bytes[5] === 0x05;
+  const unitByte = bytes[7];
+
+  let value, unit, display;
+
+  switch (unitByte) {
+    case 0x00: {
+      const raw = bytes[8] | (bytes[9] << 8); // little-endian
+      value = raw / 10.0;
+      unit = ScaleUnit.GRAMS;
+      display = `${value.toFixed(1)} g`;
+      break;
+    }
+    case 0x04: {
+      const raw = bytes[8] | (bytes[9] << 8);
+      value = raw / 10.0;
+      unit = ScaleUnit.MILLILITERS;
+      display = `${value.toFixed(1)} ml`;
+      break;
+    }
+    case 0x06: {
+      // NOTE: bytes[9] likely = whole oz for heavier weights - needs verification
+      const raw = bytes[8] | (bytes[9] << 8);
+      value = raw / 100.0;
+      unit = ScaleUnit.OUNCES;
+      display = `${value.toFixed(2)} oz`;
+      break;
+    }
+    case 0x01: {
+      const lbs = bytes[9];
+      const oz = bytes[8] / 100.0;
+      value = lbs + oz / 16.0; // combined as decimal lbs if needed
+      unit = ScaleUnit.POUNDS_OUNCES;
+      display = `${lbs} lb ${oz.toFixed(2)} oz`;
+      break;
+    }
+    default:
+      return null;
+  }
+
+  return { value, unit, display, stable };
+}
+```
+
+### Usage with Web Bluetooth API
+
+```js
+const characteristic = await service.getCharacteristic('00002c12-0000-1000-8000-00805f9b34fb');
+
+characteristic.addEventListener('characteristicvaluechanged', (event) => {
+  const data = new Uint8Array(event.target.value.buffer);
+  const reading = parseScalePacket(data);
+
+  if (reading?.stable) {
+    console.log(reading.display); // "18.0 g", "0.70 oz", etc.
+  }
+});
+
+await characteristic.startNotifications();
+```
+
+---
+
+The oz parsing for heavier weights is the one remaining unknown — once you test something like 200g in oz mode we can confirm whether `bytes[9]` is truly the whole-oz component or if it's still pure little-endian like grams.

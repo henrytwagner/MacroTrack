@@ -86,7 +86,7 @@ interface CreateCommunityFoodBody {
   barcodeType?: string;
 }
 
-type UpdateCommunityFoodBody = Partial<Omit<CreateCommunityFoodBody, "barcode" | "barcodeType">>;
+type UpdateCommunityFoodBody = Partial<CreateCommunityFoodBody>;
 
 interface ReportBody {
   reason: string;
@@ -241,31 +241,66 @@ export async function communityFoodRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { id } = request.params;
       const body = request.body;
+      const userId = await getDefaultUserId();
 
       const existing = await prisma.communityFood.findUnique({ where: { id } });
       if (!existing) {
         return reply.code(404).send({ error: "Community food not found" });
       }
 
-      const food = await prisma.communityFood.update({
-        where: { id },
-        data: {
-          ...(body.name !== undefined && { name: body.name.trim() }),
-          ...(body.brandName !== undefined && { brandName: body.brandName?.trim() || null }),
-          ...(body.description !== undefined && { description: body.description?.trim() || null }),
-          ...(body.defaultServingSize !== undefined && { defaultServingSize: body.defaultServingSize }),
-          ...(body.defaultServingUnit !== undefined && { defaultServingUnit: body.defaultServingUnit }),
-          ...(body.calories !== undefined && { calories: body.calories }),
-          ...(body.proteinG !== undefined && { proteinG: body.proteinG }),
-          ...(body.carbsG !== undefined && { carbsG: body.carbsG }),
-          ...(body.fatG !== undefined && { fatG: body.fatG }),
-          ...(body.sodiumMg !== undefined && { sodiumMg: body.sodiumMg }),
-          ...(body.cholesterolMg !== undefined && { cholesterolMg: body.cholesterolMg }),
-          ...(body.fiberG !== undefined && { fiberG: body.fiberG }),
-          ...(body.sugarG !== undefined && { sugarG: body.sugarG }),
-          ...(body.saturatedFatG !== undefined && { saturatedFatG: body.saturatedFatG }),
-          ...(body.transFatG !== undefined && { transFatG: body.transFatG }),
-        },
+      const trimmedBarcode =
+        typeof body.barcode === "string" ? body.barcode.trim() : "";
+      if (trimmedBarcode) {
+        const barcodeRow = await prisma.communityFoodBarcode.findUnique({
+          where: { barcode: trimmedBarcode },
+        });
+        if (barcodeRow && barcodeRow.communityFoodId !== id) {
+          return reply.code(409).send({
+            error: "A community food with this barcode already exists",
+            existingCommunityFoodId: barcodeRow.communityFoodId,
+          });
+        }
+      }
+
+      const food = await prisma.$transaction(async (tx) => {
+        const updated = await tx.communityFood.update({
+          where: { id },
+          data: {
+            ...(body.name !== undefined && { name: body.name.trim() }),
+            ...(body.brandName !== undefined && { brandName: body.brandName?.trim() || null }),
+            ...(body.description !== undefined && { description: body.description?.trim() || null }),
+            ...(body.defaultServingSize !== undefined && { defaultServingSize: body.defaultServingSize }),
+            ...(body.defaultServingUnit !== undefined && { defaultServingUnit: body.defaultServingUnit }),
+            ...(body.calories !== undefined && { calories: body.calories }),
+            ...(body.proteinG !== undefined && { proteinG: body.proteinG }),
+            ...(body.carbsG !== undefined && { carbsG: body.carbsG }),
+            ...(body.fatG !== undefined && { fatG: body.fatG }),
+            ...(body.sodiumMg !== undefined && { sodiumMg: body.sodiumMg }),
+            ...(body.cholesterolMg !== undefined && { cholesterolMg: body.cholesterolMg }),
+            ...(body.fiberG !== undefined && { fiberG: body.fiberG }),
+            ...(body.sugarG !== undefined && { sugarG: body.sugarG }),
+            ...(body.saturatedFatG !== undefined && { saturatedFatG: body.saturatedFatG }),
+            ...(body.transFatG !== undefined && { transFatG: body.transFatG }),
+          },
+        });
+
+        if (trimmedBarcode) {
+          const stillMissing = await tx.communityFoodBarcode.findUnique({
+            where: { barcode: trimmedBarcode },
+          });
+          if (!stillMissing) {
+            await tx.communityFoodBarcode.create({
+              data: {
+                barcode: trimmedBarcode,
+                type: (body.barcodeType as "UPC_A" | "EAN_13" | "CODE_128" | "OTHER") ?? "OTHER",
+                communityFoodId: id,
+                createdByUserId: userId,
+              },
+            });
+          }
+        }
+
+        return updated;
       });
 
       return reply.send(mapCommunityFood(food));

@@ -357,27 +357,27 @@ export default function LogScreen() {
         )}
       </View>
 
-      {/* Bottom right: mic (white, blue icon) above add (main FAB) */}
+      {/* Bottom right: add (small white) above kitchen mode (main FAB) */}
       <View style={styles.fabStack}>
         <Pressable
           style={({ pressed }) => [
-            styles.micFabSmall,
+            styles.secondaryFab,
             { backgroundColor: '#FFFFFF', borderColor: '#E5E5EA' },
-            pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
-          ]}
-          onPress={handleMicPress}
-        >
-          <Ionicons name="mic" size={22} color={colors.tint} />
-        </Pressable>
-        <Pressable
-          style={({ pressed }) => [
-            styles.addFab,
-            { backgroundColor: colors.tint },
             pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
           ]}
           onPress={handleAddPress}
         >
-          <Ionicons name="add" size={28} color="#FFFFFF" />
+          <Ionicons name="add" size={22} color={colors.tint} />
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [
+            styles.primaryFab,
+            { backgroundColor: colors.tint },
+            pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
+          ]}
+          onPress={handleMicPress}
+        >
+          <Ionicons name="restaurant" size={26} color="#FFFFFF" />
         </Pressable>
       </View>
 
@@ -483,7 +483,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  micFabSmall: {
+  secondaryFab: {
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 4,
   },
-  addFab: {
+  primaryFab: {
     width: 60,
     height: 60,
     borderRadius: 30,

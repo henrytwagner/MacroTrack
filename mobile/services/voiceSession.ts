@@ -141,6 +141,13 @@ export function sendBarcodeScan(gtin: string): void {
 }
 
 /**
+ * Confirm the scale reading as the quantity for a draft item.
+ */
+export function sendScaleConfirm(itemId: string, quantity: number, unit: string): void {
+  sendMessage({ type: 'scale_confirm', itemId, quantity, unit });
+}
+
+/**
  * Close the WebSocket connection cleanly (code 1000).
  * Call this after save/cancel completes so the server's onclose
  * handler knows it was intentional.

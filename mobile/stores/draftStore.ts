@@ -118,16 +118,7 @@ export const useDraftStore = create<DraftStoreState>((set, get) => ({
           // Server couldn't find this food — add a "creating" placeholder card.
           const alreadyExists = items.some((i) => i.id === msg.itemId);
           if (!alreadyExists) {
-            const now = new Date();
-            const h = now.getHours();
-            const mealLabel =
-              h >= 5 && h < 11
-                ? ('breakfast' as const)
-                : h >= 11 && h < 14
-                  ? ('lunch' as const)
-                  : h >= 17 && h < 22
-                    ? ('dinner' as const)
-                    : ('snack' as const);
+            const mealLabel = 'snack' as const;
             items = [
               ...items,
               {
@@ -193,16 +184,7 @@ export const useDraftStore = create<DraftStoreState>((set, get) => ({
         case 'food_choice': {
           const alreadyExists = items.some((i) => i.id === msg.itemId);
           if (!alreadyExists) {
-            const now = new Date();
-            const h = now.getHours();
-            const mealLabel =
-              h >= 5 && h < 11
-                ? ('breakfast' as const)
-                : h >= 11 && h < 14
-                  ? ('lunch' as const)
-                  : h >= 17 && h < 22
-                    ? ('dinner' as const)
-                    : ('snack' as const);
+            const mealLabel = 'snack' as const;
             items = [
               ...items,
               {
@@ -254,16 +236,7 @@ export const useDraftStore = create<DraftStoreState>((set, get) => ({
         case 'disambiguate': {
           const alreadyExists = items.some((i) => i.id === msg.itemId);
           if (!alreadyExists) {
-            const now = new Date();
-            const h = now.getHours();
-            const mealLabel =
-              h >= 5 && h < 11
-                ? ('breakfast' as const)
-                : h >= 11 && h < 14
-                  ? ('lunch' as const)
-                  : h >= 17 && h < 22
-                    ? ('dinner' as const)
-                    : ('snack' as const);
+            const mealLabel = 'snack' as const;
             items = [
               ...items,
               {
@@ -293,16 +266,7 @@ export const useDraftStore = create<DraftStoreState>((set, get) => ({
           const clearId = `confirm-clear-${Date.now()}`;
           const alreadyHasClear = items.some((i) => i.state === 'confirm_clear');
           if (!alreadyHasClear) {
-            const now = new Date();
-            const h = now.getHours();
-            const mealLabel =
-              h >= 5 && h < 11
-                ? ('breakfast' as const)
-                : h >= 11 && h < 14
-                  ? ('lunch' as const)
-                  : h >= 17 && h < 22
-                    ? ('dinner' as const)
-                    : ('snack' as const);
+            const mealLabel = 'snack' as const;
             items = [
               ...items,
               {
@@ -338,16 +302,7 @@ export const useDraftStore = create<DraftStoreState>((set, get) => ({
         case 'history_results': {
           const alreadyExists = items.some((i) => i.id === msg.itemId);
           if (!alreadyExists) {
-            const now = new Date();
-            const h = now.getHours();
-            const mealLabel =
-              h >= 5 && h < 11
-                ? ('breakfast' as const)
-                : h >= 11 && h < 14
-                  ? ('lunch' as const)
-                  : h >= 17 && h < 22
-                    ? ('dinner' as const)
-                    : ('snack' as const);
+            const mealLabel = 'snack' as const;
             items = [
               ...items,
               {
@@ -378,16 +333,7 @@ export const useDraftStore = create<DraftStoreState>((set, get) => ({
         case 'macro_summary': {
           const alreadyExists = items.some((i) => i.id === msg.itemId);
           if (!alreadyExists) {
-            const now = new Date();
-            const h = now.getHours();
-            const mealLabel =
-              h >= 5 && h < 11
-                ? ('breakfast' as const)
-                : h >= 11 && h < 14
-                  ? ('lunch' as const)
-                  : h >= 17 && h < 22
-                    ? ('dinner' as const)
-                    : ('snack' as const);
+            const mealLabel = 'snack' as const;
             items = [
               ...items,
               {
@@ -412,16 +358,7 @@ export const useDraftStore = create<DraftStoreState>((set, get) => ({
         case 'food_info': {
           const alreadyExists = items.some((i) => i.id === msg.itemId);
           if (!alreadyExists) {
-            const now = new Date();
-            const h = now.getHours();
-            const mealLabel =
-              h >= 5 && h < 11
-                ? ('breakfast' as const)
-                : h >= 11 && h < 14
-                  ? ('lunch' as const)
-                  : h >= 17 && h < 22
-                    ? ('dinner' as const)
-                    : ('snack' as const);
+            const mealLabel = 'snack' as const;
             items = [
               ...items,
               {
@@ -447,16 +384,7 @@ export const useDraftStore = create<DraftStoreState>((set, get) => ({
         case 'food_suggestions': {
           const alreadyExists = items.some((i) => i.id === msg.itemId);
           if (!alreadyExists) {
-            const now = new Date();
-            const h = now.getHours();
-            const mealLabel =
-              h >= 5 && h < 11
-                ? ('breakfast' as const)
-                : h >= 11 && h < 14
-                  ? ('lunch' as const)
-                  : h >= 17 && h < 22
-                    ? ('dinner' as const)
-                    : ('snack' as const);
+            const mealLabel = 'snack' as const;
             items = [
               ...items,
               {
