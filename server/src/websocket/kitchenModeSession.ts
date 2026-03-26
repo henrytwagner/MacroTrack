@@ -23,6 +23,7 @@ import {
 } from "../services/foodParser.js";
 import { GeminiLiveService } from "../services/GeminiLiveService.js";
 import { searchFoods } from "../services/usda.js";
+import { lookupBarcode } from "../services/barcodeLookup.js";
 import { recategorizeMealsForDay } from "../services/mealCategorizer.js";
 
 import type {
@@ -773,55 +774,44 @@ async function handleBarcodeScan(
   gtin: string,
   session: KitchenSession,
 ): Promise<void> {
-  const normalized = gtin.replace(/\D/g, "");
-  if (!normalized) return;
+  const result = await lookupBarcode(gtin, session.userId);
 
-  // 1. Custom food first (user's personal data takes priority)
-  const customResult = await prisma.customFood.findFirst({
-    where: { userId: session.userId, barcode: normalized },
-    select: { id: true, name: true, servingSize: true, servingUnit: true },
-  });
-
-  if (customResult) {
-    notifyGemini(session, {
-      source: "barcode",
-      action: "food_found",
-      details:
-        `Found custom food "${customResult.name}". ` +
-        `Call add_to_draft with food_ref "custom:${customResult.id}", ` +
-        `quantity ${customResult.servingSize}, unit "${customResult.servingUnit}". ` +
-        `Do not ask the user for quantity — use these defaults.`,
-    });
-    return;
+  switch (result.source) {
+    case "custom": {
+      const f = result.food;
+      notifyGemini(session, {
+        source: "barcode",
+        action: "food_found",
+        details:
+          `Found custom food "${f.name}". ` +
+          `Call add_to_draft with food_ref "custom:${f.id}", ` +
+          `quantity ${f.servingSize}, unit "${f.servingUnit}". ` +
+          `Do not ask the user for quantity — use these defaults.`,
+      });
+      return;
+    }
+    case "community": {
+      const f = result.food;
+      notifyGemini(session, {
+        source: "barcode",
+        action: "food_found",
+        details:
+          `Found community food "${f.name}". ` +
+          `Call add_to_draft with food_ref "community:${f.id}", ` +
+          `quantity 1, unit "${(f as any).defaultServingUnit ?? "serving"}". ` +
+          `Do not ask the user for quantity — use these defaults.`,
+      });
+      return;
+    }
+    case "not_found":
+      notifyGemini(session, {
+        source: "barcode",
+        action: "not_found",
+        details:
+          `GTIN ${result.normalizedGtin} — no matching food found. ` +
+          `Tell the user the scan didn't match anything and ask them to name the food so you can call lookup_food.`,
+      });
   }
-
-  // 2. Community food (barcode stored in separate join table)
-  const communityRecord = await prisma.communityFoodBarcode.findUnique({
-    where: { barcode: normalized },
-    include: { communityFood: true },
-  });
-
-  if (communityRecord?.communityFood) {
-    const food = communityRecord.communityFood;
-    notifyGemini(session, {
-      source: "barcode",
-      action: "food_found",
-      details:
-        `Found community food "${food.name}". ` +
-        `Call add_to_draft with food_ref "community:${food.id}", ` +
-        `quantity 1, unit "${food.defaultServingUnit ?? "serving"}". ` +
-        `Do not ask the user for quantity — use these defaults.`,
-    });
-    return;
-  }
-
-  notifyGemini(session, {
-    source: "barcode",
-    action: "not_found",
-    details:
-      `GTIN ${normalized} — no matching food found. ` +
-      `Tell the user the scan didn't match anything and ask them to name the food so you can call lookup_food.`,
-  });
 }
 
 // ---------------------------------------------------------------------------
