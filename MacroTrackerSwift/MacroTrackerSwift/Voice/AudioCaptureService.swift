@@ -54,6 +54,19 @@ final class AudioCaptureService: @unchecked Sendable {
     @ObservationIgnored nonisolated private let silenceGracePeriod: TimeInterval = 0.6
     @ObservationIgnored nonisolated(unsafe) private var tapSequence = 0
 
+    // MARK: - Echo suppression
+    /// When true, audio chunks are buffered (pre-roll) but not sent to the server.
+    /// Set by AudioPlaybackService while Gemini audio is playing to prevent echo.
+    @ObservationIgnored nonisolated(unsafe) var isSuppressed = false
+
+    /// Call when playback ends to discard any speaker echo lingering in the pre-roll
+    /// buffer and reset VAD timing so residual speaker energy doesn't trigger sending.
+    func clearEchoResidue() {
+        preRollBuffer = []
+        wasSending    = false
+        lastVoiceTime = 0  // expire the silence grace period immediately
+    }
+
     // MARK: - Pre-roll ring buffer (captures ~300ms before VAD trigger)
     /// At 16 kHz with 1024-frame taps, each chunk is ~64ms. 5 chunks ≈ 320ms of pre-roll.
     @ObservationIgnored nonisolated private let preRollCapacity = 5
@@ -94,6 +107,7 @@ final class AudioCaptureService: @unchecked Sendable {
         tapSequence   = 0
         preRollBuffer = []
         wasSending    = false
+        isSuppressed  = false
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: hwFormat) { [weak self] buffer, _ in
             self?.processTap(buffer: buffer)
@@ -164,7 +178,7 @@ final class AudioCaptureService: @unchecked Sendable {
         let byteCount = Int(outBuf.frameLength) * MemoryLayout<Int16>.size
         let chunkData = Data(bytes: int16Ptr[0], count: byteCount)
 
-        let shouldSend = now - lastVoiceTime < silenceGracePeriod
+        let shouldSend = now - lastVoiceTime < silenceGracePeriod && !isSuppressed
 
         if shouldSend {
             // VAD active — send audio

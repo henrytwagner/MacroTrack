@@ -13,49 +13,51 @@ struct FoodSearchResultRow: View {
 
     var body: some View {
         HStack(spacing: Spacing.md) {
-            // Content area — tappable
-            Button(action: {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                onTap()
-            }) {
-                VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
                     Text(food.displayName)
-                        .font(.appSubhead)
-                        .fontWeight(.semibold)
+                        .font(.appBody)
+                        .fontWeight(.medium)
                         .foregroundStyle(Color.appText)
                         .lineLimit(1)
-
-                    MacroInlineLine(
-                        prefix: "\(Self.fmt(food.baseServingSize)) \(food.baseServingUnit)",
-                        macros: food.baseMacros)
+                        .layoutPriority(1)
+                    Text("·")
+                        .font(.appCaption1)
+                        .foregroundStyle(Color.appTextTertiary)
+                    Text("\(Self.fmt(food.baseServingSize)) \(food.baseServingUnit)")
+                        .font(.appCaption1)
+                        .foregroundStyle(Color.appTextTertiary)
+                        .lineLimit(1)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-
-            HStack(spacing: Spacing.sm) {
                 Image(systemName: FoodSourceIndicator.systemImage(for: food.foodSource))
-                    .font(.system(size: 16))
+                    .font(.system(size: 12))
                     .foregroundStyle(FoodSourceIndicator.accentColor(for: food.foodSource))
                     .accessibilityLabel(accessibilitySourceLabel)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-                if showQuickAdd, let onQuickAdd {
-                    Button {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        onQuickAdd()
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(Color.appTint)
-                    }
-                    .buttonStyle(.plain)
+            MacroNutrientsColumn(macros: food.baseMacros)
+
+            if showQuickAdd, let onQuickAdd {
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    onQuickAdd()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Color.appTint)
                 }
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)
         .background(Color.appSurface)
         .contentShape(Rectangle())
+        .onTapGesture {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onTap()
+        }
     }
 
     private var accessibilitySourceLabel: String {

@@ -15,7 +15,26 @@ struct LoggedMealCard: View {
     let selectedIds:     Set<String>
     let onSelect:        (String) -> Void
 
-    @State private var isExpanded: Bool = false
+    var isEmbedded: Bool = false
+
+    @State private var isExpanded:    Bool = false
+    @State private var showLogSheet:  Bool = false
+
+    private var savedMeal: SavedMeal? {
+        guard let id = savedMealId else { return nil }
+        return MealsStore.shared.meal(for: id)
+    }
+
+    /// Infers the logged portion as a display string (e.g. "1×", "0.5×") by comparing
+    /// the sum of entry calories to the meal template total.
+    private var portionLabel: String? {
+        guard let meal = savedMeal, meal.totalMacros.calories > 0 else { return nil }
+        let logged = entries.reduce(0.0) { $0 + $1.calories }
+        let ratio  = (logged / meal.totalMacros.calories * 4).rounded() / 4
+        guard ratio > 0 else { return nil }
+        if ratio == ratio.rounded() { return "\(Int(ratio))×" }
+        return String(format: "%.2g×", ratio)
+    }
 
     // Look up the meal name via the singleton — @Observable tracks this automatically.
     private var mealName: String {
@@ -45,93 +64,100 @@ struct LoggedMealCard: View {
             if isExpanded {
                 Divider().padding(.leading, Spacing.lg)
                 ForEach(Array(entries.enumerated()), id: \.element.id) { idx, entry in
-                    if idx > 0 { Divider().padding(.leading, Spacing.lg + 28) }
+                    if idx > 0 { Divider().padding(.leading, Spacing.xl) }
                     FoodEntryRow(
-                        entry:           entry,
-                        onDelete:        { onDelete(entry.id) },
-                        onTap:           { onTap(entry) },
-                        isSelectionMode: isSelectionMode,
-                        isSelected:      selectedIds.contains(entry.id),
-                        onSelect:        { onSelect(entry.id) })
+                        entry:             entry,
+                        onDelete:          { onDelete(entry.id) },
+                        onTap:             { onTap(entry) },
+                        isSelectionMode:   isSelectionMode,
+                        isSelected:        selectedIds.contains(entry.id),
+                        onSelect:          { onSelect(entry.id) },
+                        horizontalPadding: Spacing.xxxl)
                 }
             }
         }
-        .background(Color.appSurface)
-        .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
+        .background(isEmbedded ? Color.clear : Color.appSurface)
+        .clipShape(isEmbedded ? AnyShape(Rectangle()) : AnyShape(RoundedRectangle(cornerRadius: BorderRadius.md)))
         .onChange(of: isSelectionMode) { _, newVal in
             if !newVal { isExpanded = false }
+        }
+        .sheet(isPresented: $showLogSheet) {
+            if let meal = savedMeal {
+                LogMealSheet(
+                    meal:             meal,
+                    onLogged:         { showLogSheet = false },
+                    existingEntryIds: entries.map(\.id),
+                    onDeleteEntry:    onDelete)
+            }
         }
     }
 
     // MARK: - Header
 
     private var headerRow: some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        HStack(spacing: Spacing.md) {
+            // Selection mode checkbox
             if isSelectionMode {
-                withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
-                    for entry in entries { onSelect(entry.id) }
-                }
-            } else {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    isExpanded.toggle()
-                }
+                Image(systemName: allSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20))
+                    .foregroundStyle(allSelected ? Color.appTint : Color.appTextTertiary)
+                    .animation(.spring(response: 0.2), value: allSelected)
             }
-        } label: {
-            HStack(spacing: Spacing.md) {
-                // Selection mode: group checkbox
+
+            // Left: name + chevron + item count — tap toggles expand (or selects all in selection mode)
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 if isSelectionMode {
-                    Image(systemName: allSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 20))
-                        .foregroundStyle(allSelected ? Color.appTint : Color.appTextTertiary)
-                        .animation(.spring(response: 0.2), value: allSelected)
-                }
-
-                Image(systemName: "fork.knife")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.appTextSecondary)
-                    .frame(width: 20)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(mealName)
-                        .font(.appBody)
-                        .fontWeight(.medium)
-                        .foregroundStyle(Color.appText)
-                        .lineLimit(1)
-                    Text("\(entries.count) item\(entries.count == 1 ? "" : "s")")
-                        .font(.appCaption1)
-                        .foregroundStyle(Color.appTextSecondary)
-                }
-
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(Int(totalMacros.calories.rounded())) cal")
-                        .font(.appBody)
-                        .fontWeight(.medium)
-                        .foregroundStyle(Color.appText)
-                    HStack(spacing: 6) {
-                        Text("P \(Int(totalMacros.proteinG.rounded()))g")
-                            .foregroundStyle(Color.proteinAccent)
-                        Text("C \(Int(totalMacros.carbsG.rounded()))g")
-                            .foregroundStyle(Color.carbsAccent)
-                        Text("F \(Int(totalMacros.fatG.rounded()))g")
-                            .foregroundStyle(Color.fatAccent)
+                    withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+                        for entry in entries { onSelect(entry.id) }
                     }
-                    .font(.appCaption2)
+                } else {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                        isExpanded.toggle()
+                    }
                 }
-
-                if !isSelectionMode {
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.appTextTertiary)
-                        .animation(.spring(response: 0.3), value: isExpanded)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                        Text(mealName)
+                            .font(.appBody)
+                            .fontWeight(.medium)
+                            .foregroundStyle(Color.appText)
+                            .lineLimit(1)
+                            .layoutPriority(1)
+                        if !isSelectionMode {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.appTextTertiary)
+                                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                                .animation(.spring(response: 0.25, dampingFraction: 0.75), value: isExpanded)
+                        }
+                    }
+                    HStack(spacing: Spacing.xs) {
+                        Text("\(entries.count) item\(entries.count == 1 ? "" : "s")")
+                        if let portion = portionLabel {
+                            Text("·")
+                            Text(portion)
+                        }
+                    }
+                    .font(.appCaption1)
+                    .foregroundStyle(Color.appTextTertiary)
                 }
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, Spacing.lg)
-            .padding(.vertical, Spacing.md)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            MacroNutrientsColumn(macros: totalMacros)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.md)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard !isSelectionMode, savedMeal != nil else { return }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            showLogSheet = true
+        }
     }
 }

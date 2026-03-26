@@ -11,25 +11,31 @@ struct FrequentFoodRow: View {
 
     var body: some View {
         HStack(spacing: Spacing.md) {
-            // Food info (fills remaining space)
-            Button {
-                onPressName()
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
                     Text(food.name)
                         .font(.appBody)
+                        .fontWeight(.medium)
                         .foregroundStyle(Color.appText)
                         .lineLimit(1)
-
-                    MacroInlineLine(
-                        prefix: "\(formatted(food.lastQuantity)) \(food.lastUnit)",
-                        macros: food.macros)
+                        .layoutPriority(1)
+                    Text("·")
+                        .font(.appCaption1)
+                        .foregroundStyle(Color.appTextTertiary)
+                    Text("\(formatted(food.lastQuantity)) \(food.lastUnit)")
+                        .font(.appCaption1)
+                        .foregroundStyle(Color.appTextTertiary)
+                        .lineLimit(1)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: FoodSourceIndicator.systemImage(for: food.source))
+                    .font(.system(size: 12))
+                    .foregroundStyle(FoodSourceIndicator.accentColor(for: food.source))
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Quick-add "+" button
+            MacroNutrientsColumn(macros: food.macros, font: .appBody)
+
+            // Quick-add "+" button — independent touch target
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 Task { await onQuickAdd(food) }
@@ -42,6 +48,11 @@ struct FrequentFoodRow: View {
         }
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onPressName()
+        }
     }
 
     private func formatted(_ v: Double) -> String {

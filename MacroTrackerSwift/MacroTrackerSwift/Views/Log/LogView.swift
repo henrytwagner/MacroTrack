@@ -22,6 +22,9 @@ struct LogView: View {
     @State private var showMacroPill:        Bool       = false
     @State private var macroPreviewExpanded: Bool       = false
 
+    @AppStorage("pillMacroStyleIndex") private var macroStyleIndex: Int = 0
+    @State private var pillPressing: Bool = false
+
     // Multi-select state
     @State private var isSelectionMode:    Bool        = false
     @State private var selectedEntryIds:   Set<String> = []
@@ -193,7 +196,6 @@ struct LogView: View {
             if shouldShow != showMacroPill {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     showMacroPill = shouldShow
-                    if !shouldShow { macroPreviewExpanded = false }
                 }
             }
         }
@@ -208,23 +210,10 @@ struct LogView: View {
     @ViewBuilder
     private var macroCard: some View {
         if let goals = currentGoals {
-            VStack(spacing: Spacing.md) {
-                MacroProgressBar(
-                    label: "Calories", current: dailyLogStore.totals.calories, goal: goals.calories,
-                    accentColor: .caloriesAccent, overflowColor: .caloriesOverflow, unit: " cal")
-                MacroProgressBar(
-                    label: "Protein", current: dailyLogStore.totals.proteinG, goal: goals.proteinG,
-                    accentColor: .proteinAccent, overflowColor: .proteinOverflow, unit: "g")
-                MacroProgressBar(
-                    label: "Carbs", current: dailyLogStore.totals.carbsG, goal: goals.carbsG,
-                    accentColor: .carbsAccent, overflowColor: .carbsOverflow, unit: "g")
-                MacroProgressBar(
-                    label: "Fat", current: dailyLogStore.totals.fatG, goal: goals.fatG,
-                    accentColor: .fatAccent, overflowColor: .fatOverflow, unit: "g")
-            }
-            .padding(Spacing.lg)
-            .background(Color.appSurface)
-            .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
+            LogMacroCard(totals: dailyLogStore.totals, goals: goals)
+                .padding(Spacing.lg)
+                .background(Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
         } else {
             Text("No daily goals set. Go to Profile → Daily Goals to get started.")
                 .font(.appSubhead)
@@ -242,95 +231,56 @@ struct LogView: View {
     @ViewBuilder
     private func macroOverlayPill(goals: DailyGoal) -> some View {
         let totals = dailyLogStore.totals
-        Button {
+        let radius: CGFloat = macroPreviewExpanded ? BorderRadius.full : 24
+
+        // ZStack lets both branches coexist during the crossfade while the pill resizes.
+        ZStack {
+            if macroPreviewExpanded {
+                MacroPillContent(totals: totals, goals: goals, styleIndex: macroStyleIndex, isIcon: true)
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.88)),
+                        removal:   .opacity.combined(with: .scale(scale: 0.88))
+                    ))
+            } else {
+                MacroPillContent(totals: totals, goals: goals, styleIndex: macroStyleIndex, isIcon: false)
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.88)),
+                        removal:   .opacity.combined(with: .scale(scale: 0.88))
+                    ))
+            }
+        }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.sm)
+        .background(Color.appSurface)
+        .clipShape(RoundedRectangle(cornerRadius: radius))
+        .overlay(
+            RoundedRectangle(cornerRadius: radius)
+                .stroke(Color.appBorder, lineWidth: 0.5)
+        )
+        .shadow(
+            color: .black.opacity(macroPreviewExpanded ? 0.08 : 0.12),
+            radius: macroPreviewExpanded ? 4 : 8,
+            x: 0, y: macroPreviewExpanded ? 2 : 4
+        )
+        .scaleEffect(pillPressing ? 0.97 : 1.0, anchor: .center)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: pillPressing)
+        .contentShape(RoundedRectangle(cornerRadius: radius))
+        // Tap: toggle between detailed and icon view
+        .onTapGesture {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
                 macroPreviewExpanded.toggle()
             }
-        } label: {
-            Group {
-                if macroPreviewExpanded {
-                    expandedPillContent(goals: goals, totals: totals)
-                } else {
-                    collapsedPillContent(goals: goals, totals: totals)
-                }
+        }
+        // Long press: cycle style (0 → 1 → 2 → 0), independent of card styles
+        .onLongPressGesture(minimumDuration: 0.45, pressing: { isPressing in
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) { pillPressing = isPressing }
+        }) {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                pillPressing   = false
+                macroStyleIndex = (macroStyleIndex + 1) % 3
             }
-            .padding(.horizontal, Spacing.lg)
-            .padding(.vertical, Spacing.sm)
-            .background(Color.appSurface)
-            .clipShape(RoundedRectangle(cornerRadius: macroPreviewExpanded ? 28 : BorderRadius.full))
-            .overlay(
-                RoundedRectangle(cornerRadius: macroPreviewExpanded ? 28 : BorderRadius.full)
-                    .stroke(Color.appBorder, lineWidth: 0.5)
-            )
-            .shadow(
-                color: .black.opacity(macroPreviewExpanded ? 0.15 : 0.08),
-                radius: macroPreviewExpanded ? 12 : 4,
-                x: 0, y: macroPreviewExpanded ? 6 : 2
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// Collapsed pill: 4 compact rings (Cal / P / C / F) with comfortable spacing.
-    private func collapsedPillContent(goals: DailyGoal, totals: Macros) -> some View {
-        HStack(spacing: Spacing.sm) {
-            SingleMacroRing(
-                label: "Cal",  current: totals.calories, goal: goals.calories,
-                accentColor: .caloriesAccent, overflowColor: .caloriesOverflow, variant: .compact)
-            SingleMacroRing(
-                label: "Pro",  current: totals.proteinG, goal: goals.proteinG,
-                accentColor: .proteinAccent,  overflowColor: .proteinOverflow,  variant: .compact)
-            SingleMacroRing(
-                label: "Carb", current: totals.carbsG,   goal: goals.carbsG,
-                accentColor: .carbsAccent,    overflowColor: .carbsOverflow,    variant: .compact)
-            SingleMacroRing(
-                label: "Fat",  current: totals.fatG,     goal: goals.fatG,
-                accentColor: .fatAccent,      overflowColor: .fatOverflow,      variant: .compact)
-        }
-    }
-
-    @ViewBuilder
-    private func expandedPillContent(goals: DailyGoal, totals: Macros) -> some View {
-        HStack(spacing: Spacing.lg) {
-            macroPillColumn(
-                label: "Cal",  current: totals.calories, goal: goals.calories,
-                accent: .caloriesAccent, overflow: .caloriesOverflow, unit: "")
-            macroPillColumn(
-                label: "Pro",  current: totals.proteinG, goal: goals.proteinG,
-                accent: .proteinAccent,  overflow: .proteinOverflow,  unit: "g")
-            macroPillColumn(
-                label: "Carb", current: totals.carbsG,   goal: goals.carbsG,
-                accent: .carbsAccent,    overflow: .carbsOverflow,    unit: "g")
-            macroPillColumn(
-                label: "Fat",  current: totals.fatG,     goal: goals.fatG,
-                accent: .fatAccent,      overflow: .fatOverflow,      unit: "g")
-        }
-    }
-
-    @ViewBuilder
-    private func macroPillColumn(
-        label: String, current: Double, goal: Double,
-        accent: Color, overflow: Color, unit: String
-    ) -> some View {
-        let remaining = goal - current
-        let remainText = remaining >= 0
-            ? "\(Int(remaining.rounded()))\(unit) left"
-            : "\(Int((-remaining).rounded()))\(unit) over"
-        VStack(spacing: 0) {
-            SingleMacroRing(
-                label: label, current: current, goal: goal,
-                accentColor: accent, overflowColor: overflow, variant: .compact)
-            Spacer().frame(height: Spacing.xs)
-            Text("\(Int(current.rounded()))/\(Int(goal.rounded()))")
-                .font(.appCaption2)
-                .foregroundStyle(Color.appTextSecondary)
-                .lineLimit(1)
-            Spacer().frame(height: Spacing.xs)
-            Text(remainText)
-                .font(.appCaption2)
-                .foregroundStyle(remaining < 0 ? overflow : Color.appTextTertiary)
-                .lineLimit(1)
         }
     }
 

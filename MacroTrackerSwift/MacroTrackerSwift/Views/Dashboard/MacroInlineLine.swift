@@ -38,6 +38,38 @@ struct MacroInlineLine: View {
     }
 }
 
+// MARK: - MacroNutrientsColumn
+
+/// Trailing-aligned two-line nutrient display used in food list rows.
+/// Line 1: "165 cal" (medium weight). Line 2: colored "P  C  F".
+struct MacroNutrientsColumn: View {
+    let macros: Macros
+    var font: Font = .appBody
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            Text("\(Int(macros.calories.rounded())) cal")
+                .font(font)
+                .fontWeight(.regular)
+                .foregroundStyle(Color.caloriesAccent)
+            HStack(spacing: 6) {
+                Text("P \(Int(macros.proteinG.rounded()))")
+                    .frame(minWidth: 20, alignment: .trailing)
+                    .foregroundStyle(Color.proteinAccent)
+                Text("C \(Int(macros.carbsG.rounded()))")
+                    .frame(minWidth: 20, alignment: .trailing)
+                    .foregroundStyle(Color.carbsAccent)
+                Text("F \(Int(macros.fatG.rounded()))")
+                    .frame(minWidth: 20, alignment: .trailing)
+                    .foregroundStyle(Color.fatAccent)
+            }
+            .font(.appCaption2)
+            .fontWeight(.semibold)
+            .monospacedDigit()
+        }
+    }
+}
+
 // MARK: - Preview
 
 #Preview {
@@ -46,6 +78,9 @@ struct MacroInlineLine: View {
                         macros: Macros(calories: 350, proteinG: 30, carbsG: 42, fatG: 9))
         MacroInlineLine(prefix: nil,
                         macros: Macros(calories: 520, proteinG: 38, carbsG: 60, fatG: 14))
+        MacroNutrientsColumn(macros: Macros(calories: 350, proteinG: 30, carbsG: 42, fatG: 9))
+        MacroNutrientsColumn(macros: Macros(calories: 165, proteinG: 31, carbsG: 0, fatG: 4),
+                             font: .appBody)
     }
     .padding()
 }

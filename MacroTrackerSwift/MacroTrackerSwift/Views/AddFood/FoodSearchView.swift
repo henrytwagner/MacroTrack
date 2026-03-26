@@ -1,25 +1,14 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Bottom bar height (material strip only, for overlay positioning)
-
-private struct FoodSearchBottomBarHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 // MARK: - FoodSearchView
 
 /// Full-screen food search presented as a fullScreenCover.
 /// Three tabs: Search results, My Foods, Meals (stub).
 @MainActor
 struct FoodSearchView: View {
-    /// Fallback before first layout pass measures the material bar.
     private enum Chrome {
-        static let fallbackMaterialBarHeight: CGFloat = 100
-        static let backButtonSize:        CGFloat = 44
+        static let backButtonSize: CGFloat = 44
     }
 
     @Environment(DailyLogStore.self) private var logStore
@@ -46,15 +35,6 @@ struct FoodSearchView: View {
 
     @FocusState private var searchFocused: Bool
 
-    /// Height of the bottom safe-area inset content (search + tabs + material only).
-    @State private var bottomBarMaterialHeight: CGFloat = 0
-
-    /// Scroll padding: material bar + gap above it for the floating back control + buffer.
-    private var scrollBottomInset: CGFloat {
-        let bar = max(bottomBarMaterialHeight, Chrome.fallbackMaterialBarHeight)
-        return bar + Chrome.backButtonSize + Spacing.sm + Spacing.lg
-    }
-
     var body: some View {
         TabView(selection: $selectedTab) {
             searchTab.tag(0)
@@ -75,15 +55,8 @@ struct FoodSearchView: View {
                 }
         )
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            bottomChrome
+            bottomNavRow
         }
-        // Back is NOT in the inset — avoids an opaque compositing layer behind the whole inset height.
-        .overlay(alignment: .bottomLeading) {
-            backButton
-                .padding(.leading, Spacing.lg)
-                .padding(.bottom, max(bottomBarMaterialHeight, Chrome.fallbackMaterialBarHeight) + Spacing.sm)
-        }
-        .onPreferenceChange(FoodSearchBottomBarHeightKey.self) { bottomBarMaterialHeight = $0 }
         .onChange(of: vm.query) { _, _ in vm.onQueryChanged() }
         .task {
             await vm.fetchFrequentAndRecent()
@@ -142,7 +115,84 @@ struct FoodSearchView: View {
         }
     }
 
-    // MARK: - Bottom chrome (material bar only — back is overlaid, not in safeAreaInset)
+    // MARK: - Chrome
+
+    /// Safari-style bottom chrome: segmented picker above, then [back] [search pill] [add] in one row.
+    private var bottomNavRow: some View {
+        VStack(spacing: Spacing.sm) {
+            Picker("", selection: $selectedTab) {
+                Text("Search").tag(0)
+                Text("My Foods").tag(1)
+                Text("Meals").tag(2)
+            }
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+            .padding(.horizontal, Spacing.lg)
+
+            HStack(spacing: Spacing.sm) {
+                backButton
+
+                // Expanding search pill — mirrors Safari's address bar
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.appTextSecondary)
+                    TextField("Search foods…", text: $vm.query)
+                        .focused($searchFocused)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .submitLabel(.search)
+                    if !vm.query.isEmpty {
+                        Button {
+                            vm.query = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(Color.appTextTertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        showBarcode = true
+                    } label: {
+                        Image(systemName: "barcode.viewfinder")
+                            .font(.system(size: 16))
+                            .foregroundStyle(Color.appTint)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity)
+                .glassEffect(.regular, in: Capsule())
+
+                addButton
+            }
+            .padding(.horizontal, Spacing.lg)
+        }
+        .padding(.top, Spacing.sm)
+        .padding(.bottom, Spacing.xs)
+        .frame(maxWidth: .infinity)
+        .background(.clear)
+    }
+
+    private var addButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            if selectedTab == 2 {
+                showMealCreation = true
+            } else {
+                createFoodMode = .new(prefillName: nil, prefillBarcode: nil)
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(Color.appTint)
+                .frame(width: Chrome.backButtonSize, height: Chrome.backButtonSize)
+                .glassEffect(.regular.interactive(), in: Circle())
+        }
+        .buttonStyle(.plain)
+    }
 
     private var backButton: some View {
         Button {
@@ -166,87 +216,6 @@ struct FoodSearchView: View {
             }
         }
         .buttonStyle(.plain)
-    }
-
-    private var bottomChrome: some View {
-        VStack(spacing: Spacing.sm) {
-            HStack(spacing: Spacing.sm) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Color.appTextSecondary)
-                TextField("Search foods…", text: $vm.query)
-                    .focused($searchFocused)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .submitLabel(.search)
-                if !vm.query.isEmpty {
-                    Button {
-                        vm.query = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(Color.appTextTertiary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, 10)
-            .background(Color.appSurfaceSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: BorderRadius.xl, style: .continuous))
-            .padding(.horizontal, Spacing.md)
-
-            HStack(spacing: Spacing.md) {
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    showBarcode = true
-                } label: {
-                    Image(systemName: "barcode.viewfinder")
-                        .font(.system(size: 19))
-                        .foregroundStyle(Color.appTint)
-                        .frame(width: 36, height: 36)
-                        .glassEffect(.regular.interactive(), in: Circle())
-                }
-                .buttonStyle(.plain)
-
-                Picker("", selection: $selectedTab) {
-                    Text("Search").tag(0)
-                    Text("My Foods").tag(1)
-                    Text("Meals").tag(2)
-                }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: .infinity)
-
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    if selectedTab == 2 {
-                        showMealCreation = true
-                    } else {
-                        createFoodMode = .new(prefillName: nil, prefillBarcode: nil)
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 19, weight: .semibold))
-                        .foregroundStyle(Color.appTint)
-                        .frame(width: 36, height: 36)
-                        .glassEffect(.regular.interactive(), in: Circle())
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, Spacing.md)
-        }
-        .padding(.top, Spacing.sm)
-        .padding(.bottom, Spacing.xs)
-        .frame(maxWidth: .infinity)
-        .background {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .ignoresSafeArea(edges: .bottom)
-        }
-        .background {
-            GeometryReader { g in
-                Color.clear.preference(key: FoodSearchBottomBarHeightKey.self, value: g.size.height)
-            }
-        }
     }
 
     // MARK: - Search Tab
@@ -329,7 +298,6 @@ struct FoodSearchView: View {
             }
             .padding(.top, Spacing.sm)
         }
-        .contentMargins(.bottom, scrollBottomInset, for: .scrollContent)
     }
 
     private func searchResultsList(results: UnifiedSearchResponse) -> some View {
@@ -419,7 +387,6 @@ struct FoodSearchView: View {
             }
             .padding(.top, Spacing.sm)
         }
-        .contentMargins(.bottom, scrollBottomInset, for: .scrollContent)
     }
 
     /// Matches food-management screens (`ManageCustomFoodsView`, etc.) that use
@@ -496,8 +463,7 @@ struct FoodSearchView: View {
                     }
                     .padding(.top, Spacing.sm)
                 }
-                .contentMargins(.bottom, scrollBottomInset, for: .scrollContent)
-            }
+                    }
         }
     }
 
@@ -505,8 +471,7 @@ struct FoodSearchView: View {
 
     private var mealsTab: some View {
         MealsListView(
-            scrollBottomInset: scrollBottomInset,
-            onCreateMeal:      { showMealCreation = true },
+            onCreateMeal: { showMealCreation = true },
             onDismiss:         onDismiss,
             onPickMeal:        isIngredientMode
                 ? { meal in meal.items.forEach { onAddIngredient?($0) } }

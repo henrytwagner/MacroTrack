@@ -14,6 +14,10 @@ struct KitchenModeView: View {
     @State private var vm = KitchenModeViewModel()
     @State private var showCancelAlert = false
 
+    @AppStorage("kitchenMacroPillStyleIndex") private var macroStyleIndex: Int = 0
+    @State private var kitchenPillExpanded: Bool = false
+    @State private var pillPressing: Bool = false
+
     let onDismiss: () -> Void
 
     // MARK: - Body
@@ -131,6 +135,7 @@ struct KitchenModeView: View {
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
                     .scrollIndicators(.hidden)
+                    .scrollDismissesKeyboard(.interactively)
                     .contentMargins(.top, 64, for: .scrollContent)
                     .contentMargins(.bottom, Spacing.lg, for: .scrollContent)
                     .onChange(of: vm.items.count) { _, _ in
@@ -223,76 +228,54 @@ struct KitchenModeView: View {
 
     private var macroPillOverlay: some View {
         let goals: DailyGoal? = goalStore.goalsByDate[dateStore.selectedDate] ?? nil
+        let totals = vm.liveProjectedTotals
+        let radius: CGFloat = kitchenPillExpanded ? BorderRadius.full : 24
 
-        return HStack(spacing: Spacing.xs) {
-            Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    vm.macroPreviewExpanded.toggle()
+        return ZStack {
+            if kitchenPillExpanded {
+                if let g = goals {
+                    MacroPillContent(totals: totals, goals: g, styleIndex: macroStyleIndex, isIcon: true)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.88)),
+                            removal:   .opacity.combined(with: .scale(scale: 0.88))
+                        ))
                 }
-            } label: {
-                if vm.macroPreviewExpanded, let g = goals {
-                    expandedMacroPill(goals: g)
+            } else {
+                if let g = goals {
+                    MacroPillContent(totals: totals, goals: g, styleIndex: macroStyleIndex, isIcon: false)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.88)),
+                            removal:   .opacity.combined(with: .scale(scale: 0.88))
+                        ))
                 } else {
-                    MacroRingProgress(
-                        totals: vm.liveProjectedTotals,
-                        goals: goals,
-                        variant: .compact
-                    )
+                    MacroRingProgress(totals: totals, goals: nil, variant: .compact)
+                        .transition(.opacity)
                 }
             }
-            .buttonStyle(.plain)
-            .padding(.vertical, vm.macroPreviewExpanded ? Spacing.md : Spacing.sm)
-            .padding(.horizontal, vm.macroPreviewExpanded ? Spacing.lg : Spacing.md)
-            .background(Color.appSurface)
-            .clipShape(RoundedRectangle(cornerRadius: vm.macroPreviewExpanded ? 28 : BorderRadius.full))
-            .overlay(
-                RoundedRectangle(cornerRadius: vm.macroPreviewExpanded ? 28 : BorderRadius.full)
-                    .stroke(Color.appBorder, lineWidth: 0.5)
-            )
-            .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 1)
         }
-    }
-
-    private func expandedMacroPill(goals: DailyGoal) -> some View {
-        let totals = vm.liveProjectedTotals
-        return HStack(spacing: Spacing.lg) {
-            macroPillColumn(label: "Cal", current: totals.calories,
-                            goal: goals.calories, unit: "",
-                            accent: .caloriesAccent, overflow: .caloriesOverflow)
-            macroPillColumn(label: "P", current: totals.proteinG,
-                            goal: goals.proteinG, unit: "g",
-                            accent: .proteinAccent, overflow: .proteinOverflow)
-            macroPillColumn(label: "C", current: totals.carbsG,
-                            goal: goals.carbsG, unit: "g",
-                            accent: .carbsAccent, overflow: .carbsOverflow)
-            macroPillColumn(label: "F", current: totals.fatG,
-                            goal: goals.fatG, unit: "g",
-                            accent: .fatAccent, overflow: .fatOverflow)
+        .padding(.horizontal, kitchenPillExpanded ? Spacing.lg : Spacing.md)
+        .padding(.vertical, kitchenPillExpanded ? Spacing.md : Spacing.sm)
+        .background(Color.appSurface)
+        .clipShape(RoundedRectangle(cornerRadius: radius))
+        .overlay(RoundedRectangle(cornerRadius: radius).stroke(Color.appBorder, lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 1)
+        .scaleEffect(pillPressing ? 0.97 : 1.0, anchor: .center)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: pillPressing)
+        .contentShape(RoundedRectangle(cornerRadius: radius))
+        .onTapGesture {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
+                kitchenPillExpanded.toggle()
+            }
         }
-    }
-
-    private func macroPillColumn(label: String, current: Double, goal: Double,
-                                  unit: String, accent: Color, overflow: Color) -> some View {
-        let remaining = goal - current
-        let remainText = remaining >= 0
-            ? "\(Int(remaining.rounded()))\(unit) left"
-            : "\(Int((-remaining).rounded()))\(unit) over"
-
-        return VStack(spacing: Spacing.xs) {
-            SingleMacroRing(
-                label: label, current: current, goal: goal,
-                accentColor: accent, overflowColor: overflow,
-                variant: .compact
-            )
-            Text("\(Int(current.rounded()))/\(Int(goal.rounded()))")
-                .font(.appCaption2)
-                .foregroundStyle(Color.appTextSecondary)
-                .lineLimit(1)
-            Text(remainText)
-                .font(.appCaption2)
-                .foregroundStyle(remaining < 0 ? overflow : Color.appTextTertiary)
-                .lineLimit(1)
+        .onLongPressGesture(minimumDuration: 0.45, pressing: { isPressing in
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) { pillPressing = isPressing }
+        }) {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                pillPressing    = false
+                macroStyleIndex = (macroStyleIndex + 1) % 3
+            }
         }
     }
 

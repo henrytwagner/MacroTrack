@@ -94,6 +94,42 @@ function snapshotDraft(session: KitchenSession): void {
   session.redoStack = [];
 }
 
+/** Summary of the current draft state — appended to every function call response as _draft. */
+function draftSummary(session: KitchenSession): object {
+  return {
+    item_count: session.items.length,
+    items: session.items.map((i) => ({
+      id: i.id,
+      name: i.name,
+      quantity: i.quantity,
+      unit: i.unit,
+      state: i.state,
+    })),
+    pending_creation: session.pendingCreationId
+      ? { id: session.pendingCreationId, name: session.pendingCreationName }
+      : null,
+    pending_choice: session.pendingChoiceId
+      ? { id: session.pendingChoiceId, name: session.pendingChoiceName }
+      : null,
+  };
+}
+
+/**
+ * Centralized helper for notifying Gemini about non-voice input events.
+ * Every input source (touch, scale, barcode, camera, AR) uses this to keep
+ * Gemini's context in sync. Includes current draft summary so Gemini always
+ * knows the full state.
+ */
+function notifyGemini(
+  session: KitchenSession,
+  event: { source: string; action: string; details: string },
+): void {
+  const draft = draftSummary(session);
+  const msg = `[${event.source}] ${event.action}: ${event.details}\n\nCurrent draft: ${JSON.stringify(draft)}`;
+  console.log(`[KitchenMode] notifyGemini — ${event.source}/${event.action}`);
+  session.gemini.sendText(msg);
+}
+
 // ---------------------------------------------------------------------------
 // Function call handlers
 // Each handler mutates session state and/or sends WS messages to the iOS client.
@@ -538,6 +574,35 @@ function handleRemoveDraftItem(
   return { success: true };
 }
 
+function handleAbandonCreation(session: KitchenSession): unknown {
+  if (!session.pendingCreationId) {
+    return { error: "No food creation in progress." };
+  }
+
+  const creationId = session.pendingCreationId;
+  const creationName = session.pendingCreationName ?? "";
+
+  // Remove the creation card from items if it was added to the array
+  const idx = session.items.findIndex((i) => i.id === creationId);
+  if (idx !== -1) {
+    snapshotDraft(session);
+    session.items.splice(idx, 1);
+  }
+
+  // Dismiss the creation card on the iOS client
+  send(session.socket, {
+    type: "item_removed",
+    itemId: creationId,
+  } satisfies WSItemRemovedMessage);
+
+  // Clear all pending creation state
+  session.pendingCreationId = null;
+  session.pendingCreationName = null;
+  session.pendingCreationValues = {};
+
+  return { success: true, abandoned_food: creationName };
+}
+
 function handleUndo(session: KitchenSession): unknown {
   if (session.draftHistory.length === 0) {
     return { error: "Nothing to undo." };
@@ -644,37 +709,60 @@ async function dispatchFunctionCall(
   args: Record<string, unknown>,
   session: KitchenSession,
 ): Promise<unknown> {
+  let result: unknown;
   switch (name) {
     case "lookup_food":
-      return handleLookupFood(args, session);
+      result = await handleLookupFood(args, session);
+      break;
     case "add_to_draft":
-      return handleAddToDraft(args, session);
+      result = await handleAddToDraft(args, session);
+      break;
     case "begin_custom_food_creation":
-      return handleBeginCustomFoodCreation(args, session);
+      result = handleBeginCustomFoodCreation(args, session);
+      break;
     case "search_usda":
-      return handleSearchUsda(args, session);
+      result = await handleSearchUsda(args, session);
+      break;
     case "report_nutrition_field":
-      return handleReportNutritionField(args, session);
+      result = handleReportNutritionField(args, session);
+      break;
     case "create_custom_food":
-      return handleCreateCustomFood(args, session);
+      result = await handleCreateCustomFood(args, session);
+      break;
     case "edit_draft_item":
-      return handleEditDraftItem(args, session);
+      result = await handleEditDraftItem(args, session);
+      break;
     case "remove_draft_item":
-      return handleRemoveDraftItem(args, session);
+      result = handleRemoveDraftItem(args, session);
+      break;
+    case "abandon_creation":
+      result = handleAbandonCreation(session);
+      break;
     case "undo":
-      return handleUndo(session);
+      result = handleUndo(session);
+      break;
     case "redo":
-      return handleRedo(session);
+      result = handleRedo(session);
+      break;
     case "open_barcode_scanner":
-      return handleOpenBarcodeScanner(session);
+      result = handleOpenBarcodeScanner(session);
+      break;
     case "save_session":
-      return handleSaveSession(session);
+      result = await handleSaveSession(session);
+      break;
     case "cancel_session":
-      return handleCancelSession(session);
+      result = await handleCancelSession(session);
+      break;
     default:
       console.warn(`[KitchenMode] unknown function call: ${name}`);
-      return { error: `Unknown function: ${name}` };
+      result = { error: `Unknown function: ${name}` };
   }
+
+  // Append draft summary to every response so Gemini always knows the current state
+  if (result && typeof result === "object") {
+    (result as Record<string, unknown>)._draft = draftSummary(session);
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -691,20 +779,25 @@ async function handleBarcodeScan(
   });
 
   if (result) {
-    // Give Gemini everything it needs to call add_to_draft immediately.
-    session.gemini.sendText(
-      `Barcode scan result: found custom food "${result.name}". ` +
-      `Call add_to_draft with food_ref "custom:${result.id}", ` +
-      `quantity ${result.servingSize}, unit "${result.servingUnit}". ` +
-      `Do not ask the user for quantity — use these defaults.`,
-    );
+    notifyGemini(session, {
+      source: "barcode",
+      action: "food_found",
+      details:
+        `Found custom food "${result.name}". ` +
+        `Call add_to_draft with food_ref "custom:${result.id}", ` +
+        `quantity ${result.servingSize}, unit "${result.servingUnit}". ` +
+        `Do not ask the user for quantity — use these defaults.`,
+    });
     return;
   }
 
-  session.gemini.sendText(
-    `Barcode scan result: GTIN ${gtin}. No matching food found in this user's custom foods. ` +
-    `Please tell the user the scan didn't match anything and ask them to name the food so you can call lookup_food.`,
-  );
+  notifyGemini(session, {
+    source: "barcode",
+    action: "not_found",
+    details:
+      `GTIN ${gtin} — no matching food in this user's custom foods. ` +
+      `Tell the user the scan didn't match anything and ask them to name the food so you can call lookup_food.`,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -814,7 +907,7 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
       // prevents repeated end signals on silence bursts after Gemini responds.
       let audioEndTimer: ReturnType<typeof setTimeout> | null = null;
       let chunksAfterLastEnd = 0;
-      const AUDIO_END_SILENCE_MS = 1500;
+      const AUDIO_END_SILENCE_MS = Number(process.env.AUDIO_END_SILENCE_MS) || 1500;
 
       socket.on("message", (raw: Buffer) => {
         let msg: WSClientMessage;
@@ -862,11 +955,19 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
               if (editMsg.type === "item_edited") {
                 snapshotDraft(session);
                 const idx = session.items.findIndex((i) => i.id === msg.itemId);
+                const itemName = idx !== -1 ? session.items[idx].name : msg.itemId;
                 if (idx !== -1) {
                   session.items[idx] = { ...session.items[idx], ...editMsg.changes };
                 }
+                send(socket, editMsg);
+                notifyGemini(session, {
+                  source: "scale",
+                  action: "weight_confirmed",
+                  details: `${itemName} now ${msg.quantity} ${msg.unit}`,
+                });
+              } else {
+                send(socket, editMsg);
               }
-              send(socket, editMsg);
             })();
             break;
 
@@ -901,9 +1002,11 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
                   session.items[idx] = { ...session.items[idx], ...editMsg.changes };
                 }
                 send(socket, editMsg);
-                session.gemini.sendText(
-                  `User edited ${itemName} quantity to ${msg.quantity} ${msg.unit} via touch.`
-                );
+                notifyGemini(session, {
+                  source: "touch",
+                  action: "edit_item",
+                  details: `${itemName} quantity → ${msg.quantity} ${msg.unit}`,
+                });
               } else {
                 send(socket, {
                   type: "error",
@@ -923,7 +1026,11 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
                 type: "item_removed",
                 itemId: msg.itemId,
               } satisfies WSItemRemovedMessage);
-              session.gemini.sendText(`User removed ${itemName} via touch.`);
+              notifyGemini(session, {
+                source: "touch",
+                action: "remove_item",
+                details: itemName,
+              });
             }
             break;
           }
@@ -982,9 +1089,11 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
                 item: draftItem,
               } satisfies WSCreateFoodCompleteMessage);
 
-              session.gemini.sendText(
-                `User manually completed food creation for ${msg.name} via touch. The creation card has been resolved. Do not ask for nutrition values.`
-              );
+              notifyGemini(session, {
+                source: "touch",
+                action: "complete_creation",
+                details: `${msg.name} — creation resolved, do not ask for nutrition values`,
+              });
             })();
             break;
 

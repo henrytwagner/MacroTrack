@@ -67,38 +67,37 @@ struct MealGroup: View {
                         .foregroundStyle(Color.appTextSecondary)
                 }
 
-                // Standalone entries card (preserves original grouped look)
-                if !standaloneEntries.isEmpty {
-                    VStack(spacing: 0) {
-                        ForEach(Array(standaloneEntries.enumerated()), id: \.element.id) { idx, entry in
-                            FoodEntryRow(
-                                entry:           entry,
-                                onDelete:        { onDelete(entry.id) },
-                                onTap:           { onTap(entry) },
-                                isSelectionMode: isSelectionMode,
-                                isSelected:      selectedIds.contains(entry.id),
-                                onSelect:        { onSelect(entry.id) })
-                            if idx < standaloneEntries.count - 1 {
-                                Divider().padding(.leading, Spacing.lg)
-                            }
-                        }
+                // All entries and meal clusters in one card
+                VStack(spacing: 0) {
+                    ForEach(Array(standaloneEntries.enumerated()), id: \.element.id) { idx, entry in
+                        if idx > 0 { Divider().padding(.leading, Spacing.lg) }
+                        FoodEntryRow(
+                            entry:           entry,
+                            onDelete:        { onDelete(entry.id) },
+                            onTap:           { onTap(entry) },
+                            isSelectionMode: isSelectionMode,
+                            isSelected:      selectedIds.contains(entry.id),
+                            onSelect:        { onSelect(entry.id) })
                     }
-                    .background(Color.appSurface)
-                    .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
-                }
 
-                // Meal cluster cards
-                ForEach(clusters, id: \.instanceId) { cluster in
-                    LoggedMealCard(
-                        mealInstanceId:  cluster.instanceId,
-                        savedMealId:     cluster.savedMealId,
-                        entries:         cluster.entries,
-                        onDelete:        onDelete,
-                        onTap:           onTap,
-                        isSelectionMode: isSelectionMode,
-                        selectedIds:     selectedIds,
-                        onSelect:        onSelect)
+                    ForEach(Array(clusters.enumerated()), id: \.element.instanceId) { idx, cluster in
+                        if !standaloneEntries.isEmpty || idx > 0 {
+                            Divider().padding(.leading, Spacing.lg)
+                        }
+                        LoggedMealCard(
+                            mealInstanceId:  cluster.instanceId,
+                            savedMealId:     cluster.savedMealId,
+                            entries:         cluster.entries,
+                            onDelete:        onDelete,
+                            onTap:           onTap,
+                            isSelectionMode: isSelectionMode,
+                            selectedIds:     selectedIds,
+                            onSelect:        onSelect,
+                            isEmbedded:      true)
+                    }
                 }
+                .background(Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
             }
         }
     }

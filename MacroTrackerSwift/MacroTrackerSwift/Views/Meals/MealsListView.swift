@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - MealsListView
 
@@ -8,7 +9,6 @@ struct MealsListView: View {
     @Environment(DailyLogStore.self) private var logStore
     @Environment(DateStore.self)     private var dateStore
 
-    let scrollBottomInset: CGFloat
     let onCreateMeal: () -> Void
     /// Called after a meal is successfully logged — used to dismiss FoodSearchView.
     let onDismiss: () -> Void
@@ -113,7 +113,6 @@ struct MealsListView: View {
             }
             .padding(.top, Spacing.sm)
         }
-        .contentMargins(.bottom, scrollBottomInset, for: .scrollContent)
     }
 
     private func tabPageHeader(_ title: String) -> some View {
@@ -134,51 +133,92 @@ struct SavedMealRow: View {
     let meal:  SavedMeal
     let onTap: () -> Void
 
+    @State private var isExpanded = false
+
     private var total: Macros { meal.totalMacros }
 
     var body: some View {
-        Button(action: onTap) {
+        VStack(spacing: 0) {
+            // Main row
             HStack(spacing: Spacing.md) {
-                Image(systemName: "fork.knife")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Color.appTextSecondary)
-                    .frame(width: 24)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(meal.name)
-                        .font(.appBody)
-                        .fontWeight(.medium)
-                        .foregroundStyle(Color.appText)
-                    Text("\(meal.items.count) item\(meal.items.count == 1 ? "" : "s")")
-                        .font(.appCaption1)
-                        .foregroundStyle(Color.appTextSecondary)
+                // Chevron + name — tap toggles dropdown
+                Button {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                            Text(meal.name)
+                                .font(.appBody)
+                                .fontWeight(.medium)
+                                .foregroundStyle(Color.appText)
+                                .lineLimit(1)
+                                .layoutPriority(1)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.appTextTertiary)
+                                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                                .animation(.spring(response: 0.25, dampingFraction: 0.75), value: isExpanded)
+                        }
+                        Text("\(meal.items.count) item\(meal.items.count == 1 ? "" : "s")")
+                            .font(.appCaption1)
+                            .foregroundStyle(Color.appTextTertiary)
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
 
                 Spacer()
 
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(Int(total.calories.rounded())) cal")
-                        .font(.appBody)
-                        .fontWeight(.medium)
-                        .foregroundStyle(Color.appText)
-                    HStack(spacing: 6) {
-                        Text("P \(Int(total.proteinG.rounded()))g")
-                            .foregroundStyle(Color.proteinAccent)
-                        Text("C \(Int(total.carbsG.rounded()))g")
-                            .foregroundStyle(Color.carbsAccent)
-                        Text("F \(Int(total.fatG.rounded()))g")
-                            .foregroundStyle(Color.fatAccent)
-                    }
-                    .font(.appCaption2)
-                }
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.appTextTertiary)
+                MacroNutrientsColumn(macros: total)
             }
             .padding(.horizontal, Spacing.lg)
             .padding(.vertical, Spacing.md)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onTap()
+            }
+
+            // Expanded item list
+            if isExpanded {
+                ForEach(meal.items) { item in
+                    Divider().padding(.leading, Spacing.lg)
+                    HStack(spacing: Spacing.md) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                                Text(item.name)
+                                    .font(.appBody)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(Color.appText)
+                                    .lineLimit(1)
+                                    .layoutPriority(1)
+                                Text("·")
+                                    .font(.appCaption1)
+                                    .foregroundStyle(Color.appTextTertiary)
+                                Text("\(fmtQty(item.quantity)) \(item.unit)")
+                                    .font(.appCaption1)
+                                    .foregroundStyle(Color.appTextTertiary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        MacroNutrientsColumn(macros: Macros(
+                            calories: item.calories,
+                            proteinG: item.proteinG,
+                            carbsG:   item.carbsG,
+                            fatG:     item.fatG))
+                    }
+                    .padding(.horizontal, Spacing.xxxl)
+                    .padding(.vertical, Spacing.sm)
+                }
+            }
         }
-        .buttonStyle(.plain)
+    }
+
+    private func fmtQty(_ v: Double) -> String {
+        v.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(v)) : String(format: "%.1f", v)
     }
 }

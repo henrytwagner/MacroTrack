@@ -126,7 +126,7 @@ private struct LayoutNestedRings: View {
 
         ZStack {
             Circle()
-                .stroke(Color.progressTrack, lineWidth: sw)
+                .stroke(Color.progressTrack.opacity(0.6), lineWidth: sw)
                 .frame(width: size, height: size)
 
             Circle()
@@ -134,11 +134,23 @@ private struct LayoutNestedRings: View {
                 .stroke(accent, style: StrokeStyle(lineWidth: sw, lineCap: .round))
                 .frame(width: size, height: size)
                 .rotationEffect(.degrees(-90))
+                .shadow(color: accent.opacity(0.45), radius: 7)
 
             if overflowTrim > 0 {
+                let clamped = min(overflowTrim, 0.99)
                 Circle()
-                    .trim(from: fillTrim, to: fillTrim + overflowTrim)
-                    .stroke(overflow, style: StrokeStyle(lineWidth: sw, lineCap: .round))
+                    .trim(from: 0, to: clamped)
+                    .stroke(
+                        AngularGradient(
+                            stops: [
+                                .init(color: Color.black.opacity(0.3), location: 0),
+                                .init(color: Color.black.opacity(0.3), location: clamped * 0.8),
+                                .init(color: .clear, location: clamped),
+                            ],
+                            center: .center,
+                            startAngle: .degrees(0),
+                            endAngle: .degrees(360)),
+                        style: StrokeStyle(lineWidth: sw, lineCap: .butt))
                     .frame(width: size, height: size)
                     .rotationEffect(.degrees(-90))
             }
@@ -248,7 +260,7 @@ private struct LayoutActivityRings: View {
 
         ZStack {
             Circle()
-                .stroke(Color.progressTrack, lineWidth: strokeWidth)
+                .stroke(Color.progressTrack.opacity(0.6), lineWidth: strokeWidth)
                 .frame(width: ring.frameSize, height: ring.frameSize)
 
             if fillTrim > 0 {
@@ -258,13 +270,24 @@ private struct LayoutActivityRings: View {
                             style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round))
                     .frame(width: ring.frameSize, height: ring.frameSize)
                     .rotationEffect(.degrees(-90))
+                    .shadow(color: ring.accent.opacity(0.45), radius: 8)
             }
 
             if overflowTrim > 0 {
+                let clamped = min(overflowTrim, 0.99)
                 Circle()
-                    .trim(from: fillTrim, to: fillTrim + overflowTrim)
-                    .stroke(ring.overflow,
-                            style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round))
+                    .trim(from: 0, to: clamped)
+                    .stroke(
+                        AngularGradient(
+                            stops: [
+                                .init(color: Color.black.opacity(0.3), location: 0),
+                                .init(color: Color.black.opacity(0.3), location: clamped * 0.8),
+                                .init(color: .clear, location: clamped),
+                            ],
+                            center: .center,
+                            startAngle: .degrees(0),
+                            endAngle: .degrees(360)),
+                        style: StrokeStyle(lineWidth: strokeWidth, lineCap: .butt))
                     .frame(width: ring.frameSize, height: ring.frameSize)
                     .rotationEffect(.degrees(-90))
             }

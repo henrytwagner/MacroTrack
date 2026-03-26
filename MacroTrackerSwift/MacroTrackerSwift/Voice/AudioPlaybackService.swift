@@ -73,6 +73,8 @@ final class AudioPlaybackService: @unchecked Sendable {
         engine.stop()
         isEngineRunning  = false
         isGeminiSpeaking = false
+        AudioCaptureService.shared.isSuppressed = false
+        AudioCaptureService.shared.clearEchoResidue()
         scheduledCount   = 0
         completedCount   = 0
         // AVAudioSession remains active — managed by KitchenModeViewModel lifecycle
@@ -114,6 +116,7 @@ final class AudioPlaybackService: @unchecked Sendable {
 
         scheduledCount  += 1
         isGeminiSpeaking = true
+        AudioCaptureService.shared.isSuppressed = true
         if scheduledCount == 1 {
             print("[AudioPlayback] first audio chunk enqueued — \(frameCount) frames")
         }
@@ -126,6 +129,8 @@ final class AudioPlaybackService: @unchecked Sendable {
                 if self.completedCount >= self.scheduledCount {
                     print("[AudioPlayback] playback complete — \(self.completedCount) buffers")
                     self.isGeminiSpeaking = false
+                    AudioCaptureService.shared.isSuppressed = false
+                    AudioCaptureService.shared.clearEchoResidue()
                 }
             }
         }

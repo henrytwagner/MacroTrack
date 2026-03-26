@@ -153,14 +153,23 @@ struct ManageCommunityFoodsView: View {
             editMode = .editCommunity(food)
         } label: {
             HStack(spacing: Spacing.md) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(food.name)
-                        .font(.appSubhead)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(Color.appText)
-                        .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                        Text(food.name)
+                            .font(.appBody)
+                            .fontWeight(.medium)
+                            .foregroundStyle(Color.appText)
+                            .lineLimit(1)
+                            .layoutPriority(1)
+                        Text("·")
+                            .font(.appCaption1)
+                            .foregroundStyle(Color.appTextTertiary)
+                        Text("\(Self.fmt(food.defaultServingSize)) \(food.defaultServingUnit)")
+                            .font(.appCaption1)
+                            .foregroundStyle(Color.appTextTertiary)
+                            .lineLimit(1)
+                    }
 
-                    // Brand name (if available)
                     if let brand = food.brandName, !brand.isEmpty {
                         Text(brand)
                             .font(.appCaption1)
@@ -168,29 +177,27 @@ struct ManageCommunityFoodsView: View {
                             .lineLimit(1)
                     }
 
-                    // Macros + usage count
                     HStack(spacing: Spacing.xs) {
-                        let srv = Self.fmt(food.defaultServingSize)
-                        Text("\(srv) \(food.defaultServingUnit)  ·  \(Int(food.calories)) kcal  ·  \(Self.fmt(food.proteinG))g P  ·  \(Self.fmt(food.carbsG))g C  ·  \(Self.fmt(food.fatG))g F")
-                            .font(.appCaption1)
-                            .foregroundStyle(Color.appTextTertiary)
-                            .lineLimit(1)
-                    }
-
-                    // Uses count
-                    if food.usesCount > 0 {
-                        Text("\(food.usesCount) use\(food.usesCount == 1 ? "" : "s")")
-                            .font(.appCaption2)
-                            .foregroundStyle(Color.appTextTertiary)
+                        if food.usesCount > 0 {
+                            Text("\(food.usesCount) use\(food.usesCount == 1 ? "" : "s")")
+                                .font(.appCaption1)
+                                .foregroundStyle(Color.appTextTertiary)
+                            Text("·").font(.appCaption1).foregroundStyle(Color.appTextTertiary)
+                        }
+                        Image(systemName: CommunityFoodStatusIndicator.systemImage(for: food.status))
+                            .font(.system(size: 12))
+                            .foregroundStyle(CommunityFoodStatusIndicator.accentColor(for: food.status))
+                            .accessibilityLabel(CommunityFoodStatusIndicator.accessibilityLabel(for: food.status))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                HStack(spacing: Spacing.sm) {
-                    Image(systemName: CommunityFoodStatusIndicator.systemImage(for: food.status))
-                        .font(.system(size: 16))
-                        .foregroundStyle(CommunityFoodStatusIndicator.accentColor(for: food.status))
-                        .accessibilityLabel(CommunityFoodStatusIndicator.accessibilityLabel(for: food.status))
+                HStack(spacing: Spacing.md) {
+                    MacroNutrientsColumn(macros: Macros(
+                        calories: food.calories,
+                        proteinG: food.proteinG,
+                        carbsG:   food.carbsG,
+                        fatG:     food.fatG))
 
                     Image(systemName: "chevron.forward")
                         .font(.system(size: 12, weight: .semibold))

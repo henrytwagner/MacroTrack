@@ -193,12 +193,12 @@ struct FoodDetailSheet: View {
         let goals = goalStore.goalsByDate[dateStore.selectedDate] ?? nil
 
         return VStack(spacing: Spacing.lg) {
-            // Progress rings — day preview
-            MacroRingProgress(
-                totals:          previewTotals,
-                goals:           goals,
-                variant:         .default,
-                showCalorieRing: true)
+            // Macro card — day preview with this food added at current quantity
+            if let g = goals {
+                DashboardMacroCard(totals: previewTotals, goals: g)
+            } else {
+                MacroRingProgress(totals: previewTotals, goals: nil, variant: .default, showCalorieRing: true)
+            }
 
             // 2×2 grid — this food's macros at current quantity
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())],

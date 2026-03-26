@@ -212,45 +212,40 @@ struct MealCreationView: View {
 
     @ViewBuilder
     private func itemRow(item: Binding<EditableMealItem>) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: Spacing.md) {
-                Text(item.wrappedValue.name)
-                    .font(.appSubhead)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(Color.appText)
-                    .lineLimit(1)
-
-                Spacer()
-
-                HStack(spacing: Spacing.xs) {
-                    TextField("Qty", text: item.quantityStr)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 52)
-                        .onChange(of: item.wrappedValue.quantityStr) { _, newStr in
-                            if let v = Double(newStr), v > 0 {
-                                item.quantity.wrappedValue = v
-                            }
-                        }
-                    Text(item.wrappedValue.unit)
+        let m = item.wrappedValue.scaledMacros
+        HStack(spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                    Text(item.wrappedValue.name)
+                        .font(.appBody)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.appText)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                    Text("·")
                         .font(.appCaption1)
-                        .foregroundStyle(Color.appTextSecondary)
+                        .foregroundStyle(Color.appTextTertiary)
+                    HStack(spacing: 2) {
+                        TextField("Qty", text: item.quantityStr)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 44)
+                            .font(.appCaption1)
+                            .foregroundStyle(Color.appTextTertiary)
+                            .onChange(of: item.wrappedValue.quantityStr) { _, newStr in
+                                if let v = Double(newStr), v > 0 {
+                                    item.quantity.wrappedValue = v
+                                }
+                            }
+                        Text(item.wrappedValue.unit)
+                            .font(.appCaption1)
+                            .foregroundStyle(Color.appTextTertiary)
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            let m = item.wrappedValue.scaledMacros
-            HStack(spacing: 6) {
-                Text("\(Int(m.calories.rounded())) cal")
-                    .foregroundStyle(Color.appTextSecondary)
-                Text("·").foregroundStyle(Color.appTextTertiary)
-                Text("P \(Int(m.proteinG.rounded()))g")
-                    .foregroundStyle(Color.proteinAccent)
-                Text("C \(Int(m.carbsG.rounded()))g")
-                    .foregroundStyle(Color.carbsAccent)
-                Text("F \(Int(m.fatG.rounded()))g")
-                    .foregroundStyle(Color.fatAccent)
-            }
-            .font(.appCaption1)
+            MacroNutrientsColumn(macros: m)
         }
         .padding(.vertical, Spacing.xs)
     }

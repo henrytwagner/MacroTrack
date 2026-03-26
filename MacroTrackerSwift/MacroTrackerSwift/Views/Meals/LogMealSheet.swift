@@ -12,8 +12,13 @@ struct LogMealSheet: View {
     @Environment(\.dismiss)          private var dismiss
 
     let meal:     SavedMeal
-    /// Called after meal is successfully logged.
+    /// Called after meal is successfully logged or updated.
     let onLogged: () -> Void
+    /// When non-empty, this sheet is in edit mode: replaces these existing log entries.
+    var existingEntryIds:  [String]            = []
+    var onDeleteEntry:     ((String) -> Void)? = nil
+
+    private var isEditMode: Bool { !existingEntryIds.isEmpty }
 
     @State private var scaleFactor:  Double  = 1.0
     @State private var isLogging:    Bool    = false
@@ -109,7 +114,7 @@ struct LogMealSheet: View {
                         if isLogging {
                             ProgressView().scaleEffect(0.8)
                         } else {
-                            Text("Add to Log").fontWeight(.semibold)
+                            Text(isEditMode ? "Update" : "Add to Log").fontWeight(.semibold)
                         }
                     }
                     .disabled(isLogging)
@@ -126,30 +131,34 @@ struct LogMealSheet: View {
 
     @ViewBuilder
     private func itemRow(_ item: SavedMealItem, scaleFactor: Double) -> some View {
-        HStack(spacing: 0) {
+        HStack(spacing: Spacing.md) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.name)
-                    .font(.appSubhead)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(Color.appText)
-                    .lineLimit(1)
-
-                MacroInlineLine(
-                    prefix: "\(fmtScaledQty(item.quantity, scaleFactor)) \(item.unit)",
-                    macros: Macros(
-                        calories: item.calories * scaleFactor,
-                        proteinG: item.proteinG * scaleFactor,
-                        carbsG:   item.carbsG   * scaleFactor,
-                        fatG:     item.fatG     * scaleFactor
-                    )
-                )
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                    Text(item.name)
+                        .font(.appBody)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.appText)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                    Text("·")
+                        .font(.appCaption1)
+                        .foregroundStyle(Color.appTextTertiary)
+                    Text("\(fmtScaledQty(item.quantity, scaleFactor)) \(item.unit)")
+                        .font(.appCaption1)
+                        .foregroundStyle(Color.appTextTertiary)
+                        .lineLimit(1)
+                }
+                Image(systemName: FoodSourceIndicator.systemImage(for: item.source))
+                    .font(.system(size: 12))
+                    .foregroundStyle(FoodSourceIndicator.accentColor(for: item.source))
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer()
-
-            Image(systemName: FoodSourceIndicator.systemImage(for: item.source))
-                .font(.system(size: 16))
-                .foregroundStyle(FoodSourceIndicator.accentColor(for: item.source))
+            MacroNutrientsColumn(macros: Macros(
+                calories: item.calories * scaleFactor,
+                proteinG: item.proteinG * scaleFactor,
+                carbsG:   item.carbsG   * scaleFactor,
+                fatG:     item.fatG     * scaleFactor))
         }
         .padding(.vertical, Spacing.xs)
     }
@@ -202,6 +211,7 @@ struct LogMealSheet: View {
                 mealLabel:   currentMealLabel(),
                 scaleFactor: scaleFactor)
             for entry in entries { logStore.addEntry(entry) }
+            for id in existingEntryIds { onDeleteEntry?(id) }
             dismiss()
             onLogged()
         } catch {

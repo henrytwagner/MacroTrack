@@ -3,11 +3,10 @@ import SwiftUI
 // MARK: - DashboardView
 
 struct DashboardView: View {
-    @Environment(DailyLogStore.self)      private var logStore
-    @Environment(GoalStore.self)          private var goalStore
-    @Environment(DashboardLayoutStore.self) private var layoutStore
-    @Environment(DateStore.self)          private var dateStore
-    @Environment(TabRouter.self)          private var tabRouter
+    @Environment(DailyLogStore.self) private var logStore
+    @Environment(GoalStore.self)     private var goalStore
+    @Environment(DateStore.self)     private var dateStore
+    @Environment(TabRouter.self)     private var tabRouter
 
     @State private var refreshing:      Bool = false
     @State private var lastAddedEntry:  FoodEntry? = nil
@@ -87,10 +86,7 @@ struct DashboardView: View {
                 .foregroundStyle(Color.appText)
 
             if let goals {
-                DashboardMacroSingleLayout(
-                    layoutId: layoutStore.layoutId,
-                    totals:   logStore.totals,
-                    goals:    goals)
+                DashboardMacroCard(totals: logStore.totals, goals: goals)
             } else {
                 Button {
                     tabRouter.selectedTab = 2
@@ -255,24 +251,34 @@ struct DashboardView: View {
     private func entryRow(entry: FoodEntry) -> some View {
         HStack(spacing: Spacing.md) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name)
-                    .font(.appBody)
-                    .foregroundStyle(Color.appText)
-                    .lineLimit(1)
-
-                MacroInlineLine(
-                    prefix: "\(formatted(entry.quantity)) \(entry.unit)",
-                    macros: Macros(calories: entry.calories,
-                                   proteinG: entry.proteinG,
-                                   carbsG: entry.carbsG,
-                                   fatG: entry.fatG))
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                    Text(entry.name)
+                        .font(.appBody)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.appText)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                    Text("·")
+                        .font(.appCaption1)
+                        .foregroundStyle(Color.appTextTertiary)
+                    Text("\(formatted(entry.quantity)) \(entry.unit)")
+                        .font(.appCaption1)
+                        .foregroundStyle(Color.appTextTertiary)
+                        .lineLimit(1)
+                }
+                Text(entry.mealLabel.rawValue.capitalized)
+                    .font(.appCaption1)
+                    .foregroundStyle(Color.appTextTertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(entry.mealLabel.rawValue.capitalized)
-                .font(.appCaption1)
-                .tracking(Typography.Tracking.caption1)
-                .foregroundStyle(Color.appTextTertiary)
+            MacroNutrientsColumn(
+                macros: Macros(
+                    calories: entry.calories,
+                    proteinG: entry.proteinG,
+                    carbsG:   entry.carbsG,
+                    fatG:     entry.fatG),
+                font: .appBody)
         }
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)
@@ -390,7 +396,6 @@ struct DashboardView: View {
     DashboardView()
         .environment(DailyLogStore.shared)
         .environment(GoalStore.shared)
-        .environment(DashboardLayoutStore.shared)
         .environment(DateStore.shared)
         .environment(TabRouter.shared)
 }

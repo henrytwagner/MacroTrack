@@ -7,12 +7,13 @@ import UIKit
 /// Supports a multi-select mode where tap/long-press toggles selection instead of opening the editor.
 @MainActor
 struct FoodEntryRow: View {
-    let entry:           FoodEntry
-    let onDelete:        () -> Void
-    let onTap:           () -> Void
-    let isSelectionMode: Bool
-    let isSelected:      Bool
-    let onSelect:        () -> Void
+    let entry:              FoodEntry
+    let onDelete:           () -> Void
+    let onTap:              () -> Void
+    let isSelectionMode:    Bool
+    let isSelected:         Bool
+    let onSelect:           () -> Void
+    var horizontalPadding:  CGFloat = Spacing.lg
 
     var body: some View {
         Group {
@@ -54,42 +55,46 @@ struct FoodEntryRow: View {
     // MARK: - Row Content
 
     private var rowContent: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: Spacing.md) {
             if isSelectionMode {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 22))
                     .foregroundStyle(isSelected ? Color.appTint : Color.appTextTertiary)
-                    .padding(.trailing, Spacing.sm)
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name)
-                    .font(.appSubhead)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(Color.appText)
-                    .lineLimit(1)
-
-                MacroInlineLine(
-                    prefix: "\(formattedQuantity) \(entry.unit)",
-                    macros: Macros(
-                        calories: entry.calories,
-                        proteinG: entry.proteinG,
-                        carbsG:   entry.carbsG,
-                        fatG:     entry.fatG
-                    )
-                )
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                    Text(entry.name)
+                        .font(.appBody)
+                        .fontWeight(.regular)
+                        .foregroundStyle(Color.appText)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                    Text("·")
+                        .font(.appCaption1)
+                        .foregroundStyle(Color.appTextTertiary)
+                    Text("\(formattedQuantity) \(entry.unit)")
+                        .font(.appCaption1)
+                        .foregroundStyle(Color.appTextTertiary)
+                        .lineLimit(1)
+                }
+                Image(systemName: FoodSourceIndicator.systemImage(for: entry.source))
+                    .font(.system(size: 12))
+                    .foregroundStyle(FoodSourceIndicator.accentColor(for: entry.source))
+                    .accessibilityLabel(accessibilitySourceLabel)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer()
-
-            Image(systemName: FoodSourceIndicator.systemImage(for: entry.source))
-                .font(.system(size: 16))
-                .foregroundStyle(FoodSourceIndicator.accentColor(for: entry.source))
-                .accessibilityLabel(accessibilitySourceLabel)
+            MacroNutrientsColumn(macros: Macros(
+                calories: entry.calories,
+                proteinG: entry.proteinG,
+                carbsG:   entry.carbsG,
+                fatG:     entry.fatG))
         }
-        .padding(.horizontal, Spacing.lg)
+        .padding(.horizontal, horizontalPadding)
         .padding(.vertical, Spacing.md)
+        .contentShape(Rectangle())
     }
 
     // MARK: - Helpers

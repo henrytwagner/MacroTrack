@@ -38,6 +38,7 @@ struct DraftMealCard: View {
 
     @State private var isManualNutritionMode = false
     @State private var editTimeoutToken: Int = 0
+    @State private var focusLossToken: Int = 0
     @FocusState private var quantityFieldFocused: Bool
 
     // Quantity edit fields
@@ -181,9 +182,26 @@ struct DraftMealCard: View {
                 do {
                     try await Task.sleep(for: .seconds(8))
                 } catch {
-                    // Task was cancelled (editTimeoutToken changed from keystroke) — don't close
                     return
                 }
+                guard isEditing && !isManualNutritionMode else { return }
+                onEndEdit?()
+            }
+            // Tap-outside-to-save: when focus leaves the quantity field,
+            // wait briefly (Menu popups may drop focus momentarily) then close.
+            .onChange(of: quantityFieldFocused) { _, focused in
+                if !focused && isEditing && !isManualNutritionMode {
+                    focusLossToken += 1
+                }
+            }
+            .task(id: focusLossToken) {
+                guard focusLossToken > 0 else { return }
+                guard isEditing && !isManualNutritionMode else { return }
+                do {
+                    try await Task.sleep(for: .milliseconds(350))
+                } catch { return }
+                // If focus returned (e.g. Menu closed), don't close
+                guard !quantityFieldFocused else { return }
                 guard isEditing && !isManualNutritionMode else { return }
                 onEndEdit?()
             }
