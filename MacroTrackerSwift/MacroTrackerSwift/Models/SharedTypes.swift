@@ -150,6 +150,7 @@ struct CommunityFood: Codable, Identifiable, Sendable {
     var sugarG:            Double?
     var saturatedFatG:     Double?
     var transFatG:         Double?
+    var barcode:           String?
     var usdaFdcId:         Int?
     var createdByUserId:   String?
     var status:            CommunityFoodStatus

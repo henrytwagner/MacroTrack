@@ -71,6 +71,9 @@ final class KitchenModeViewModel {
     /// Live-updated quantity from the inline editor (nil when not editing).
     var editingQuantity: Double? = nil
 
+    /// Last scanned barcode GTIN — shown as a debug overlay card, auto-dismissed.
+    var debugBarcode: String? = nil
+
     // MARK: - Dependencies (singletons)
 
     private let ws = WSClient.shared
@@ -203,13 +206,13 @@ final class KitchenModeViewModel {
     /// Save the session — server persists entries, sends session_saved.
     func save() {
         guard !sessionEnded else { return }
-        sessionState = .saving
+        sessionEnded = true   // prevent cleanupOnDisappear from disconnecting early
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         capture.stop()
         camera.stop()
         barcodeModeActive = false
         ws.send(.save)
-        // Navigation triggered by session_saved from server
+        // sessionState set to .saving (triggering navigation) only after session_saved arrives
     }
 
     /// Cancel the session — server deletes custom foods, sends session_cancelled.
@@ -399,6 +402,17 @@ final class KitchenModeViewModel {
         let digits = gtin.filter(\.isNumber)
         guard !digits.isEmpty else { return }
 
+        // Debug: show scanned barcode briefly
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            debugBarcode = digits
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            if self.debugBarcode == digits {
+                withAnimation { self.debugBarcode = nil }
+            }
+        }
+
         let isFillingBarcodeField = draft.items.contains { item in
             item.state == .creating && item.creatingProgress?.currentField == .barcode
         }
@@ -458,6 +472,7 @@ final class KitchenModeViewModel {
         case .sessionSaved:
             sessionEnded = true
             stopAudio()
+            ws.disconnect()
             UIApplication.shared.isIdleTimerDisabled = false
             Task {
                 await dailyLog.fetch(date: dateStore.selectedDate)
@@ -469,6 +484,7 @@ final class KitchenModeViewModel {
         case .sessionCancelled:
             sessionEnded = true
             stopAudio()
+            ws.disconnect()
             UIApplication.shared.isIdleTimerDisabled = false
             draft.reset()
             sessionState = .cancelled

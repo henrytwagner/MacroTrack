@@ -217,25 +217,30 @@ export async function barcodeRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: "code query parameter is required" });
       }
 
-      const normalized = code.replace(/\D/g, "");
+      // Normalize to GTIN-13 so lookups match regardless of input format
+      // (e.g., 12-digit UPC-A, 8-digit EAN-8, raw digits all resolve the same)
+      const digits = code.replace(/\D/g, "");
+      const normalized = normalizeToGTIN(digits) ?? digits;
+
+      // Check custom foods first (user's personal data takes priority)
+      const userId = await getDefaultUserId();
+      const customFood = await prisma.customFood.findFirst({
+        where: { userId, OR: [{ barcode: normalized }, ...(normalized !== digits ? [{ barcode: digits }] : [])] },
+      });
+      if (customFood) {
+        return reply.send({ food: mapCustomFood(customFood), source: 'custom' });
+      }
+
+      // Fall back to community foods
       const barcodeRecord = await prisma.communityFoodBarcode.findUnique({
         where: { barcode: normalized },
         include: { communityFood: true },
       });
-
-      if (!barcodeRecord) {
-        // Fall back to custom foods for this user
-        const userId = await getDefaultUserId();
-        const customFood = await prisma.customFood.findFirst({
-          where: { userId, barcode: normalized },
-        });
-        if (customFood) {
-          return reply.send({ food: mapCustomFood(customFood), source: 'custom' });
-        }
-        return reply.send({ food: null });
+      if (barcodeRecord) {
+        return reply.send({ food: mapCommunityFood(barcodeRecord.communityFood), source: 'community' });
       }
 
-      return reply.send({ food: mapCommunityFood(barcodeRecord.communityFood), source: 'community' });
+      return reply.send({ food: null });
     },
   );
 }

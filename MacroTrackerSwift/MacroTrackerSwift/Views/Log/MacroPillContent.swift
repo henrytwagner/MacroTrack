@@ -273,7 +273,7 @@ struct MacroPillContent: View {
         let isOver    = progress > 1.0
         let remaining = goal - current
         let barW: CGFloat = 88
-        return HStack(spacing: Spacing.xs) {
+        HStack(spacing: Spacing.xs) {
             Text(label)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Color.appText)

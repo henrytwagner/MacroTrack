@@ -108,6 +108,7 @@ export interface CommunityFood extends Macros, ExtendedNutrition {
   usesCount: number;
   reportsCount: number;
   trustScore: number;
+  barcode?: string;
   lastUsedAt?: string;
   createdAt: string;
   updatedAt: string;

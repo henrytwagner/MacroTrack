@@ -74,8 +74,8 @@ final class CreateFoodViewModel {
         self.mode = mode
         switch mode {
         case .new(let prefillName, let prefillBarcode):
-            name    = prefillName    ?? ""
-            barcode = prefillBarcode ?? ""
+            name    = prefillName ?? ""
+            barcode = prefillBarcode.map { GTINNormalizer.normalizeToGTIN($0) } ?? ""
 
         case .editCustom(let food):
             name             = food.name
@@ -110,6 +110,7 @@ final class CreateFoodViewModel {
             sugarText        = food.sugarG.map         { Self.fmt($0) } ?? ""
             saturatedFatText = food.saturatedFatG.map  { Self.fmt($0) } ?? ""
             transFatText     = food.transFatG.map      { Self.fmt($0) } ?? ""
+            barcode          = food.barcode ?? ""
 
         case .publishFromCustom(let food):
             name             = food.name
@@ -150,6 +151,18 @@ final class CreateFoodViewModel {
         let carbs       = Double(carbsText)    ?? 0
         let fat         = Double(fatText)      ?? 0
 
+        // Normalize barcode to GTIN-13 before sending to server.
+        // For create requests, nil means "no barcode."
+        // For update requests, we need to distinguish "no change" from "clear barcode."
+        // Since all fields are always populated from the existing food on edit,
+        // we always send the barcode value (empty string → server sets null).
+        let normalizedBarcode: String? = barcode.isEmpty
+            ? nil
+            : GTINNormalizer.normalizeToGTIN(barcode)
+        // For edit modes, explicitly include barcode so the server applies the change
+        // (nil would omit the key from JSON, making server skip the update).
+        let editBarcode: String? = barcode.isEmpty ? "" : normalizedBarcode
+
         switch mode {
         case .new:
             if publishMode == .community {
@@ -169,7 +182,7 @@ final class CreateFoodViewModel {
                     sugarG:             Double(sugarText),
                     saturatedFatG:      Double(saturatedFatText),
                     transFatG:          Double(transFatText),
-                    barcode:            barcode.isEmpty ? nil : barcode,
+                    barcode:            normalizedBarcode,
                     barcodeType:        nil)
                 _ = try await APIClient.shared.createCommunityFood(req)
                 return nil
@@ -189,7 +202,7 @@ final class CreateFoodViewModel {
                     sugarG:        Double(sugarText),
                     saturatedFatG: Double(saturatedFatText),
                     transFatG:     Double(transFatText),
-                    barcode:       barcode.isEmpty ? nil : barcode)
+                    barcode:       normalizedBarcode)
                 let food = try await APIClient.shared.createCustomFood(req)
                 // Save pending unit conversions
                 for conv in pendingConversions {
@@ -220,7 +233,7 @@ final class CreateFoodViewModel {
                 sugarG:        Double(sugarText),
                 saturatedFatG: Double(saturatedFatText),
                 transFatG:     Double(transFatText),
-                barcode:       barcode.isEmpty ? nil : barcode)
+                barcode:       editBarcode)
             return try await APIClient.shared.updateCustomFood(id: existing.id, data: req)
 
         case .editCommunity(let existing):
@@ -240,7 +253,7 @@ final class CreateFoodViewModel {
                 sugarG:             Double(sugarText),
                 saturatedFatG:      Double(saturatedFatText),
                 transFatG:          Double(transFatText),
-                barcode:            barcode.isEmpty ? nil : barcode,
+                barcode:            editBarcode,
                 barcodeType:        nil)
             _ = try await APIClient.shared.updateCommunityFood(id: existing.id, data: req)
             return nil
@@ -248,7 +261,7 @@ final class CreateFoodViewModel {
         case .publishFromCustom(let food):
             let req = PublishCustomFoodRequest(
                 brandName:   brandName.isEmpty ? nil : brandName,
-                barcode:     barcode.isEmpty   ? nil : barcode,
+                barcode:     editBarcode,
                 barcodeType: nil)
             _ = try await APIClient.shared.publishCustomFood(id: food.id, data: req)
             return nil

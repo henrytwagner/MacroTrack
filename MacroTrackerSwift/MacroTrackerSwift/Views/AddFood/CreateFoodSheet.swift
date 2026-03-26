@@ -10,9 +10,9 @@ struct CreateFoodSheet: View {
     let onDismiss: () -> Void
 
     @State private var vm:          CreateFoodViewModel
-    @State private var showOptional: Bool = false
-    @State private var showBarcode:  Bool = false
-    @State private var showBarcodeReplaceConfirm: Bool = false
+    @State private var showOptional:       Bool = false
+    @State private var showBarcode:        Bool = false
+    @State private var showBarcodePreview: Bool = false
 
     init(mode: CreateFoodMode,
          onSaved: ((CustomFood?) -> Void)? = nil,
@@ -84,12 +84,28 @@ struct CreateFoodSheet: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .fullScreenCover(isPresented: $showBarcode) {
-            BarcodeScannerScreen(
-                onScanned: { raw in
+            BarcodeScannerOverlay(
+                onScanned: { gtin in
                     showBarcode = false
-                    vm.barcode = raw
+                    vm.barcode = GTINNormalizer.normalizeToGTIN(gtin)
                 },
                 onDismiss: { showBarcode = false })
+        }
+        .sheet(isPresented: $showBarcodePreview) {
+            BarcodePreviewSheet(
+                barcode:  vm.barcode,
+                onRemove: { vm.barcode = ""; showBarcodePreview = false },
+                onDismiss: { showBarcodePreview = false })
+            .presentationDetents([.height(240)])
+            .presentationDragIndicator(.visible)
+        }
+        .alert("Save Failed", isPresented: Binding(
+            get: { vm.saveError != nil },
+            set: { if !$0 { vm.saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(vm.saveError ?? "")
         }
     }
 
@@ -152,7 +168,7 @@ struct CreateFoodSheet: View {
                     if vm.barcode.isEmpty {
                         showBarcode = true
                     } else {
-                        showBarcodeReplaceConfirm = true
+                        showBarcodePreview = true
                     }
                 } label: {
                     Image(systemName: "barcode.viewfinder")
@@ -169,13 +185,6 @@ struct CreateFoodSheet: View {
             }
         }
         .padding(.horizontal, Spacing.lg)
-        .alert("Replace Barcode?",
-               isPresented: $showBarcodeReplaceConfirm) {
-            Button("Continue") { showBarcode = true }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Scanning a new barcode will replace the one already saved on this food.")
-        }
     }
 
     // MARK: - Serving Size Row

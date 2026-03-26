@@ -1,19 +1,20 @@
 @preconcurrency import AVFoundation
 import UIKit
-import Vision
 import Observation
 
 // MARK: - KitchenCameraSession
 
 /// AVFoundation camera engine for Kitchen Mode.
-/// Provides live preview, inline barcode detection (via Vision), photo capture,
+/// Provides live preview, barcode detection, photo capture, frame access,
 /// camera flip, and torch control.
+///
+/// **Dual output architecture:**
+/// - `AVCaptureMetadataOutput` — hardware-accelerated barcode detection at full frame rate
+/// - `AVCaptureVideoDataOutput` — per-frame pixel buffer access for Gemini image capture
+///   and future CoreML inference (YOLO, AR overlays)
 ///
 /// **Video-only** — no `AVCaptureAudioDataOutput` is added, so this does not
 /// interfere with `AudioCaptureService`'s `AVAudioEngine` tap.
-///
-/// Frame processing runs on a dedicated serial queue (`sessionQueue`).
-/// Barcode results are dispatched to `@MainActor` via Task.
 @Observable
 @MainActor
 final class KitchenCameraSession: @unchecked Sendable {
@@ -28,34 +29,34 @@ final class KitchenCameraSession: @unchecked Sendable {
     /// Called on @MainActor when a barcode is detected (already deduplicated).
     var onBarcodeDetected: ((String) -> Void)?
 
-    // MARK: - Capture session (nonisolated — accessed from sessionQueue and SwiftUI)
+    // MARK: - Capture session
 
-    /// The underlying capture session — bound to `KitchenCameraPreview`.
-    /// Marked `nonisolated(unsafe)` because `AVCaptureSession` is not Sendable
-    /// but must be accessed from both MainActor (preview binding) and sessionQueue.
     @ObservationIgnored nonisolated(unsafe) let captureSession = AVCaptureSession()
 
-    // MARK: - Private (accessed from sessionQueue — nonisolated)
+    // MARK: - Private
 
     @ObservationIgnored nonisolated(unsafe) private var videoInput: AVCaptureDeviceInput?
     @ObservationIgnored nonisolated(unsafe) private let videoOutput = AVCaptureVideoDataOutput()
+    @ObservationIgnored nonisolated(unsafe) private let metadataOutput = AVCaptureMetadataOutput()
     @ObservationIgnored nonisolated(unsafe) private let photoOutput = AVCapturePhotoOutput()
     @ObservationIgnored nonisolated private let sessionQueue = DispatchQueue(label: "camera.session")
 
-    /// Throttle: process 1 in every N frames for barcode detection (~2fps at 30fps).
-    @ObservationIgnored nonisolated(unsafe) private var frameCounter: Int = 0
-    @ObservationIgnored nonisolated private let detectEveryNFrames = 15
-
-    /// Deduplication: ignore same GTIN within 2 seconds.
+    /// Deduplication: ignore same barcode string within 2 seconds.
     @ObservationIgnored nonisolated(unsafe) private var lastDetectedGTIN: String?
     @ObservationIgnored nonisolated(unsafe) private var lastDetectedTime: TimeInterval = 0
     @ObservationIgnored nonisolated private let deduplicationInterval: TimeInterval = 2.0
 
-    /// Photo capture continuation (only one in flight at a time).
+    /// Photo capture continuation.
     @ObservationIgnored nonisolated(unsafe) private var photoContinuation: CheckedContinuation<UIImage?, Never>?
 
-    /// Delegate must be retained.
+    /// Delegate retained for lifetime of session.
     @ObservationIgnored nonisolated(unsafe) private var delegateAdapter: CameraOutputDelegate?
+
+    /// Barcode symbologies for metadata output — all common product formats.
+    @ObservationIgnored nonisolated private let barcodeTypes: [AVMetadataObject.ObjectType] = [
+        .ean8, .ean13, .upce, .code128, .code39, .code93,
+        .interleaved2of5, .itf14, .dataMatrix, .qr, .pdf417,
+    ]
 
     private init() {}
 
@@ -104,15 +105,12 @@ final class KitchenCameraSession: @unchecked Sendable {
         let newPosition: AVCaptureDevice.Position = cameraPosition == .back ? .front : .back
         cameraPosition = newPosition
 
-        // Front camera doesn't support torch
         if newPosition == .front { torchEnabled = false }
 
         guard let delegate = delegateAdapter else { return }
         sessionQueue.async { [weak self] in
             guard let self else { return }
-            self.reconfigureInput(position: newPosition)
-            self.frameCounter = 0
-            self.videoOutput.setSampleBufferDelegate(delegate, queue: self.sessionQueue)
+            self.reconfigureInput(position: newPosition, delegate: delegate)
         }
     }
 
@@ -148,14 +146,26 @@ final class KitchenCameraSession: @unchecked Sendable {
             videoInput = input
         }
 
-        // Video output for frame-level barcode detection
+        configureAutofocus(device: device)
+
+        // 1. Video data output — frame access for Gemini and future CoreML
         videoOutput.alwaysDiscardsLateVideoFrames = true
         videoOutput.setSampleBufferDelegate(delegate, queue: sessionQueue)
         if captureSession.canAddOutput(videoOutput) {
             captureSession.addOutput(videoOutput)
         }
 
-        // Photo output for single-frame capture
+        // 2. Metadata output — hardware-accelerated barcode detection
+        //    Must be added BEFORE setting metadataObjectTypes (Apple requirement).
+        metadataOutput.setMetadataObjectsDelegate(delegate, queue: sessionQueue)
+        if captureSession.canAddOutput(metadataOutput) {
+            captureSession.addOutput(metadataOutput)
+            metadataOutput.metadataObjectTypes = barcodeTypes.filter {
+                metadataOutput.availableMetadataObjectTypes.contains($0)
+            }
+        }
+
+        // 3. Photo output — single-frame capture
         if captureSession.canAddOutput(photoOutput) {
             captureSession.addOutput(photoOutput)
         }
@@ -163,16 +173,15 @@ final class KitchenCameraSession: @unchecked Sendable {
         captureSession.commitConfiguration()
     }
 
-    nonisolated private func reconfigureInput(position: AVCaptureDevice.Position) {
+    nonisolated private func reconfigureInput(position: AVCaptureDevice.Position,
+                                               delegate: CameraOutputDelegate) {
         captureSession.beginConfiguration()
 
-        // Remove existing input
         if let existing = videoInput {
             captureSession.removeInput(existing)
             videoInput = nil
         }
 
-        // Add new input
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera,
                                                     for: .video,
                                                     position: position),
@@ -187,7 +196,29 @@ final class KitchenCameraSession: @unchecked Sendable {
             videoInput = input
         }
 
+        configureAutofocus(device: device)
+
+        // Re-wire delegates after input swap
+        videoOutput.setSampleBufferDelegate(delegate, queue: sessionQueue)
+        metadataOutput.setMetadataObjectsDelegate(delegate, queue: sessionQueue)
+
         captureSession.commitConfiguration()
+    }
+
+    // MARK: - Autofocus
+
+    nonisolated private func configureAutofocus(device: AVCaptureDevice) {
+        try? device.lockForConfiguration()
+
+        if device.isFocusModeSupported(.continuousAutoFocus) {
+            device.focusMode = .continuousAutoFocus
+        }
+
+        if device.isAutoFocusRangeRestrictionSupported {
+            device.autoFocusRangeRestriction = .near
+        }
+
+        device.unlockForConfiguration()
     }
 
     // MARK: - Torch
@@ -205,43 +236,42 @@ final class KitchenCameraSession: @unchecked Sendable {
         }
     }
 
-    // MARK: - Frame Processing (called from delegate on sessionQueue)
+    // MARK: - Barcode Detection (via AVCaptureMetadataOutput — hardware accelerated)
 
-    nonisolated func processFrame(_ sampleBuffer: CMSampleBuffer) {
-        frameCounter += 1
-        guard frameCounter % detectEveryNFrames == 0 else { return }
+    nonisolated func handleMetadataObjects(_ objects: [AVMetadataObject]) {
+        guard let readable = objects.first as? AVMetadataMachineReadableCodeObject,
+              let raw = readable.stringValue
+        else { return }
 
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let gtin = GTINNormalizer.normalizeToGTIN(raw, type: readable.type)
+        guard !gtin.isEmpty else { return }
 
-        let request = VNDetectBarcodesRequest { [weak self] request, _ in
-            guard let self,
-                  let results = request.results as? [VNBarcodeObservation],
-                  let first = results.first,
-                  let payload = first.payloadStringValue
-            else { return }
-
-            let gtin = self.normalizeToGTIN13(raw: payload)
-            guard !gtin.isEmpty else { return }
-
-            // Deduplication
-            let now = Date().timeIntervalSinceReferenceDate
-            if gtin == self.lastDetectedGTIN,
-               now - self.lastDetectedTime < self.deduplicationInterval {
-                return
-            }
-            self.lastDetectedGTIN = gtin
-            self.lastDetectedTime = now
-
-            Task { @MainActor in
-                self.onBarcodeDetected?(gtin)
-            }
+        // Deduplication
+        let now = Date().timeIntervalSinceReferenceDate
+        if gtin == lastDetectedGTIN,
+           now - lastDetectedTime < deduplicationInterval {
+            return
         }
+        lastDetectedGTIN = gtin
+        lastDetectedTime = now
 
-        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [:])
-        try? handler.perform([request])
+        Task { @MainActor in
+            self.onBarcodeDetected?(gtin)
+        }
     }
 
-    // MARK: - Photo Capture Result (called from delegate)
+    // MARK: - Frame Processing (video data output — for future Gemini/CoreML use)
+
+    nonisolated func processFrame(_ sampleBuffer: CMSampleBuffer) {
+        // Frame access point for future features:
+        // - Gemini image identification (capturePhoto handles one-shot; this enables streaming)
+        // - YOLO-World / CoreML live inference
+        // - AR overlay data extraction
+        //
+        // Currently a no-op — barcode detection is handled by metadata output.
+    }
+
+    // MARK: - Photo Capture Result
 
     nonisolated func handlePhotoCaptureResult(_ image: UIImage?) {
         let continuation = photoContinuation
@@ -249,51 +279,13 @@ final class KitchenCameraSession: @unchecked Sendable {
         continuation?.resume(returning: image)
     }
 
-    // MARK: - GTIN Normalization (port of mobile/features/barcode/gtin.ts)
-
-    nonisolated private func normalizeToGTIN13(raw: String) -> String {
-        let digits = raw.filter(\.isNumber)
-        let len = digits.count
-
-        guard len == 8 || len == 12 || len == 13 else { return "" }
-
-        let gtin13: String
-        switch len {
-        case 13:
-            gtin13 = digits
-        case 12:
-            gtin13 = "0" + digits
-        case 8:
-            // Default to EAN-8 (pad with five 0s). UPC-E expansion is rare for
-            // inline scanning and would need format hints we don't get from Vision.
-            gtin13 = "00000" + digits
-        default:
-            return ""
-        }
-
-        guard validateGTIN13CheckDigit(gtin13) else { return "" }
-        return gtin13
-    }
-
-    nonisolated private func validateGTIN13CheckDigit(_ gtin: String) -> Bool {
-        guard gtin.count == 13 else { return false }
-        let chars = Array(gtin)
-        var sum = 0
-        for i in 0..<12 {
-            guard let d = chars[i].wholeNumberValue else { return false }
-            sum += d * (i % 2 == 0 ? 1 : 3)
-        }
-        guard let checkDigit = chars[12].wholeNumberValue else { return false }
-        return (sum + checkDigit) % 10 == 0
-    }
 }
 
 // MARK: - CameraOutputDelegate
 
-/// Bridges AVFoundation delegate callbacks to `KitchenCameraSession`.
-/// Opted out of MainActor default so delegate methods can be called from the session queue.
 nonisolated private final class CameraOutputDelegate: NSObject,
                                                        AVCaptureVideoDataOutputSampleBufferDelegate,
+                                                       AVCaptureMetadataOutputObjectsDelegate,
                                                        AVCapturePhotoCaptureDelegate,
                                                        @unchecked Sendable {
     private weak var session: KitchenCameraSession?
@@ -302,11 +294,23 @@ nonisolated private final class CameraOutputDelegate: NSObject,
         self.session = session
     }
 
+    // MARK: - Video frames (for Gemini/CoreML — future use)
+
     func captureOutput(_ output: AVCaptureOutput,
                        didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
         session?.processFrame(sampleBuffer)
     }
+
+    // MARK: - Barcode detection (hardware-accelerated metadata output)
+
+    func metadataOutput(_ output: AVCaptureMetadataOutput,
+                        didOutput metadataObjects: [AVMetadataObject],
+                        from connection: AVCaptureConnection) {
+        session?.handleMetadataObjects(metadataObjects)
+    }
+
+    // MARK: - Photo capture
 
     func photoOutput(_ output: AVCapturePhotoOutput,
                      didFinishProcessingPhoto photo: AVCapturePhoto,

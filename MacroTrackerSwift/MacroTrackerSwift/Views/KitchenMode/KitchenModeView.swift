@@ -13,6 +13,7 @@ struct KitchenModeView: View {
 
     @State private var vm = KitchenModeViewModel()
     @State private var showCancelAlert = false
+    @State private var showSaveAlert = false
 
     @AppStorage("kitchenMacroPillStyleIndex") private var macroStyleIndex: Int = 0
     @State private var kitchenPillExpanded: Bool = false
@@ -60,6 +61,20 @@ struct KitchenModeView: View {
                 Text("Discard \(count) item\(count != 1 ? "s" : "")?")
             } else {
                 Text("End this session without saving?")
+            }
+        }
+        .alert("Incomplete Items", isPresented: $showSaveAlert) {
+            Button("Keep Editing", role: .cancel) {}
+            Button("Save Anyway") {
+                vm.save()
+            }
+        } message: {
+            let incompleteCount = vm.items.filter { $0.state != .normal }.count
+            let normalCount = vm.items.filter { $0.state == .normal }.count
+            if normalCount > 0 {
+                Text("\(incompleteCount) item\(incompleteCount != 1 ? "s are" : " is") still being set up and won't be saved. \(normalCount) completed item\(normalCount != 1 ? "s" : "") will be saved.")
+            } else {
+                Text("\(incompleteCount) item\(incompleteCount != 1 ? "s are" : " is") still being set up and won't be saved.")
             }
         }
     }
@@ -131,11 +146,6 @@ struct KitchenModeView: View {
                     .frame(height: feedHeight)
             }
 
-            // Nav overlay — in front of camera
-            cameraNavOverlay
-                .padding(.top, Spacing.md)
-                .padding(.horizontal, Spacing.lg)
-
             // Cards scroll below the camera feed as a sheet
             ScrollView {
                 VStack(spacing: 0) {
@@ -165,6 +175,25 @@ struct KitchenModeView: View {
                 }
             }
             .scrollIndicators(.hidden)
+
+            // Nav overlay — must be last in ZStack so it renders above the ScrollView
+            // Double-tap anywhere in the overlay area also flips the camera
+            cameraNavOverlay
+                .padding(.top, Spacing.md)
+                .padding(.horizontal, Spacing.lg)
+                .frame(height: feedHeight, alignment: .top)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) {
+                    vm.flipCamera()
+                }
+
+            // Debug barcode card — floats near bottom of camera feed
+            if let gtin = vm.debugBarcode {
+                debugBarcodeCard(gtin: gtin)
+                    .padding(.horizontal, Spacing.lg)
+                    .offset(y: feedHeight - 64)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
@@ -215,7 +244,7 @@ struct KitchenModeView: View {
 
             // Save
             Button {
-                vm.save()
+                handleSave()
             } label: {
                 Image(systemName: "checkmark")
                     .font(.system(size: 16, weight: .semibold))
@@ -357,7 +386,7 @@ struct KitchenModeView: View {
 
             // Save
             Button {
-                vm.save()
+                handleSave()
             } label: {
                 Image(systemName: "checkmark")
                     .font(.system(size: 16, weight: .semibold))
@@ -382,7 +411,7 @@ struct KitchenModeView: View {
     private var macroPillOverlay: some View {
         let goals: DailyGoal? = goalStore.goalsByDate[dateStore.selectedDate] ?? nil
         let totals = vm.liveProjectedTotals
-        let radius: CGFloat = kitchenPillExpanded ? BorderRadius.full : 24
+        let radius: CGFloat = 20
 
         return ZStack {
             if kitchenPillExpanded {
@@ -448,6 +477,24 @@ struct KitchenModeView: View {
         }
         .padding(.horizontal, Spacing.xl)
         .padding(.vertical, Spacing.xxxl)
+    }
+
+    // MARK: - Debug Barcode Card
+
+    private func debugBarcodeCard(gtin: String) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "barcode")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(.white.opacity(0.7))
+
+            Text(gtin)
+                .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(Color.black.opacity(0.6))
+        .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
     }
 
     // MARK: - Caption / Edit Row
@@ -610,6 +657,16 @@ struct KitchenModeView: View {
     }
 
     // MARK: - Actions
+
+    private func handleSave() {
+        guard case .active = vm.sessionState else { return }
+        let incompleteItems = vm.items.filter { $0.state != .normal }
+        if incompleteItems.isEmpty {
+            vm.save()
+        } else {
+            showSaveAlert = true
+        }
+    }
 
     private func handleCancel() {
         guard case .active = vm.sessionState else {

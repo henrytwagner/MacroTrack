@@ -34,6 +34,7 @@ interface CommunityFoodRow {
   lastUsedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  barcodes?: { barcode: string }[];
 }
 
 export function mapCommunityFood(food: CommunityFoodRow): CommunityFood {
@@ -54,6 +55,7 @@ export function mapCommunityFood(food: CommunityFoodRow): CommunityFood {
     sugarG: food.sugarG ?? undefined,
     saturatedFatG: food.saturatedFatG ?? undefined,
     transFatG: food.transFatG ?? undefined,
+    barcode: food.barcodes?.[0]?.barcode ?? undefined,
     usdaFdcId: food.usdaFdcId ?? undefined,
     createdByUserId: food.createdByUserId ?? undefined,
     status: food.status as CommunityFood["status"],
@@ -121,6 +123,7 @@ export async function communityFoodRoutes(app: FastifyInstance) {
         orderBy: [{ trustScore: "desc" }, { usesCount: "desc" }, { name: "asc" }],
         skip: (page - 1) * limit,
         take: limit,
+        include: { barcodes: { select: { barcode: true } } },
       });
 
       return reply.send(foods.map(mapCommunityFood));
@@ -248,6 +251,7 @@ export async function communityFoodRoutes(app: FastifyInstance) {
         return reply.code(404).send({ error: "Community food not found" });
       }
 
+      const barcodeProvided = body.barcode !== undefined;
       const trimmedBarcode =
         typeof body.barcode === "string" ? body.barcode.trim() : "";
       if (trimmedBarcode) {
@@ -263,7 +267,7 @@ export async function communityFoodRoutes(app: FastifyInstance) {
       }
 
       const food = await prisma.$transaction(async (tx) => {
-        const updated = await tx.communityFood.update({
+        await tx.communityFood.update({
           where: { id },
           data: {
             ...(body.name !== undefined && { name: body.name.trim() }),
@@ -284,11 +288,15 @@ export async function communityFoodRoutes(app: FastifyInstance) {
           },
         });
 
-        if (trimmedBarcode) {
-          const stillMissing = await tx.communityFoodBarcode.findUnique({
-            where: { barcode: trimmedBarcode },
+        // Handle barcode changes when the client explicitly sends the barcode field.
+        // Matches custom food behavior: body.barcode present → apply change.
+        if (barcodeProvided) {
+          // Always delete old barcodes first (clear or replace)
+          await tx.communityFoodBarcode.deleteMany({
+            where: { communityFoodId: id },
           });
-          if (!stillMissing) {
+          // Create new barcode only if non-empty
+          if (trimmedBarcode) {
             await tx.communityFoodBarcode.create({
               data: {
                 barcode: trimmedBarcode,
@@ -300,7 +308,11 @@ export async function communityFoodRoutes(app: FastifyInstance) {
           }
         }
 
-        return updated;
+        // Re-fetch with barcodes so the response reflects the new state
+        return await tx.communityFood.findUniqueOrThrow({
+          where: { id },
+          include: { barcodes: { select: { barcode: true } } },
+        });
       });
 
       return reply.send(mapCommunityFood(food));

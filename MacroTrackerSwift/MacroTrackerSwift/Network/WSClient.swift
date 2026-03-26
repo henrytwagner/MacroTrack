@@ -36,9 +36,6 @@ final class WSClient: NSObject {
             return
         }
 
-        // Wire all incoming messages to DraftStore
-        onMessage = { DraftStore.shared.applyServerMessage($0) }
-
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         urlSession  = session
         task        = session.webSocketTask(with: url)
@@ -134,7 +131,10 @@ extension WSClient: URLSessionWebSocketDelegate {
     ) {
         Task { @MainActor in
             self.isConnected = false
-            self.onDisconnect?(nil)
+            // Only fire disconnect for unexpected closes, not intentional normal closure
+            if closeCode != .normalClosure {
+                self.onDisconnect?(nil)
+            }
         }
     }
 }

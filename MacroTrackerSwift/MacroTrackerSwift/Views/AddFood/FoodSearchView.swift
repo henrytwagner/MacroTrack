@@ -11,6 +11,32 @@ struct FoodSearchView: View {
         static let backButtonSize: CGFloat = 44
     }
 
+    /// Unified sheet state — only one sheet can present at a time.
+    private enum ActiveSheet: Identifiable {
+        case foodDetail(IdentifiedFood)
+        case createFood(CreateFoodMode)
+
+        var id: String {
+            switch self {
+            case .foodDetail(let f): return "detail-\(f.id)"
+            case .createFood(let m): return "create-\(m.id)"
+            }
+        }
+    }
+
+    /// Unified fullScreenCover state.
+    private enum ActiveCover: Identifiable {
+        case barcode
+        case mealCreation
+
+        var id: String {
+            switch self {
+            case .barcode:      return "barcode"
+            case .mealCreation: return "meal"
+            }
+        }
+    }
+
     @Environment(DailyLogStore.self) private var logStore
     @Environment(GoalStore.self)     private var goalStore
     @Environment(DateStore.self)     private var dateStore
@@ -26,88 +52,92 @@ struct FoodSearchView: View {
 
     @State private var vm              = FoodSearchViewModel()
     @State private var selectedTab     = 0
-    @State private var detailFood:     IdentifiedFood?    = nil
-    @State private var showBarcode:    Bool               = false
-    @State private var createFoodMode: CreateFoodMode?    = nil
+    @State private var activeSheet:    ActiveSheet?       = nil
+    @State private var activeCover:    ActiveCover?       = nil
     @State private var barcodeError:   String?            = nil
     @State private var showBarcodeError: Bool             = false
-    @State private var showMealCreation: Bool             = false
 
     @FocusState private var searchFocused: Bool
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            searchTab.tag(0)
-            myFoodsTab.tag(1)
-            mealsTab.tag(2)
-        }
-        .tabViewStyle(.page(indexDisplayMode: .never))
-        // UIPageViewController defaults to an opaque black backdrop; match app chrome instead.
-        .background(Color.appBackground.ignoresSafeArea())
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 40)
-                .onEnded { value in
-                    guard selectedTab == 0 else { return }
-                    guard value.translation.width > 80,
-                          abs(value.translation.height) < value.translation.width * 0.6 else { return }
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    onDismiss()
-                }
-        )
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            bottomNavRow
-        }
-        .onChange(of: vm.query) { _, _ in vm.onQueryChanged() }
-        .task {
-            await vm.fetchFrequentAndRecent()
-            await vm.fetchMyFoods()
-        }
-        .sheet(item: $detailFood) { identified in
-            FoodDetailSheet(
-                identifiedFood: identified,
-                onDismiss: {
-                    detailFood = nil
-                    Task { await vm.fetchFrequentAndRecent() }
-                },
-                onEditCustom: { food in
-                    detailFood = nil
-                    createFoodMode = .editCustom(food)
-                },
-                onPublishCustom: { food in
-                    detailFood = nil
-                    createFoodMode = .publishFromCustom(food)
-                },
-                onAddToMeal: onAddIngredient)
-            .environment(logStore)
-            .environment(goalStore)
-            .environment(dateStore)
-        }
-        .sheet(item: $createFoodMode) { mode in
-            CreateFoodSheet(
-                mode: mode,
-                onSaved: { _ in
-                    Task {
-                        await vm.fetchMyFoods()
-                        await vm.fetchFrequentAndRecent()
+        // Presentations must live on a plain host view, not on the UIPageViewController
+        // that backs a page-style TabView — otherwise sheets/fullScreenCovers never appear.
+        ZStack {
+            TabView(selection: $selectedTab) {
+                searchTab.tag(0)
+                myFoodsTab.tag(1)
+                mealsTab.tag(2)
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            // UIPageViewController defaults to an opaque black backdrop; match app chrome instead.
+            .background(Color.appBackground.ignoresSafeArea())
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 40)
+                    .onEnded { value in
+                        guard selectedTab == 0 else { return }
+                        guard value.translation.width > 80,
+                              abs(value.translation.height) < value.translation.width * 0.6 else { return }
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        onDismiss()
                     }
-                },
-                onDismiss: { createFoodMode = nil })
+            )
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                bottomNavRow
+            }
+            .onChange(of: vm.query) { _, _ in vm.onQueryChanged() }
+            .task {
+                await vm.fetchFrequentAndRecent()
+                await vm.fetchMyFoods()
+            }
         }
-        .fullScreenCover(isPresented: $showBarcode) {
-            BarcodeScannerScreen(
-                onScanned: { raw in
-                    showBarcode = false
-                    Task { await handleBarcodeResult(raw) }
-                },
-                onDismiss: { showBarcode = false })
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .foodDetail(let identified):
+                FoodDetailSheet(
+                    identifiedFood: identified,
+                    onDismiss: {
+                        activeSheet = nil
+                        Task { await vm.fetchFrequentAndRecent() }
+                    },
+                    onEditCustom: { food in
+                        activeSheet = .createFood(.editCustom(food))
+                    },
+                    onPublishCustom: { food in
+                        activeSheet = .createFood(.publishFromCustom(food))
+                    },
+                    onAddToMeal: onAddIngredient)
+                .environment(logStore)
+                .environment(goalStore)
+                .environment(dateStore)
+            case .createFood(let mode):
+                CreateFoodSheet(
+                    mode: mode,
+                    onSaved: { _ in
+                        Task {
+                            await vm.fetchMyFoods()
+                            await vm.fetchFrequentAndRecent()
+                        }
+                    },
+                    onDismiss: { activeSheet = nil })
+            }
         }
-        .fullScreenCover(isPresented: $showMealCreation) {
-            MealCreationView(initialItems: [])
-                .environment(mealsStore)
+        .fullScreenCover(item: $activeCover) { cover in
+            switch cover {
+            case .barcode:
+                BarcodeScannerOverlay(
+                    onScanned: { gtin in
+                        activeCover = nil
+                        Task { await handleBarcodeResult(gtin) }
+                    },
+                    onDismiss: { activeCover = nil })
+            case .mealCreation:
+                MealCreationView(initialItems: [])
+                    .environment(mealsStore)
+            }
         }
         .alert("Barcode Not Found", isPresented: $showBarcodeError) {
             Button("Create Food") {
-                createFoodMode = .new(prefillName: nil, prefillBarcode: barcodeError)
+                activeSheet = .createFood(.new(prefillName: nil, prefillBarcode: barcodeError))
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -153,18 +183,21 @@ struct FoodSearchView: View {
                     }
                     Button {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        showBarcode = true
+                        activeCover = .barcode
                     } label: {
                         Image(systemName: "barcode.viewfinder")
                             .font(.system(size: 16))
                             .foregroundStyle(Color.appTint)
+                            .padding(.horizontal, Spacing.xs)
+                            .padding(.vertical, Spacing.xs)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
                 .padding(.horizontal, Spacing.md)
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity)
-                .glassEffect(.regular, in: Capsule())
+                .glassEffect(.regular.interactive(), in: Capsule())
 
                 addButton
             }
@@ -180,15 +213,16 @@ struct FoodSearchView: View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             if selectedTab == 2 {
-                showMealCreation = true
+                activeCover = .mealCreation
             } else {
-                createFoodMode = .new(prefillName: nil, prefillBarcode: nil)
+                activeSheet = .createFood(.new(prefillName: nil, prefillBarcode: nil))
             }
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 19, weight: .semibold))
                 .foregroundStyle(Color.appTint)
                 .frame(width: Chrome.backButtonSize, height: Chrome.backButtonSize)
+                .contentShape(Circle())
                 .glassEffect(.regular.interactive(), in: Circle())
         }
         .buttonStyle(.plain)
@@ -255,7 +289,7 @@ struct FoodSearchView: View {
                             FoodSearchResultRow(
                                 food:         anyFood(from: food),
                                 showQuickAdd: !isIngredientMode,
-                                onTap:        { detailFood = IdentifiedFood(food: anyFood(from: food)) },
+                                onTap:        { activeSheet = .foodDetail(IdentifiedFood(food: anyFood(from: food))) },
                                 onQuickAdd:   { Task { await quickAdd(food: anyFood(from: food)) } })
                         }
                     }
@@ -272,7 +306,7 @@ struct FoodSearchView: View {
                             FoodSearchResultRow(
                                 food:         anyFood(from: food),
                                 showQuickAdd: !isIngredientMode,
-                                onTap:        { detailFood = IdentifiedFood(food: anyFood(from: food)) },
+                                onTap:        { activeSheet = .foodDetail(IdentifiedFood(food: anyFood(from: food))) },
                                 onQuickAdd:   { Task { await quickAdd(food: anyFood(from: food)) } })
                         }
                     }
@@ -314,7 +348,7 @@ struct FoodSearchView: View {
                             FoodSearchResultRow(
                                 food:         anyF,
                                 showQuickAdd: false,
-                                onTap:        { detailFood = IdentifiedFood(food: anyF) },
+                                onTap:        { activeSheet = .foodDetail(IdentifiedFood(food: anyF)) },
                                 onQuickAdd:   nil)
                         }
                     }
@@ -332,7 +366,7 @@ struct FoodSearchView: View {
                             FoodSearchResultRow(
                                 food:         anyF,
                                 showQuickAdd: false,
-                                onTap:        { detailFood = IdentifiedFood(food: anyF) },
+                                onTap:        { activeSheet = .foodDetail(IdentifiedFood(food: anyF)) },
                                 onQuickAdd:   nil)
                         }
                     }
@@ -350,7 +384,7 @@ struct FoodSearchView: View {
                             FoodSearchResultRow(
                                 food:         anyF,
                                 showQuickAdd: false,
-                                onTap:        { detailFood = IdentifiedFood(food: anyF) },
+                                onTap:        { activeSheet = .foodDetail(IdentifiedFood(food: anyF)) },
                                 onQuickAdd:   nil)
                         }
                     }
@@ -365,9 +399,9 @@ struct FoodSearchView: View {
                             .font(.appSubhead)
                             .foregroundStyle(Color.appTextSecondary)
                         Button {
-                            createFoodMode = .new(
+                            activeSheet = .createFood(.new(
                                 prefillName:    vm.query,
-                                prefillBarcode: nil)
+                                prefillBarcode: nil))
                         } label: {
                             Label("Create \"\(vm.query)\"", systemImage: "plus")
                                 .font(.appSubhead)
@@ -426,7 +460,7 @@ struct FoodSearchView: View {
                             .font(.appSubhead)
                             .foregroundStyle(Color.appTextSecondary)
                         Button {
-                            createFoodMode = .new(prefillName: nil, prefillBarcode: nil)
+                            activeSheet = .createFood(.new(prefillName: nil, prefillBarcode: nil))
                         } label: {
                             Label("Create Food", systemImage: "plus")
                                 .font(.appSubhead)
@@ -453,7 +487,7 @@ struct FoodSearchView: View {
                                 FoodSearchResultRow(
                                     food:         anyF,
                                     showQuickAdd: false,
-                                    onTap:        { detailFood = IdentifiedFood(food: anyF) },
+                                    onTap:        { activeSheet = .foodDetail(IdentifiedFood(food: anyF)) },
                                     onQuickAdd:   nil)
                             }
                         }
@@ -471,7 +505,7 @@ struct FoodSearchView: View {
 
     private var mealsTab: some View {
         MealsListView(
-            onCreateMeal: { showMealCreation = true },
+            onCreateMeal: { activeCover = .mealCreation },
             onDismiss:         onDismiss,
             onPickMeal:        isIngredientMode
                 ? { meal in meal.items.forEach { onAddIngredient?($0) } }
@@ -484,19 +518,21 @@ struct FoodSearchView: View {
     // MARK: - Barcode Handler
 
     private func handleBarcodeResult(_ raw: String) async {
+        let normalized = GTINNormalizer.normalizeToGTIN(raw)
+        guard !normalized.isEmpty else { return }
         do {
-            let result = try await APIClient.shared.lookupBarcode(code: raw)
+            let result = try await APIClient.shared.lookupBarcode(code: normalized)
             switch result {
             case .community(let food):
-                detailFood = IdentifiedFood(food: .community(food))
+                activeSheet = .foodDetail(IdentifiedFood(food: .community(food)))
             case .custom(let food):
-                detailFood = IdentifiedFood(food: .custom(food))
+                activeSheet = .foodDetail(IdentifiedFood(food: .custom(food)))
             case .notFound:
-                barcodeError  = raw
+                barcodeError  = normalized
                 showBarcodeError = true
             }
         } catch {
-            barcodeError     = raw
+            barcodeError     = normalized
             showBarcodeError = true
         }
     }

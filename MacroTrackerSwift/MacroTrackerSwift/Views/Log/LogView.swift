@@ -231,7 +231,7 @@ struct LogView: View {
     @ViewBuilder
     private func macroOverlayPill(goals: DailyGoal) -> some View {
         let totals = dailyLogStore.totals
-        let radius: CGFloat = macroPreviewExpanded ? BorderRadius.full : 24
+        let radius: CGFloat = 20
 
         // ZStack lets both branches coexist during the crossfade while the pill resizes.
         ZStack {

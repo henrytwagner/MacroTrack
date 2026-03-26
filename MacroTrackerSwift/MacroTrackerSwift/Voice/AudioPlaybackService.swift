@@ -34,6 +34,9 @@ final class AudioPlaybackService: @unchecked Sendable {
     @ObservationIgnored private var scheduledCount  = 0
     @ObservationIgnored private var completedCount  = 0
 
+    /// Notification tokens registered in startEngine(), removed in stopEngine().
+    @ObservationIgnored private var notificationObservers: [NSObjectProtocol] = []
+
     // MARK: - AVAudio (@ObservationIgnored + nonisolated — touched from completion handler thread)
     @ObservationIgnored nonisolated(unsafe) private let engine     = AVAudioEngine()
     @ObservationIgnored nonisolated(unsafe) private let playerNode = AVAudioPlayerNode()
@@ -64,11 +67,13 @@ final class AudioPlaybackService: @unchecked Sendable {
         engine.prepare()
         try engine.start()
         isEngineRunning = true
+        registerNotificationObservers()
         print("[AudioPlayback] engine started ✓")
     }
 
     func stopEngine() {
         guard isEngineRunning else { return }
+        removeNotificationObservers()
         playerNode.stop()
         engine.stop()
         isEngineRunning  = false
@@ -120,8 +125,11 @@ final class AudioPlaybackService: @unchecked Sendable {
         if scheduledCount == 1 {
             print("[AudioPlayback] first audio chunk enqueued — \(frameCount) frames")
         }
-        if !playerNode.isPlaying { playerNode.play() }
 
+        // Schedule the buffer BEFORE calling play(). This guarantees the buffer is in the
+        // node's queue before the node starts running, preventing a window where play() is
+        // called with an empty queue, the node stops before scheduleBuffer() is called, and
+        // the completion handler is never triggered.
         playerNode.scheduleBuffer(buffer) { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -134,5 +142,61 @@ final class AudioPlaybackService: @unchecked Sendable {
                 }
             }
         }
+        if !playerNode.isPlaying { playerNode.play() }
+    }
+
+    // MARK: - Notification Observers
+
+    /// Register for system audio events that can silently drop pending completion callbacks,
+    /// leaving isGeminiSpeaking stuck at true and isSuppressed preventing mic capture.
+    private func registerNotificationObservers() {
+        let center = NotificationCenter.default
+
+        // AVAudioSession interruption: phone call, Siri, another app taking audio focus.
+        // On .began, Core Audio stops the engine internally without calling pending completion
+        // handlers — reset speaking state so the mic isn't left suppressed.
+        let interruptionToken = center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let typeValue = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  AVAudioSession.InterruptionType(rawValue: typeValue) == .began
+            else { return }
+            print("[AudioPlayback] session interrupted — resetting speaking state")
+            Task { @MainActor [weak self] in self?.resetSpeakingState() }
+        }
+
+        // AVAudioEngine configuration change: audio route change (AirPods connected/disconnected,
+        // CarPlay, Bluetooth speaker). The engine notifies that its I/O format has changed;
+        // pending buffer completion handlers may not fire for the previous route's buffers.
+        let configToken = center.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { [weak self] _ in
+            print("[AudioPlayback] engine config changed — resetting speaking state")
+            Task { @MainActor [weak self] in self?.resetSpeakingState() }
+        }
+
+        notificationObservers = [interruptionToken, configToken]
+    }
+
+    private func removeNotificationObservers() {
+        notificationObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        notificationObservers = []
+    }
+
+    /// Reset speaking state without stopping the engine — called when external events
+    /// (session interruption, audio route change) may have silently dropped completion callbacks.
+    private func resetSpeakingState() {
+        guard isEngineRunning else { return }
+        playerNode.stop()
+        isGeminiSpeaking = false
+        AudioCaptureService.shared.isSuppressed = false
+        AudioCaptureService.shared.clearEchoResidue()
+        scheduledCount = 0
+        completedCount = 0
+        print("[AudioPlayback] speaking state reset ✓")
     }
 }

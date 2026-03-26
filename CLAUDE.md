@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Active Codebase
+
+**The `mobile/` (React Native/Expo) directory is deprecated.** All active development is in `MacroTrackerSwift/` (SwiftUI). Do not reference, suggest changes to, or read files from `mobile/` by default. Only touch `mobile/` if explicitly asked.
+
 ## Project Overview
 
 MacroTrack is a voice-first macronutrient tracking app. Users can log food via voice in "Kitchen Mode" (immersive full-screen modal with live draft cards and WebSocket streaming), manual search, or barcode scanning.

@@ -1,36 +1,62 @@
 import SwiftUI
 import UIKit
 
-// MARK: - BarcodeScannerScreen
+// MARK: - BarcodeScannerOverlay
 
-/// Full-screen barcode scanner with overlay controls:
-/// - Close button (bottom leading, above hints — avoids status / top chrome)
-/// - "Type it in" button (bottom center) → slides up manual number-pad entry panel
+/// Full-screen barcode scanner using the shared AVFoundation camera engine.
+/// Replaces VisionKit-based BarcodeScannerScreen with a unified scanner
+/// that uses `KitchenCameraSession` + `AVCaptureMetadataOutput` for
+/// hardware-accelerated barcode detection (including small barcodes).
+///
+/// All detected barcodes are normalized to GTIN-13 via `GTINNormalizer`
+/// before calling `onScanned`.
+///
+/// UI: camera preview fills the screen, with bottom overlay controls
+/// (close button, "Type it in" manual entry panel).
 @MainActor
-struct BarcodeScannerScreen: View {
-    let onScanned:  (String) -> Void
-    let onDismiss:  () -> Void
+struct BarcodeScannerOverlay: View {
+    let onScanned: (String) -> Void
+    let onDismiss: () -> Void
 
     @State private var isManualEntry = false
     @State private var manualText    = ""
     @State private var keyboardInset: CGFloat = 0
+    @State private var hasScanned    = false
     @FocusState private var fieldFocused: Bool
+
+    private let camera = KitchenCameraSession.shared
 
     var body: some View {
         ZStack {
-            // Camera scanner fills entire screen
-            BarcodeScannerView(onScanned: onScanned, onDismiss: onDismiss)
+            // Camera preview fills entire screen
+            KitchenCameraPreview(session: camera.captureSession)
                 .ignoresSafeArea()
 
             VStack {
                 Spacer()
-
                 bottomChrome
             }
             .padding(.bottom, keyboardInset)
         }
         .ignoresSafeArea()
         .animation(.easeOut(duration: 0.25), value: keyboardInset)
+        .task {
+            // Request permission and start camera
+            let granted = await camera.requestPermission()
+            guard granted else { return }
+
+            camera.onBarcodeDetected = { [self] gtin in
+                guard !hasScanned else { return }
+                hasScanned = true
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                onScanned(gtin)
+            }
+            camera.start()
+        }
+        .onDisappear {
+            camera.onBarcodeDetected = nil
+            camera.stop()
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
             guard
                 let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
@@ -48,7 +74,7 @@ struct BarcodeScannerScreen: View {
         }
     }
 
-    // MARK: - Bottom chrome
+    // MARK: - Bottom Chrome
 
     private var bottomChrome: some View {
         VStack(spacing: Spacing.md) {
@@ -125,7 +151,7 @@ struct BarcodeScannerScreen: View {
                 Button {
                     let trimmed = manualText.trimmingCharacters(in: .whitespaces)
                     guard !trimmed.isEmpty else { return }
-                    onScanned(trimmed)
+                    onScanned(GTINNormalizer.normalizeToGTIN(trimmed))
                 } label: {
                     Image(systemName: "checkmark")
                         .font(.system(size: 18, weight: .semibold))

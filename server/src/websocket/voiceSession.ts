@@ -1584,11 +1584,38 @@ async function handleBarcodeScan(
 
   if (session.sessionState !== "normal") return;
 
+  // Check custom foods first (user's personal data takes priority)
+  console.log(`[barcode] lookup gtin="${normalizedGtin}" userId="${session.userId}"`);
+  const customFood = await prisma.customFood.findFirst({
+    where: { userId: session.userId, barcode: normalizedGtin },
+  });
+  console.log(`[barcode] customFood result: ${customFood ? customFood.name : "null"}`);
+  if (customFood) {
+    const item: DraftItem = {
+      id: `barcode-${Date.now()}`,
+      name: customFood.name,
+      quantity: customFood.servingSize,
+      unit: customFood.servingUnit,
+      calories: customFood.calories,
+      proteinG: customFood.proteinG,
+      carbsG: customFood.carbsG,
+      fatG: customFood.fatG,
+      source: "CUSTOM",
+      customFoodId: customFood.id,
+      mealLabel: getProvisionalMealLabel(),
+      state: "normal",
+    };
+    session.draft.push(item);
+    send(socket, { type: "items_added", items: [item] } satisfies WSItemsAddedMessage);
+    send(socket, { type: "ask", question: `Added ${customFood.name}.` } satisfies WSAskMessage);
+    return;
+  }
+
+  // Fall back to community foods
   const record = await prisma.communityFoodBarcode.findUnique({
     where: { barcode: normalizedGtin },
     include: { communityFood: true },
   });
-
   if (record?.communityFood) {
     const food = record.communityFood;
     const item: DraftItem = {
@@ -1608,38 +1635,16 @@ async function handleBarcodeScan(
     session.draft.push(item);
     send(socket, { type: "items_added", items: [item] } satisfies WSItemsAddedMessage);
     send(socket, { type: "ask", question: `Added ${food.name}.` } satisfies WSAskMessage);
-  } else {
-    // Check if the user has a custom food with this barcode
-    const customFood = await prisma.customFood.findFirst({
-      where: { userId: session.userId, barcode: normalizedGtin },
-    });
-    if (customFood) {
-      const item: DraftItem = {
-        id: `barcode-${Date.now()}`,
-        name: customFood.name,
-        quantity: customFood.servingSize,
-        unit: customFood.servingUnit,
-        calories: customFood.calories,
-        proteinG: customFood.proteinG,
-        carbsG: customFood.carbsG,
-        fatG: customFood.fatG,
-        source: "CUSTOM",
-        customFoodId: customFood.id,
-        mealLabel: getProvisionalMealLabel(),
-        state: "normal",
-      };
-      session.draft.push(item);
-      send(socket, { type: "items_added", items: [item] } satisfies WSItemsAddedMessage);
-      send(socket, { type: "ask", question: `Added ${customFood.name}.` } satisfies WSAskMessage);
-    } else {
-      session.sessionState = `barcode_pending:${normalizedGtin}`;
-      session.pendingBarcodeGtin = normalizedGtin;
-      send(socket, {
-        type: "ask",
-        question: "I couldn't find that product. Want me to create a custom food?",
-      } satisfies WSAskMessage);
-    }
+    return;
   }
+
+  // No match — offer to create custom food
+  session.sessionState = `barcode_pending:${normalizedGtin}`;
+  session.pendingBarcodeGtin = normalizedGtin;
+  send(socket, {
+    type: "ask",
+    question: "I couldn't find that product. Want me to create a custom food?",
+  } satisfies WSAskMessage);
 }
 
 async function handleBarcodePendingTranscript(

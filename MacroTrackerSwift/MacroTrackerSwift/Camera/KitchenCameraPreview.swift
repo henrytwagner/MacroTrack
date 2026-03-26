@@ -11,13 +11,26 @@ struct KitchenCameraPreview: UIViewRepresentable {
 
     func makeUIView(context: Context) -> PreviewUIView {
         let view = PreviewUIView()
-        view.previewLayer.session = session
         view.previewLayer.videoGravity = .resizeAspectFill
+        // Assigning the session on the main thread causes a hang (I/O).
+        // Defer to a background queue so the preview layer connects without blocking.
+        let layer = view.previewLayer
+        let captureSession = session
+        DispatchQueue.global(qos: .userInitiated).async {
+            layer.session = captureSession
+        }
         return view
     }
 
     func updateUIView(_ uiView: PreviewUIView, context: Context) {
-        uiView.previewLayer.session = session
+        // Only reassign if the session actually changed.
+        let layer = uiView.previewLayer
+        let captureSession = session
+        if layer.session !== captureSession {
+            DispatchQueue.global(qos: .userInitiated).async {
+                layer.session = captureSession
+            }
+        }
     }
 
     /// Custom UIView that uses `AVCaptureVideoPreviewLayer` as its backing layer.

@@ -773,19 +773,43 @@ async function handleBarcodeScan(
   gtin: string,
   session: KitchenSession,
 ): Promise<void> {
-  const result = await prisma.customFood.findFirst({
-    where: { userId: session.userId, barcode: gtin },
+  const normalized = gtin.replace(/\D/g, "");
+  if (!normalized) return;
+
+  // 1. Custom food first (user's personal data takes priority)
+  const customResult = await prisma.customFood.findFirst({
+    where: { userId: session.userId, barcode: normalized },
     select: { id: true, name: true, servingSize: true, servingUnit: true },
   });
 
-  if (result) {
+  if (customResult) {
     notifyGemini(session, {
       source: "barcode",
       action: "food_found",
       details:
-        `Found custom food "${result.name}". ` +
-        `Call add_to_draft with food_ref "custom:${result.id}", ` +
-        `quantity ${result.servingSize}, unit "${result.servingUnit}". ` +
+        `Found custom food "${customResult.name}". ` +
+        `Call add_to_draft with food_ref "custom:${customResult.id}", ` +
+        `quantity ${customResult.servingSize}, unit "${customResult.servingUnit}". ` +
+        `Do not ask the user for quantity — use these defaults.`,
+    });
+    return;
+  }
+
+  // 2. Community food (barcode stored in separate join table)
+  const communityRecord = await prisma.communityFoodBarcode.findUnique({
+    where: { barcode: normalized },
+    include: { communityFood: true },
+  });
+
+  if (communityRecord?.communityFood) {
+    const food = communityRecord.communityFood;
+    notifyGemini(session, {
+      source: "barcode",
+      action: "food_found",
+      details:
+        `Found community food "${food.name}". ` +
+        `Call add_to_draft with food_ref "community:${food.id}", ` +
+        `quantity 1, unit "${food.defaultServingUnit ?? "serving"}". ` +
         `Do not ask the user for quantity — use these defaults.`,
     });
     return;
@@ -795,7 +819,7 @@ async function handleBarcodeScan(
     source: "barcode",
     action: "not_found",
     details:
-      `GTIN ${gtin} — no matching food in this user's custom foods. ` +
+      `GTIN ${normalized} — no matching food found. ` +
       `Tell the user the scan didn't match anything and ask them to name the food so you can call lookup_food.`,
   });
 }
@@ -1103,10 +1127,42 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
       });
 
       // Cleanup on disconnect
-      socket.on("close", () => {
-        console.log("[KitchenMode] client disconnected");
+      socket.on("close", async () => {
+        console.log(`[KitchenMode] client disconnected — completed: ${session.completed}`);
         if (audioEndTimer) { clearTimeout(audioEndTimer); audioEndTimer = null; }
         gemini.close();
+        // Auto-save on unexpected disconnect (e.g. network drop, app backgrounded)
+        if (!session.completed && session.items.length > 0) {
+          try {
+            const itemsToSave = session.items.filter((i) => i.state === "normal");
+            if (itemsToSave.length > 0) {
+              const entryDate = new Date(session.date);
+              await prisma.foodEntry.createMany({
+                data: itemsToSave.map((item) => ({
+                  userId: session.userId,
+                  date: entryDate,
+                  name: item.name,
+                  calories: item.calories,
+                  proteinG: item.proteinG,
+                  carbsG: item.carbsG,
+                  fatG: item.fatG,
+                  quantity: item.quantity,
+                  unit: item.unit,
+                  source: item.source,
+                  mealLabel: item.mealLabel,
+                  usdaFdcId: item.usdaFdcId ?? null,
+                  customFoodId: item.customFoodId ?? null,
+                  communityFoodId: item.communityFoodId ?? null,
+                  voiceSessionId: session.voiceSessionId,
+                })),
+              });
+              await recategorizeMealsForDay(session.userId, entryDate);
+              console.log(`[KitchenMode] Auto-saved ${itemsToSave.length} items on disconnect`);
+            }
+          } catch (err) {
+            console.error("[KitchenMode] Auto-save on disconnect failed:", err);
+          }
+        }
       });
 
       socket.on("error", (err: Error) => {
