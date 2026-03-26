@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { Sex, UnitSystem, ActivityLevel } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { getDefaultUserId } from "../db/defaultUser.js";
 import { calculateAgeFromDob, parseDateOfBirth } from "../utils/age.js";
@@ -47,18 +48,18 @@ export async function profileRoutes(app: FastifyInstance) {
     const body = request.body;
 
     const data: {
-      sex?: string;
-      preferredUnits?: string;
+      sex?: Sex;
+      preferredUnits?: UnitSystem;
       heightCm?: number | null;
       weightKg?: number | null;
       dateOfBirth?: Date | null;
-      activityLevel?: string | null;
+      activityLevel?: ActivityLevel | null;
     } = {};
-    if (body.sex !== undefined) data.sex = body.sex;
-    if (body.preferredUnits !== undefined) data.preferredUnits = body.preferredUnits;
+    if (body.sex !== undefined) data.sex = body.sex as Sex;
+    if (body.preferredUnits !== undefined) data.preferredUnits = body.preferredUnits as UnitSystem;
     if (body.heightCm !== undefined) data.heightCm = body.heightCm;
     if (body.weightKg !== undefined) data.weightKg = body.weightKg;
-    if (body.activityLevel !== undefined) data.activityLevel = body.activityLevel;
+    if (body.activityLevel !== undefined) data.activityLevel = body.activityLevel as ActivityLevel;
     if (body.dateOfBirth !== undefined) {
       data.dateOfBirth =
         body.dateOfBirth === null || body.dateOfBirth === ""

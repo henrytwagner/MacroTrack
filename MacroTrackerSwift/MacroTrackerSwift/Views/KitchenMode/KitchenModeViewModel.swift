@@ -1,4 +1,5 @@
 import SwiftUI
+@preconcurrency import AVFoundation
 import Observation
 
 // MARK: - Session State
@@ -43,8 +44,20 @@ final class KitchenModeViewModel {
     var textDisplayMode: TextDisplayMode = .off
     var editText: String = ""
 
-    /// Barcode mode (camera section — stubbed for E3, wired in E4).
-    var barcodeModeActive = false
+    /// Barcode mode (camera section).
+    private(set) var barcodeModeActive = false
+
+    /// Camera permission granted (checked on first barcode mode activation).
+    private(set) var cameraPermissionGranted = false
+
+    /// Camera facing direction — exposed for UI (flip button highlight).
+    var cameraFacing: AVCaptureDevice.Position { camera.cameraPosition }
+
+    /// Flash/torch state — exposed for UI.
+    var flashEnabled: Bool {
+        get { camera.torchEnabled }
+        set { camera.torchEnabled = newValue }
+    }
 
     /// Set of item IDs where the user tapped "Skip" on the scale chip.
     var scaleSkippedIds: Set<String> = []
@@ -63,6 +76,7 @@ final class KitchenModeViewModel {
     private let ws = WSClient.shared
     private let capture = AudioCaptureService.shared
     private let playback = AudioPlaybackService.shared
+    private let camera = KitchenCameraSession.shared
     private let draft = DraftStore.shared
     private let dailyLog = DailyLogStore.shared
     private let dateStore = DateStore.shared
@@ -192,6 +206,8 @@ final class KitchenModeViewModel {
         sessionState = .saving
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         capture.stop()
+        camera.stop()
+        barcodeModeActive = false
         ws.send(.save)
         // Navigation triggered by session_saved from server
     }
@@ -214,6 +230,8 @@ final class KitchenModeViewModel {
         sessionState = .cancelled
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         stopAudio()
+        camera.stop()
+        barcodeModeActive = false
         ws.send(.cancel)
 
         // Fallback: if session_cancelled never arrives, clean up after 1.8s
@@ -337,6 +355,61 @@ final class KitchenModeViewModel {
         do { try capture.start() } catch {}
     }
 
+    // MARK: - Camera / Barcode Mode
+
+    /// Toggle barcode camera mode. Requests camera permission on first activation.
+    /// Does NOT pause audio capture — barcode mode is non-interrupting (matches RN).
+    func toggleBarcodeMode() {
+        guard case .active = sessionState else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
+        if barcodeModeActive {
+            // Deactivate
+            barcodeModeActive = false
+            camera.stop()
+        } else {
+            // Activate — request permission if needed
+            Task {
+                if !cameraPermissionGranted {
+                    cameraPermissionGranted = await camera.requestPermission()
+                }
+                guard cameraPermissionGranted else { return }
+
+                camera.onBarcodeDetected = { [weak self] gtin in
+                    self?.handleBarcodeDetected(gtin)
+                }
+                camera.start()
+                barcodeModeActive = true
+            }
+        }
+    }
+
+    func flipCamera() {
+        camera.switchCamera()
+    }
+
+    func toggleFlash() {
+        camera.torchEnabled.toggle()
+    }
+
+    /// Handle barcode detected by the camera.
+    /// If a creating card has "barcode" as the current field, send as transcript
+    /// so it flows through the CREATE_FOOD_RESPONSE pipeline (matches RN lines 597–609).
+    private func handleBarcodeDetected(_ gtin: String) {
+        let digits = gtin.filter(\.isNumber)
+        guard !digits.isEmpty else { return }
+
+        let isFillingBarcodeField = draft.items.contains { item in
+            item.state == .creating && item.creatingProgress?.currentField == .barcode
+        }
+
+        if isFillingBarcodeField {
+            ws.send(.transcript(text: digits))
+        } else {
+            ws.send(.barcodeScan(gtin: digits))
+        }
+    }
+
     // MARK: - Cleanup
 
     /// Called on view disappear — auto-save if not explicitly ended.
@@ -344,6 +417,7 @@ final class KitchenModeViewModel {
         guard !sessionEnded else { return }
         sessionEnded = true
         stopAudio()
+        camera.stop()
         ws.disconnect()
         UIApplication.shared.isIdleTimerDisabled = false
         draft.reset()

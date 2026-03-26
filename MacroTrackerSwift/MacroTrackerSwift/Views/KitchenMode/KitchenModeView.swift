@@ -1,10 +1,10 @@
 import SwiftUI
+@preconcurrency import AVFoundation
 
 // MARK: - KitchenModeView
 
 /// Full-screen Kitchen Mode session.
 /// Port of mobile/app/kitchen-mode.tsx.
-/// Camera section is stubbed (Session E4).
 struct KitchenModeView: View {
     @Environment(DailyLogStore.self) private var dailyLog
     @Environment(GoalStore.self) private var goalStore
@@ -67,105 +67,258 @@ struct KitchenModeView: View {
     // MARK: - Main Content
 
     private var mainContent: some View {
-        VStack(spacing: 0) {
-            // Top navigation bar
-            topBar
+        GeometryReader { geo in
+            let feedHeight = geo.size.width * 3 / 4
 
-            // Content area: cards + overlays
-            ZStack(alignment: .top) {
-                // Scrollable card list
-                ScrollViewReader { proxy in
-                    List {
-                        if vm.items.isEmpty {
-                            emptyState
-                                .listRowBackground(Color.clear)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(
-                                    top: Spacing.xxxl, leading: Spacing.xl,
-                                    bottom: Spacing.xxxl, trailing: Spacing.xl))
-                        } else {
-                            ForEach(vm.reversedItems, id: \.id) { item in
-                                DraftMealCard(
-                                    item: item,
-                                    isActive: item.id == vm.activeId,
-                                    isEditing: item.id == vm.editingItemId,
-                                    onSendTranscript: { text in
-                                        vm.sendTranscript(text)
-                                    },
-                                    onRemove: {
-                                        vm.touchRemoveItem(itemId: item.id)
-                                    },
-                                    onEditQuantity: { qty, unit in
-                                        vm.touchEditItem(itemId: item.id, quantity: qty, unit: unit)
-                                    },
-                                    onFillManually: { name, cal, p, c, f, ss, su in
-                                        vm.touchCompleteCreation(
-                                            itemId: item.id, name: name,
-                                            calories: cal, proteinG: p,
-                                            carbsG: c, fatG: f,
-                                            servingSize: ss, servingUnit: su)
-                                    },
-                                    onStartEdit: {
-                                        vm.openInlineEdit(itemId: item.id)
-                                    },
-                                    onEndEdit: {
-                                        vm.closeInlineEdit()
-                                    },
-                                    onEditPreview: { qty in
-                                        vm.editingQuantity = qty
-                                    }
-                                )
-                                .listRowBackground(Color.clear)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(
-                                    top: Spacing.xs, leading: Spacing.lg,
-                                    bottom: Spacing.xs, trailing: Spacing.lg))
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    if item.state == .normal && item.id != vm.editingItemId {
-                                        Button(role: .destructive) {
-                                            vm.touchRemoveItem(itemId: item.id)
-                                        } label: {
-                                            Label("Remove", systemImage: "trash")
-                                        }
-                                    }
-                                }
-                            }
-                        }
+            VStack(spacing: 0) {
+                // Top navigation bar — hidden in barcode mode (buttons move onto camera feed)
+                if !vm.barcodeModeActive {
+                    topBar
+                }
+
+                // Content area: cards + overlays
+                ZStack(alignment: .top) {
+                    if vm.barcodeModeActive {
+                        barcodeModeContent(feedHeight: feedHeight, screenHeight: geo.size.height)
+                    } else {
+                        normalModeContent
                     }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
-                    .scrollIndicators(.hidden)
-                    .scrollDismissesKeyboard(.interactively)
-                    .contentMargins(.top, 64, for: .scrollContent)
-                    .contentMargins(.bottom, Spacing.lg, for: .scrollContent)
-                    .onChange(of: vm.items.count) { _, _ in
-                        // Auto-scroll to top on new card
-                        if let firstId = vm.reversedItems.first?.id {
-                            withAnimation {
-                                proxy.scrollTo(firstId, anchor: .top)
-                            }
+
+                    // Floating macro pill overlay
+                    macroPillOverlay
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.top, vm.barcodeModeActive ? feedHeight - 24 : Spacing.sm)
+                        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: vm.barcodeModeActive)
+
+                    // Floating caption / edit row
+                    if vm.textDisplayMode != .off {
+                        VStack {
+                            Spacer()
+                            captionOrEditRow
+                                .padding(.horizontal, Spacing.lg)
+                                .padding(.bottom, Spacing.sm)
                         }
                     }
                 }
 
-                // Floating macro pill overlay
-                macroPillOverlay
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.top, Spacing.sm)
+                // Bottom bar
+                bottomBar
+            }
+        }
+    }
 
-                // Floating caption / edit row
-                if vm.textDisplayMode != .off {
-                    VStack {
-                        Spacer()
-                        captionOrEditRow
-                            .padding(.horizontal, Spacing.lg)
-                            .padding(.bottom, Spacing.sm)
+    // MARK: - Normal Mode Content (no camera)
+
+    private var normalModeContent: some View {
+        cardList(topPadding: 64, emptyIcon: "mic",
+                 emptyText: "Start speaking to log food.\nTry: \"200 grams of chicken breast\"")
+    }
+
+    // MARK: - Barcode Mode Content (camera + sheet)
+
+    private func barcodeModeContent(feedHeight: CGFloat, screenHeight: CGFloat) -> some View {
+        ZStack(alignment: .top) {
+            // Camera feed — behind everything
+            if vm.cameraPermissionGranted {
+                KitchenCameraPreview(session: KitchenCameraSession.shared.captureSession)
+                    .frame(height: feedHeight)
+                    .clipped()
+                    .onTapGesture(count: 2) {
+                        vm.flipCamera()
                     }
+            } else {
+                Color.black
+                    .frame(height: feedHeight)
+            }
+
+            // Nav overlay — in front of camera
+            cameraNavOverlay
+                .padding(.top, Spacing.md)
+                .padding(.horizontal, Spacing.lg)
+
+            // Cards scroll below the camera feed as a sheet
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Transparent spacer: pushes sheet below camera
+                    Color.clear.frame(height: feedHeight)
+
+                    // Sheet header — rounded top corners, clears floating macro pill
+                    UnevenRoundedRectangle(topLeadingRadius: BorderRadius.xl,
+                                           topTrailingRadius: BorderRadius.xl)
+                        .fill(Color.appBackground)
+                        .frame(height: 24 + Spacing.sm)
+
+                    // Sheet body — cards
+                    VStack(spacing: Spacing.md) {
+                        if vm.items.isEmpty {
+                            barcodeModeEmptyState
+                        } else {
+                            ForEach(vm.reversedItems, id: \.id) { item in
+                                draftCard(item: item)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.bottom, Spacing.lg)
+                    .frame(minHeight: screenHeight, alignment: .top)
+                    .background(Color.appBackground)
+                }
+            }
+            .scrollIndicators(.hidden)
+        }
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    // MARK: - Camera Nav Overlay
+
+    private var cameraNavOverlay: some View {
+        HStack {
+            // Back / Cancel
+            Button {
+                handleCancel()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Color.black.opacity(0.35))
+                    .clipShape(Circle())
+            }
+
+            Spacer()
+
+            // Flash toggle (back camera only)
+            if vm.cameraFacing == .back {
+                Button {
+                    vm.toggleFlash()
+                } label: {
+                    Image(systemName: vm.flashEnabled ? "bolt.fill" : "bolt.slash")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.black.opacity(0.35))
+                        .clipShape(Circle())
                 }
             }
 
-            // Bottom bar
-            bottomBar
+            // Flip camera
+            Button {
+                vm.flipCamera()
+            } label: {
+                Image(systemName: "arrow.triangle.2.circlepath.camera")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Color.black.opacity(0.35))
+                    .clipShape(Circle())
+            }
+
+            // Save
+            Button {
+                vm.save()
+            } label: {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Color.appTint)
+                    .clipShape(Capsule())
+            }
+        }
+    }
+
+    // MARK: - Shared Card Builder
+
+    private func draftCard(item: DraftItem) -> some View {
+        DraftMealCard(
+            item: item,
+            isActive: item.id == vm.activeId,
+            isEditing: item.id == vm.editingItemId,
+            onSendTranscript: { text in
+                vm.sendTranscript(text)
+            },
+            onRemove: {
+                vm.touchRemoveItem(itemId: item.id)
+            },
+            onEditQuantity: { qty, unit in
+                vm.touchEditItem(itemId: item.id, quantity: qty, unit: unit)
+            },
+            onFillManually: { name, cal, p, c, f, ss, su in
+                vm.touchCompleteCreation(
+                    itemId: item.id, name: name,
+                    calories: cal, proteinG: p,
+                    carbsG: c, fatG: f,
+                    servingSize: ss, servingUnit: su)
+            },
+            onStartEdit: {
+                vm.openInlineEdit(itemId: item.id)
+            },
+            onEndEdit: {
+                vm.closeInlineEdit()
+            },
+            onEditPreview: { qty in
+                vm.editingQuantity = qty
+            }
+        )
+    }
+
+    // MARK: - Card List (normal mode — uses List for swipe actions)
+
+    private func cardList(topPadding: CGFloat, emptyIcon: String, emptyText: String) -> some View {
+        ScrollViewReader { proxy in
+            List {
+                if vm.items.isEmpty {
+                    VStack(spacing: Spacing.md) {
+                        Image(systemName: emptyIcon)
+                            .font(.system(size: 48))
+                            .foregroundStyle(Color.appTextTertiary)
+
+                        Text(emptyText)
+                            .font(.appBody)
+                            .tracking(Typography.Tracking.body)
+                            .foregroundStyle(Color.appTextSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.horizontal, Spacing.xl)
+                    .padding(.vertical, Spacing.xxxl)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(
+                        top: Spacing.xxxl, leading: Spacing.xl,
+                        bottom: Spacing.xxxl, trailing: Spacing.xl))
+                } else {
+                    ForEach(vm.reversedItems, id: \.id) { item in
+                        draftCard(item: item)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(
+                                top: Spacing.xs, leading: Spacing.lg,
+                                bottom: Spacing.xs, trailing: Spacing.lg))
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                if item.state == .normal && item.id != vm.editingItemId {
+                                    Button(role: .destructive) {
+                                        vm.touchRemoveItem(itemId: item.id)
+                                    } label: {
+                                        Label("Remove", systemImage: "trash")
+                                    }
+                                }
+                            }
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+            .contentMargins(.top, topPadding, for: .scrollContent)
+            .contentMargins(.bottom, Spacing.lg, for: .scrollContent)
+            .onChange(of: vm.items.count) { _, _ in
+                if let firstId = vm.reversedItems.first?.id {
+                    withAnimation {
+                        proxy.scrollTo(firstId, anchor: .top)
+                    }
+                }
+            }
         }
     }
 
@@ -279,15 +432,15 @@ struct KitchenModeView: View {
         }
     }
 
-    // MARK: - Empty State
+    // MARK: - Barcode Mode Empty State
 
-    private var emptyState: some View {
+    private var barcodeModeEmptyState: some View {
         VStack(spacing: Spacing.md) {
-            Image(systemName: "mic")
+            Image(systemName: "barcode.viewfinder")
                 .font(.system(size: 48))
                 .foregroundStyle(Color.appTextTertiary)
 
-            Text("Start speaking to log food.\nTry: \"200 grams of chicken breast\"")
+            Text("Point the camera at a barcode to log food.\nYou can also speak or type.")
                 .font(.appBody)
                 .tracking(Typography.Tracking.body)
                 .foregroundStyle(Color.appTextSecondary)
@@ -367,9 +520,9 @@ struct KitchenModeView: View {
             }
             .frame(width: 44, height: 44)
 
-            // Camera toggle (stubbed for E4)
+            // Camera toggle (barcode + future food recognition)
             Button {
-                // Camera integration in Session E4
+                vm.toggleBarcodeMode()
             } label: {
                 Image(systemName: "camera")
                     .font(.system(size: 22))

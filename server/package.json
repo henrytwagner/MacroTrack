@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc",
-    "start": "node dist/server.js",
+    "build": "prisma generate --schema=src/db/prisma/schema.prisma && tsc",
+    "start": "node dist/server/src/server.js",
     "db:generate": "prisma generate --schema=src/db/prisma/schema.prisma",
     "db:migrate": "prisma migrate dev --schema=src/db/prisma/schema.prisma",
     "db:migrate:deploy": "prisma migrate deploy --schema=src/db/prisma/schema.prisma",
@@ -27,6 +27,7 @@
     "dotenv": "^17.3.1",
     "fastify": "^5.7.4",
     "pg": "^8.18.0",
+    "prisma": "^7.4.1",
     "sharp": "^0.33.5"
   },
   "devDependencies": {
@@ -34,7 +35,6 @@
     "@types/node": "^25.3.0",
     "@types/pg": "^8.16.0",
     "jest": "^29.7.0",
-    "prisma": "^7.4.1",
     "ts-jest": "^29.2.5",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"

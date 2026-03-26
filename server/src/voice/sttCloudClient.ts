@@ -71,7 +71,7 @@ export function createCloudSttSession(
   return {
     pushAudioChunk(chunk: Buffer) {
       try {
-        live.send(chunk);
+        live.send(chunk as unknown as ArrayBuffer);
       } catch (err) {
         console.error("[cloud-stt] Failed to send audio chunk:", err);
       }
