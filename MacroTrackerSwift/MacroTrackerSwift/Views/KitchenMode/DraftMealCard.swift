@@ -13,6 +13,11 @@ struct DraftMealCard: View {
     let item: DraftItem
     let isActive: Bool
     let isEditing: Bool
+
+    // Scale integration
+    var scaleReading: ScaleReading? = nil
+    var scaleSkipped: Bool = false
+
     var onSendTranscript: ((String) -> Void)? = nil
     var onRemove: (() -> Void)? = nil
     var onEditQuantity: ((Double, String) -> Void)? = nil
@@ -20,6 +25,8 @@ struct DraftMealCard: View {
     var onStartEdit: (() -> Void)? = nil
     var onEndEdit: (() -> Void)? = nil
     var onEditPreview: ((Double) -> Void)? = nil
+    var onScaleConfirm: ((Double, String) -> Void)? = nil
+    var onScaleSkip: (() -> Void)? = nil
 
     // MARK: - Animation State
 
@@ -271,6 +278,15 @@ struct DraftMealCard: View {
                 .tracking(Typography.Tracking.subhead)
                 .foregroundStyle(Color.appTextSecondary)
                 .scaleEffect(quantityFlash)
+
+            // Scale chip — offer to apply stable scale reading
+            if let reading = scaleReading,
+               reading.stable,
+               !scaleSkipped,
+               item.state == .normal {
+                scaleConfirmChip(reading)
+                    .transition(.scale.combined(with: .opacity))
+            }
 
             // Macro chips
             macroRow
@@ -552,6 +568,45 @@ struct DraftMealCard: View {
         case .barcode:     return "Barcode? (say \u{2018}skip\u{2019} to skip)"
         case .complete:    return "Almost done\u{2026}"
         }
+    }
+
+    // MARK: - Scale Chip
+
+    private func scaleConfirmChip(_ reading: ScaleReading) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "scalemass.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.appTint)
+
+            Text("Use \(reading.display)?")
+                .font(.appCaption1)
+                .tracking(Typography.Tracking.caption1)
+                .foregroundStyle(Color.appText)
+
+            Spacer()
+
+            // Confirm
+            Button {
+                onScaleConfirm?(reading.value, reading.unit.rawValue)
+            } label: {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Color.appTint)
+            }
+
+            // Skip
+            Button {
+                onScaleSkip?()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Color.appTextTertiary)
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.xs)
+        .background(Color.appTint.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
     }
 
     // MARK: - Shared Sub-views

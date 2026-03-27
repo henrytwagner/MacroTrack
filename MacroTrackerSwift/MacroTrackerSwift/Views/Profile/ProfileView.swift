@@ -90,6 +90,7 @@ struct ProfileView: View {
                 profileCard
                 profileSection
                 nutritionSection
+                devicesSection
                 appearanceSection
                 developmentSection
                 aboutSection
@@ -192,6 +193,41 @@ struct ProfileView: View {
                             subtitle: "Connect to Etekcity ESN00 smart scale") {
                     showScaleStub = true
                 }
+            }
+        }
+    }
+
+    @AppStorage("scaleAutoConnect") private var scaleAutoConnect: Bool = true
+
+    private var devicesSection: some View {
+        sectionGroup(label: "DEVICES") {
+            VStack(spacing: 0) {
+                HStack(spacing: Spacing.md) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: BorderRadius.sm)
+                            .fill(Color.appTint.opacity(0.18))
+                            .frame(width: 36, height: 36)
+                        Image(systemName: "scalemass")
+                            .font(.system(size: 18))
+                            .foregroundStyle(Color.appTint)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Auto-connect scale")
+                            .font(.appBody)
+                            .foregroundStyle(Color.appText)
+                        Text("Connect to your last-used scale in Kitchen Mode")
+                            .font(.appCaption1)
+                            .foregroundStyle(Color.appTextSecondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Toggle("", isOn: $scaleAutoConnect)
+                        .labelsHidden()
+                        .tint(Color.appTint)
+                }
+                .padding(.horizontal, Spacing.lg)
+                .padding(.vertical, Spacing.md)
             }
         }
     }

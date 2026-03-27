@@ -263,6 +263,8 @@ struct KitchenModeView: View {
             item: item,
             isActive: item.id == vm.activeId,
             isEditing: item.id == vm.editingItemId,
+            scaleReading: vm.isScaleConnected ? vm.scaleReading : nil,
+            scaleSkipped: vm.scaleSkippedIds.contains(item.id),
             onSendTranscript: { text in
                 vm.sendTranscript(text)
             },
@@ -287,6 +289,12 @@ struct KitchenModeView: View {
             },
             onEditPreview: { qty in
                 vm.editingQuantity = qty
+            },
+            onScaleConfirm: { value, unit in
+                vm.confirmScaleReading(for: item.id)
+            },
+            onScaleSkip: {
+                vm.scaleSkippedIds.insert(item.id)
             }
         )
     }
@@ -316,6 +324,23 @@ struct KitchenModeView: View {
                         top: Spacing.xxxl, leading: Spacing.xl,
                         bottom: Spacing.xxxl, trailing: Spacing.xl))
                 } else {
+                    // Scale card — shown when scale is active
+                    if vm.scaleState != .idle {
+                        KitchenScaleCard(
+                            connectionState: vm.scaleState,
+                            reading: vm.scaleReading,
+                            onConnect: { vm.connectScale() },
+                            onDisconnect: { vm.disconnectScale() },
+                            onCancelScan: { vm.cancelScaleScan() },
+                            onSimulate: { vm.simulateScale() }
+                        )
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(
+                            top: Spacing.xs, leading: Spacing.lg,
+                            bottom: Spacing.sm, trailing: Spacing.lg))
+                    }
+
                     ForEach(vm.reversedItems, id: \.id) { item in
                         draftCard(item: item)
                             .listRowBackground(Color.clear)
@@ -587,13 +612,20 @@ struct KitchenModeView: View {
 
             Spacer()
 
-            // Scale toggle (stub — wired in Phase F)
+            // Scale toggle
             Button {
-                // BLE scale in Phase F
+                switch vm.scaleState {
+                case .idle, .error:
+                    vm.connectScale()
+                case .scanning, .connecting:
+                    vm.cancelScaleScan()
+                case .connected:
+                    vm.disconnectScale()
+                }
             } label: {
-                Image(systemName: "scalemass")
+                Image(systemName: vm.isScaleConnected ? "scalemass.fill" : "scalemass")
                     .font(.system(size: 22))
-                    .foregroundStyle(Color.appTextSecondary)
+                    .foregroundStyle(vm.scaleState.isActive ? Color.appTint : Color.appTextSecondary)
             }
             .frame(width: 44, height: 44)
 

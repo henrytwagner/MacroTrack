@@ -50,6 +50,10 @@
     <key>NSMicrophoneUsageDescription</key>
     <string>MacroTrack uses the microphone to log food by voice in Kitchen Mode.</string>
 
+    <!-- Bluetooth permission for BLE kitchen scale -->
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>MacroTrack connects to your Bluetooth kitchen scale for precise food weighing.</string>
+
     <key>UIStatusBarStyle</key>
     <string>UIStatusBarStyleDefault</string>
 

@@ -11,6 +11,8 @@ final class DraftStore {
     var savedTotals:    Macros = .zero
     /// Live transcript from Gemini's model turn (cleared on session reset)
     var captionText:    String = ""
+    /// Item ID that the server wants us to confirm a scale reading for.
+    var pendingScaleConfirmItemId: String? = nil
 
     private init() {}
 
@@ -40,12 +42,14 @@ final class DraftStore {
         self.items       = []
         self.savedTotals = savedTotals
         self.captionText = ""
+        self.pendingScaleConfirmItemId = nil
     }
 
     func reset() {
         items       = []
         savedTotals = .zero
         captionText = ""
+        pendingScaleConfirmItemId = nil
     }
 
     // MARK: - Apply Server Message
@@ -209,8 +213,8 @@ final class DraftStore {
             guard !items.contains(where: { $0.id == item.id }) else { break }
             items.append(item)
 
-        case .promptScaleConfirm:
-            break // handled by KitchenModeViewModel in Phase E3
+        case .promptScaleConfirm(let itemId):
+            pendingScaleConfirmItemId = itemId
 
         case .audioData(let data, let mimeType):
             AudioPlaybackService.shared.enqueue(base64Data: data, mimeType: mimeType)

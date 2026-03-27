@@ -82,6 +82,7 @@ final class KitchenModeViewModel {
     private let camera = KitchenCameraSession.shared
     private let draft = DraftStore.shared
     private let dailyLog = DailyLogStore.shared
+    private let scale = ScaleManager.shared
     private let dateStore = DateStore.shared
     private let goalStore = GoalStore.shared
 
@@ -132,6 +133,28 @@ final class KitchenModeViewModel {
 
     var items: [DraftItem] {
         draft.items
+    }
+
+    // MARK: - Scale
+
+    var scaleState: ScaleConnectionState { scale.connectionState }
+    var scaleReading: ScaleReading? { scale.latestReading }
+    var isScaleConnected: Bool { scale.connectionState == .connected }
+
+    func connectScale() { scale.connect() }
+    func disconnectScale() { scale.disconnect() }
+    func cancelScaleScan() { scale.cancelScan() }
+
+    func simulateScale() {
+        #if DEBUG
+        scale.simulate()
+        #endif
+    }
+
+    /// User tapped the scale chip on a draft card — apply current reading.
+    func confirmScaleReading(for itemId: String) {
+        guard let reading = scaleReading, reading.stable else { return }
+        sendScaleConfirm(itemId: itemId, quantity: reading.value, unit: reading.unit.rawValue)
     }
 
     /// Date label for non-today logging.
@@ -199,6 +222,9 @@ final class KitchenModeViewModel {
 
         // Keep screen awake
         UIApplication.shared.isIdleTimerDisabled = true
+
+        // Auto-connect scale if enabled
+        scale.autoConnectIfNeeded()
 
         sessionState = .active
     }
@@ -433,6 +459,7 @@ final class KitchenModeViewModel {
         stopAudio()
         camera.stop()
         ws.disconnect()
+        scale.disconnect()
         UIApplication.shared.isIdleTimerDisabled = false
         draft.reset()
     }
@@ -493,9 +520,13 @@ final class KitchenModeViewModel {
             // Don't end session on server error — just log it
             print("[KitchenMode] Server error: \(message)")
 
-        case .promptScaleConfirm:
-            // TODO: wire scale reading when BLE scale is integrated
-            break
+        case .promptScaleConfirm(let itemId):
+            // Server asks us to confirm scale weight for this item.
+            // If scale is connected with a stable reading, auto-confirm.
+            if let reading = scaleReading, reading.stable {
+                sendScaleConfirm(itemId: itemId, quantity: reading.value, unit: reading.unit.rawValue)
+            }
+            // Otherwise the user can tap the scale chip on the card manually.
 
         case .openBarcodeScanner:
             barcodeModeActive.toggle()

@@ -239,13 +239,36 @@ struct FoodDetailSheet: View {
                 .foregroundStyle(Color.appText)
 
             HStack(spacing: Spacing.sm) {
-                TextField("Amount", text: $vm.quantityText)
-                    .keyboardType(.decimalPad)
-                    .font(.appTitle2)
-                    .padding(Spacing.md)
-                    .background(Color.appSurfaceSecondary)
-                    .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
-                    .frame(maxWidth: .infinity)
+                ZStack(alignment: .leading) {
+                    TextField("Amount", text: $vm.quantityText)
+                        .keyboardType(.decimalPad)
+                        .font(.appTitle2)
+                        .padding(Spacing.md)
+                        .background(Color.appSurfaceSecondary)
+                        .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
+
+                    // Scale ghost text — shown when connected with stable reading and field is empty
+                    if vm.quantityText.isEmpty,
+                       let reading = ScaleManager.shared.latestReading,
+                       reading.stable,
+                       ScaleManager.shared.connectionState == .connected {
+                        Button {
+                            vm.quantityText = formatScaleValue(reading.value)
+                            vm.selectedUnit = scaleUnitToFoodUnit(reading.unit)
+                        } label: {
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "scalemass.fill")
+                                    .font(.system(size: 14))
+                                Text(reading.display)
+                                    .font(.appTitle2)
+                            }
+                            .foregroundStyle(Color.appTint.opacity(0.5))
+                            .padding(Spacing.md)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .frame(maxWidth: .infinity)
 
                 // Inline unit dropdown
                 Menu {
@@ -489,5 +512,22 @@ struct FoodDetailSheet: View {
         v.truncatingRemainder(dividingBy: 1) == 0
             ? String(Int(v))
             : String(format: "%.1f", v)
+    }
+
+    // MARK: - Scale Helpers
+
+    private func formatScaleValue(_ value: Double) -> String {
+        value.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(value))
+            : String(format: "%.1f", value)
+    }
+
+    private func scaleUnitToFoodUnit(_ unit: ScaleUnit) -> String {
+        switch unit {
+        case .g: return "g"
+        case .ml: return "ml"
+        case .oz: return "oz"
+        case .lbOz: return "oz"
+        }
     }
 }
