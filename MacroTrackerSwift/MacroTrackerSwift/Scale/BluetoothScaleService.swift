@@ -231,9 +231,10 @@ extension BluetoothScaleService: CBPeripheralDelegate {
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: (any Error)?) {
         guard let characteristics = service.characteristics else { return }
         for characteristic in characteristics {
-            if characteristic.uuid == Self.weightCharacteristicUUID && characteristic.properties.contains(.notify) {
-                peripheral.setNotifyValue(true, for: characteristic)
+            if characteristic.properties.contains(.notify) {
                 Task { @MainActor in
+                    guard characteristic.uuid == Self.weightCharacteristicUUID else { return }
+                    peripheral.setNotifyValue(true, for: characteristic)
                     self.connectionState = .connected
                 }
             }
@@ -241,11 +242,10 @@ extension BluetoothScaleService: CBPeripheralDelegate {
     }
 
     nonisolated func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: (any Error)?) {
-        guard characteristic.uuid == Self.weightCharacteristicUUID,
-              let data = characteristic.value,
-              let reading = parseEtekcityPacket(data) else { return }
-
+        guard let data = characteristic.value else { return }
         Task { @MainActor in
+            guard characteristic.uuid == Self.weightCharacteristicUUID,
+                  let reading = parseEtekcityPacket(data) else { return }
             self.latestReading = reading
             self.readingContinuation?.yield(reading)
         }

@@ -138,6 +138,10 @@ final class KitchenModeViewModel {
 
     /// Expand a specific card (collapses the previous one since only one hero at a time).
     func expandItem(_ id: String) {
+        if expandedItemId != id {
+            cancelSubtractiveMode()
+            if !keepZeroOffset { zeroOffset = nil }
+        }
         expandedItemId = id
     }
 
@@ -159,26 +163,54 @@ final class KitchenModeViewModel {
         draft.projectedTotals
     }
 
-    /// Projected totals adjusted for the live-edited quantity.
-    /// Swaps the editing item's stored macros with scaled macros so it isn't double-counted.
+    /// Projected totals adjusted for live-edited quantity or live scale reading.
     var liveProjectedTotals: Macros {
-        guard let editId = editingItemId,
-              let editQty = editingQuantity,
-              let item = draft.items.first(where: { $0.id == editId }),
-              item.quantity > 0
-        else { return projectedTotals }
+        var totals = projectedTotals
 
-        let scale = editQty / item.quantity
-        let delta = Macros(
-            calories: item.calories * (scale - 1),
-            proteinG: item.proteinG * (scale - 1),
-            carbsG:   item.carbsG   * (scale - 1),
-            fatG:     item.fatG     * (scale - 1))
-        return Macros(
-            calories: projectedTotals.calories + delta.calories,
-            proteinG: projectedTotals.proteinG + delta.proteinG,
-            carbsG:   projectedTotals.carbsG   + delta.carbsG,
-            fatG:     projectedTotals.fatG     + delta.fatG)
+        // Adjust for inline editor
+        if let editId = editingItemId,
+           let editQty = editingQuantity,
+           let item = draft.items.first(where: { $0.id == editId }),
+           item.quantity > 0 {
+            let scale = editQty / item.quantity
+            totals = Macros(
+                calories: totals.calories + item.calories * (scale - 1),
+                proteinG: totals.proteinG + item.proteinG * (scale - 1),
+                carbsG:   totals.carbsG   + item.carbsG   * (scale - 1),
+                fatG:     totals.fatG     + item.fatG     * (scale - 1))
+        }
+
+        // Adjust for live scale weighing
+        if let reading = adjustedScaleReading, reading.stable,
+           let weighingItem = draft.items.first(where: { $0.scaleWeighingActive }),
+           let baseSize = weighingItem.baseServingSize, baseSize > 0,
+           let baseMacros = weighingItem.baseMacros {
+            let weightValue: Double
+            if let delta = subtractiveDelta, subtractiveItemId == weighingItem.id {
+                weightValue = delta
+            } else {
+                weightValue = reading.value
+            }
+            guard weightValue > 0 else { return totals }
+            let readingInBaseUnit = convertScaleReading(
+                ScaleReading(value: weightValue, unit: reading.unit,
+                             display: "", stable: true, rawHex: ""),
+                toUnit: weighingItem.baseServingUnit ?? "g")
+            let scaleFactor = readingInBaseUnit / baseSize
+            let liveMacros = Macros(
+                calories: baseMacros.calories * scaleFactor,
+                proteinG: baseMacros.proteinG * scaleFactor,
+                carbsG:   baseMacros.carbsG   * scaleFactor,
+                fatG:     baseMacros.fatG     * scaleFactor)
+            // Replace the item's stored macros with live-scaled macros
+            totals = Macros(
+                calories: totals.calories - weighingItem.calories + liveMacros.calories,
+                proteinG: totals.proteinG - weighingItem.proteinG + liveMacros.proteinG,
+                carbsG:   totals.carbsG   - weighingItem.carbsG   + liveMacros.carbsG,
+                fatG:     totals.fatG     - weighingItem.fatG     + liveMacros.fatG)
+        }
+
+        return totals
     }
 
     var captionText: String {
@@ -195,9 +227,211 @@ final class KitchenModeViewModel {
     var scaleReading: ScaleReading? { scale.latestReading }
     var isScaleConnected: Bool { scale.connectionState == .connected }
 
+    /// Whether to show the brief "Scale connected" banner (driven by ScaleManager).
+    var showScaleConnectedBanner: Bool { scale.showConnectedBanner }
+
+    // MARK: Software Zero
+
+    /// Software zero offset — subtracted from raw scale readings.
+    var zeroOffset: Double? = nil
+
+    /// Whether to keep the zero offset when switching between cards.
+    var keepZeroOffset: Bool = false
+
+    /// The scale reading adjusted for the software zero offset.
+    var adjustedScaleReading: ScaleReading? {
+        guard let reading = scaleReading else { return nil }
+        guard let offset = zeroOffset else { return reading }
+        let adjusted = reading.value - offset
+        return ScaleReading(
+            value: adjusted,
+            unit: reading.unit,
+            display: formatScaleDisplay(adjusted, unit: reading.unit),
+            stable: reading.stable,
+            rawHex: reading.rawHex
+        )
+    }
+
+    /// Store current scale reading as the zero reference point.
+    func zeroScale() {
+        guard let reading = scaleReading else { return }
+        zeroOffset = reading.value
+    }
+
+    /// Clear the zero offset.
+    func clearZero() {
+        zeroOffset = nil
+    }
+
+    /// Format a scale value for display (e.g., "137.4 g").
+    private func formatScaleDisplay(_ value: Double, unit: ScaleUnit) -> String {
+        switch unit {
+        case .lbOz:
+            let totalOz = value
+            let lbs = Int(totalOz / 16)
+            let oz = totalOz - Double(lbs) * 16
+            return String(format: "%d lb %.2f oz", lbs, oz)
+        default:
+            if unit == .g || unit == .ml {
+                return String(format: "%.1f %@", value, unit.rawValue)
+            } else {
+                return String(format: "%.2f %@", value, unit.rawValue)
+            }
+        }
+    }
+
+    // MARK: Subtractive Weighing
+
+    /// The locked start weight for subtractive mode (in scale units).
+    var subtractiveStartWeight: Double? = nil
+
+    /// The unit of the start weight.
+    var subtractiveStartUnit: ScaleUnit? = nil
+
+    /// The item ID currently in subtractive mode.
+    var subtractiveItemId: String? = nil
+
+    /// Whether an item is currently in subtractive weighing mode.
+    func isInSubtractiveMode(_ itemId: String) -> Bool {
+        subtractiveItemId == itemId && subtractiveStartWeight != nil
+    }
+
+    /// The live delta (start - current) for subtractive mode.
+    var subtractiveDelta: Double? {
+        guard let start = subtractiveStartWeight,
+              let reading = adjustedScaleReading else { return nil }
+        let delta = start - reading.value
+        return max(delta, 0)
+    }
+
+    /// Enter subtractive weighing mode: lock current adjusted reading as start weight.
+    func startSubtractiveMode(for itemId: String) {
+        guard let reading = adjustedScaleReading else { return }
+        subtractiveStartWeight = reading.value
+        subtractiveStartUnit = reading.unit
+        subtractiveItemId = itemId
+    }
+
+    /// Exit subtractive mode without confirming.
+    func cancelSubtractiveMode() {
+        subtractiveStartWeight = nil
+        subtractiveStartUnit = nil
+        subtractiveItemId = nil
+    }
+
+    /// Confirm the subtractive delta as the item's quantity.
+    func confirmSubtractiveDelta(for itemId: String) {
+        guard let delta = subtractiveDelta, delta > 0,
+              let unit = subtractiveStartUnit else { return }
+
+        if let idx = draft.items.firstIndex(where: { $0.id == itemId }) {
+            var item = draft.items[idx]
+            if let baseSize = item.baseServingSize, baseSize > 0, let baseMacros = item.baseMacros {
+                let deltaReading = ScaleReading(
+                    value: delta, unit: unit,
+                    display: formatScaleDisplay(delta, unit: unit),
+                    stable: true, rawHex: "")
+                let readingInBaseUnit = convertScaleReading(deltaReading, toUnit: item.baseServingUnit ?? "g")
+                let scale = readingInBaseUnit / baseSize
+                item.calories = baseMacros.calories * scale
+                item.proteinG = baseMacros.proteinG * scale
+                item.carbsG   = baseMacros.carbsG   * scale
+                item.fatG     = baseMacros.fatG     * scale
+            }
+            item.quantity = delta
+            item.unit = unit.rawValue
+            item.quantityConfirmed = true
+            item.scaleWeighingActive = false
+            item.confirmedViaScale = true
+            draft.items[idx] = item
+        }
+
+        sendScaleConfirm(itemId: itemId, quantity: delta, unit: unit.rawValue)
+
+        // Clean up subtractive state
+        subtractiveStartWeight = nil
+        subtractiveStartUnit = nil
+        subtractiveItemId = nil
+        if !keepZeroOffset { zeroOffset = nil }
+    }
+
+    /// Whether a food item has any weight-compatible unit available.
+    func itemHasWeightUnit(_ item: DraftItem) -> Bool {
+        if measurementSystem(for: item.unit) == .weight { return true }
+        if let base = item.baseServingUnit, measurementSystem(for: base) == .weight { return true }
+        return item.conversions.contains { $0.measurementSystem == .weight }
+    }
+
+    /// The last scale reading before disconnect — used to pre-fill manual editor.
+    private var lastScaleReading: ScaleReading? = nil
+
+    /// React to scale connection state changes.
+    /// When scale disconnects while items are in weighing mode, fall back to manual entry
+    /// with the last reading pre-filled.
+    func handleScaleStateChange(_ newState: ScaleConnectionState) {
+        switch newState {
+        case .idle, .error:
+            cancelSubtractiveMode()
+            let lastReading = lastScaleReading
+            for idx in draft.items.indices where draft.items[idx].scaleWeighingActive {
+                // Pre-fill quantity with the last scale reading so the editor shows it
+                if let reading = lastReading {
+                    let adjusted = zeroOffset.map { reading.value - $0 } ?? reading.value
+                    if adjusted > 0 {
+                        draft.items[idx].quantity = adjusted
+                        draft.items[idx].unit = reading.unit.rawValue
+                    }
+                }
+                draft.items[idx].scaleWeighingActive = false
+                let itemId = draft.items[idx].id
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(100))
+                    self.openInlineEdit(itemId: itemId)
+                }
+            }
+            if !keepZeroOffset { zeroOffset = nil }
+            lastScaleReading = nil
+        default:
+            break
+        }
+    }
+
+    /// Track the last valid scale reading so we can use it on disconnect.
+    func updateLastScaleReading() {
+        if let reading = scaleReading {
+            lastScaleReading = reading
+        }
+    }
+
+    /// Whether to show the separate KitchenScaleCard (hide once readings are flowing to draft cards).
+    var shouldShowScaleCard: Bool {
+        if scale.showConnectedBanner || scale.showErrorBanner { return true }
+        switch scale.connectionState {
+        case .idle: return false
+        case .scanning, .connecting: return true
+        case .connected: return scale.latestReading == nil
+        case .error: return true
+        }
+    }
+
     func connectScale() { scale.connect() }
     func disconnectScale() { scale.disconnect() }
     func cancelScaleScan() { scale.cancelScan() }
+
+    /// Toggle scale connection from the bottom bar — persists preference.
+    func toggleScale() {
+        switch scale.connectionState {
+        case .idle, .error:
+            scale.connect()
+            scaleEnabled = true
+        case .scanning, .connecting:
+            scale.cancelScan()
+            scaleEnabled = false
+        case .connected:
+            scale.disconnect()
+            scaleEnabled = false
+        }
+    }
 
     func simulateScale() {
         #if DEBUG
@@ -207,12 +441,37 @@ final class KitchenModeViewModel {
 
     /// User tapped the scale chip on a draft card — apply current reading.
     func confirmScaleReading(for itemId: String) {
-        guard let reading = scaleReading, reading.stable else { return }
-        // Mark confirmed locally (server response will also update, but this prevents flicker)
+        guard let reading = adjustedScaleReading, reading.stable, reading.value > 0 else { return }
         if let idx = draft.items.firstIndex(where: { $0.id == itemId }) {
-            draft.items[idx].quantityConfirmed = true
+            var item = draft.items[idx]
+            // Scale macros from base serving
+            if let baseSize = item.baseServingSize, baseSize > 0, let baseMacros = item.baseMacros {
+                let readingInBaseUnit = convertScaleReading(reading, toUnit: item.baseServingUnit ?? "g")
+                let scale = readingInBaseUnit / baseSize
+                item.calories = baseMacros.calories * scale
+                item.proteinG = baseMacros.proteinG * scale
+                item.carbsG   = baseMacros.carbsG   * scale
+                item.fatG     = baseMacros.fatG     * scale
+            }
+            item.quantity = reading.value
+            item.unit = reading.unit.rawValue
+            item.quantityConfirmed = true
+            item.scaleWeighingActive = false
+            item.confirmedViaScale = true
+            draft.items[idx] = item
         }
         sendScaleConfirm(itemId: itemId, quantity: reading.value, unit: reading.unit.rawValue)
+        if !keepZeroOffset { zeroOffset = nil }
+    }
+
+    /// Convert a scale reading value to the target unit system.
+    private func convertScaleReading(_ reading: ScaleReading, toUnit: String) -> Double {
+        let fromUnit = reading.unit.rawValue
+        guard fromUnit != toUnit else { return reading.value }
+        if let fromG = weightRatiosG[fromUnit], let toG = weightRatiosG[toUnit] {
+            return reading.value * fromG / toG
+        }
+        return reading.value
     }
 
     /// Date label for non-today logging.
@@ -270,6 +529,11 @@ final class KitchenModeViewModel {
         UIApplication.shared.isIdleTimerDisabled = true
 
         sessionState = .active
+
+        // Auto-activate barcode mode if last enabled
+        if cameraEnabled {
+            toggleBarcodeMode()
+        }
     }
 
     /// Start audio capture + playback. Returns false on failure (sets error state).
@@ -344,6 +608,7 @@ final class KitchenModeViewModel {
                     unit: item.unit,
                     source: item.source,
                     mealLabel: item.mealLabel,
+                    confirmedViaScale: item.confirmedViaScale ? true : nil,
                     usdaFdcId: item.usdaFdcId,
                     customFoodId: item.customFoodId,
                     communityFoodId: item.communityFoodId
@@ -442,13 +707,51 @@ final class KitchenModeViewModel {
 
     // MARK: - Touch Actions
 
-    /// User edited quantity via touch UI.
+    /// User edited quantity via touch UI — recompute macros client-side.
     func touchEditItem(itemId: String, quantity: Double, unit: String) {
-        // Mark quantity as confirmed when user explicitly sets it
         if let idx = draft.items.firstIndex(where: { $0.id == itemId }) {
-            draft.items[idx].quantityConfirmed = true
+            // Don't override scale state if reweighItem already activated it
+            guard !draft.items[idx].scaleWeighingActive else { return }
+            var item = draft.items[idx]
+            item.quantityConfirmed = true
+            item.scaleWeighingActive = false
+            // Recompute macros from base serving data
+            if let baseSize = item.baseServingSize, baseSize > 0, let baseMacros = item.baseMacros {
+                let baseUnit = item.baseServingUnit ?? item.unit
+                let qtyInBase = convertEditToBaseUnit(
+                    quantity: quantity, unit: unit, baseUnit: baseUnit,
+                    conversions: item.conversions, baseServingSize: baseSize)
+                let scale = qtyInBase / baseSize
+                item.calories = baseMacros.calories * scale
+                item.proteinG = baseMacros.proteinG * scale
+                item.carbsG   = baseMacros.carbsG   * scale
+                item.fatG     = baseMacros.fatG     * scale
+            }
+            item.quantity = quantity
+            item.unit = unit
+            draft.items[idx] = item
         }
         ws.send(.touchEditItem(itemId: itemId, quantity: quantity, unit: unit))
+    }
+
+    /// Convert quantity from a given unit to the base serving unit.
+    private func convertEditToBaseUnit(
+        quantity: Double, unit: String, baseUnit: String,
+        conversions: [FoodUnitConversion], baseServingSize: Double
+    ) -> Double {
+        if unit == baseUnit { return quantity }
+        if unit.lowercased() == "servings" || unit.lowercased() == "serving" {
+            return quantity * baseServingSize
+        }
+        // Check saved conversions
+        if let conv = conversions.first(where: { $0.unitName == unit }), baseServingSize > 0 {
+            return quantity * conv.quantityInBaseServings * baseServingSize
+        }
+        // Same-system ratio table conversion
+        if let fromG = weightRatiosG[unit], let toG = weightRatiosG[baseUnit] {
+            return quantity * fromG / toG
+        }
+        return quantity
     }
 
     /// User swiped to delete an item via touch UI.
@@ -482,6 +785,102 @@ final class KitchenModeViewModel {
             isLocalItem: true
         )
         draft.items.append(item)
+    }
+
+    /// Add a food item directly (skipping quantity selection). Creates an unconfirmed local draft item.
+    func addLocalDraftItemDirect(food: AnyFood) {
+        let unitIsWeight = measurementSystem(for: food.baseServingUnit) == .weight
+        let itemId = UUID().uuidString
+        var item = DraftItem(
+            id: itemId,
+            name: food.displayName,
+            quantity: food.baseServingSize,
+            unit: food.baseServingUnit,
+            calories: food.baseMacros.calories,
+            proteinG: food.baseMacros.proteinG,
+            carbsG: food.baseMacros.carbsG,
+            fatG: food.baseMacros.fatG,
+            source: food.foodSource,
+            usdaFdcId: food.asUSDA?.fdcId,
+            customFoodId: food.asCustomFood?.id,
+            communityFoodId: food.asCommunityFood?.id,
+            mealLabel: .snack,
+            state: .normal,
+            quantityConfirmed: false,
+            isLocalItem: true
+        )
+        item.baseServingSize = food.baseServingSize
+        item.baseServingUnit = food.baseServingUnit
+        item.baseMacros = food.baseMacros
+        item.scaleWeighingActive = unitIsWeight && isScaleConnected
+        draft.items.append(item)
+        expandedItemId = item.id
+
+        // Fetch unit conversions asynchronously
+        Task {
+            let conversions = await fetchConversions(for: food)
+            if let idx = draft.items.firstIndex(where: { $0.id == itemId }) {
+                draft.items[idx].conversions = conversions
+            }
+        }
+
+        // Auto-open inline quantity editor when voice is disabled,
+        // unless the scale is connected and the food uses a weight unit (scale weighing takes over)
+        if !voiceEnabled && !item.scaleWeighingActive {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(200))
+                openInlineEdit(itemId: itemId)
+            }
+        }
+    }
+
+    /// Fetch FoodUnitConversions for a food from the server.
+    private func fetchConversions(for food: AnyFood) async -> [FoodUnitConversion] {
+        do {
+            switch food {
+            case .custom(let f):
+                return try await APIClient.shared.getFoodUnitConversionsForCustomFood(f.id)
+            case .usda(let f):
+                return try await APIClient.shared.getFoodUnitConversionsForUsdaFood(f.fdcId)
+            case .community:
+                return []
+            }
+        } catch {
+            return []
+        }
+    }
+
+    /// Fetch conversions for a server-originated draft item.
+    private func fetchConversionsForServerItem(
+        source: FoodSource, customFoodId: String?, usdaFdcId: Int?
+    ) async -> [FoodUnitConversion] {
+        do {
+            if source == .custom, let id = customFoodId {
+                return try await APIClient.shared.getFoodUnitConversionsForCustomFood(id)
+            } else if source == .database, let fdcId = usdaFdcId {
+                return try await APIClient.shared.getFoodUnitConversionsForUsdaFood(fdcId)
+            }
+            return []
+        } catch {
+            return []
+        }
+    }
+
+    /// Re-enter live weighing mode for a confirmed item.
+    /// Also dismisses the inline editor if open (without committing the edit).
+    func reweighItem(itemId: String) {
+        guard let idx = draft.items.firstIndex(where: { $0.id == itemId }) else { return }
+        cancelSubtractiveMode()
+        if !keepZeroOffset { zeroOffset = nil }
+        // Set scale state BEFORE closing editor so the onChange commit
+        // sees scaleWeighingActive=true and the card routes to scale UI.
+        draft.items[idx].quantityConfirmed = false
+        draft.items[idx].scaleWeighingActive = true
+        expandedItemId = itemId
+        // Dismiss inline editor if it was open for this item
+        if editingItemId == itemId {
+            closeInlineEdit()
+        }
     }
 
     /// User completed food creation via manual form.
@@ -552,6 +951,7 @@ final class KitchenModeViewModel {
         if barcodeModeActive {
             // Deactivate
             barcodeModeActive = false
+            cameraEnabled = false
             camera.stop()
         } else {
             // Activate — request permission if needed
@@ -566,6 +966,7 @@ final class KitchenModeViewModel {
                 }
                 camera.start()
                 barcodeModeActive = true
+                cameraEnabled = true
             }
         }
     }
@@ -652,9 +1053,51 @@ final class KitchenModeViewModel {
         // Let DraftStore process all draft-related messages
         draft.applyServerMessage(msg)
 
+        // For newly added items, populate base macro data and activate scale weighing if applicable
+        if case .itemsAdded(let incoming) = msg {
+            for item in incoming {
+                if let idx = draft.items.firstIndex(where: { $0.id == item.id }) {
+                    // Populate base macro data for live scaling
+                    if draft.items[idx].baseMacros == nil {
+                        draft.items[idx].baseServingSize = draft.items[idx].quantity
+                        draft.items[idx].baseServingUnit = draft.items[idx].unit
+                        draft.items[idx].baseMacros = Macros(
+                            calories: draft.items[idx].calories,
+                            proteinG: draft.items[idx].proteinG,
+                            carbsG:   draft.items[idx].carbsG,
+                            fatG:     draft.items[idx].fatG)
+                    }
+                    // Activate scale weighing for unconfirmed weight-unit items
+                    if !draft.items[idx].quantityConfirmed,
+                       isScaleConnected,
+                       measurementSystem(for: draft.items[idx].unit) == .weight {
+                        draft.items[idx].scaleWeighingActive = true
+                    }
+
+                    // Fetch conversions for server-originated items
+                    let itemId = draft.items[idx].id
+                    let customFoodId = draft.items[idx].customFoodId
+                    let usdaFdcId = draft.items[idx].usdaFdcId
+                    let source = draft.items[idx].source
+                    Task {
+                        let convs = await fetchConversionsForServerItem(
+                            source: source, customFoodId: customFoodId, usdaFdcId: usdaFdcId)
+                        if let i = draft.items.firstIndex(where: { $0.id == itemId }) {
+                            draft.items[i].conversions = convs
+                        }
+                    }
+                }
+            }
+        }
+
         // Auto-focus on item changes
         switch msg {
-        case .itemsAdded, .itemRemoved, .clarify, .createFoodPrompt, .disambiguate, .foodChoice:
+        case .itemsAdded(let incoming):
+            // Always focus the newest added item (matches addLocalDraftItemDirect behavior)
+            if let lastAdded = incoming.last {
+                expandItem(lastAdded.id)
+            }
+        case .itemRemoved, .clarify, .createFoodPrompt, .disambiguate, .foodChoice:
             autoFocusNewestItem()
         default:
             break
@@ -688,7 +1131,7 @@ final class KitchenModeViewModel {
         case .promptScaleConfirm(let itemId):
             // Server asks us to confirm scale weight for this item.
             // If scale is connected with a stable reading, auto-confirm.
-            if let reading = scaleReading, reading.stable {
+            if let reading = adjustedScaleReading, reading.stable, reading.value > 0 {
                 sendScaleConfirm(itemId: itemId, quantity: reading.value, unit: reading.unit.rawValue)
             }
             // Otherwise the user can tap the scale chip on the card manually.

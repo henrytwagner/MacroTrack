@@ -45,10 +45,22 @@ struct FoodSearchView: View {
     /// When non-nil, the view is in ingredient-picker mode: FoodDetailSheet commits SavedMealItems
     /// instead of FoodEntries, and tapping a saved meal copies its items individually.
     var onAddIngredient: ((SavedMealItem) -> Void)? = nil
+    /// When non-nil, tapping a food row calls this directly (skipping FoodDetailSheet).
+    /// Used by Kitchen Mode to add items as unconfirmed draft cards.
+    var onSelectFoodDirect: ((AnyFood) -> Void)? = nil
 
     @Environment(MealsStore.self) private var mealsStore
 
     private var isIngredientMode: Bool { onAddIngredient != nil }
+    private var isDirectSelectMode: Bool { onSelectFoodDirect != nil }
+
+    private func handleFoodTap(_ food: AnyFood) {
+        if let direct = onSelectFoodDirect {
+            direct(food)
+        } else {
+            activeSheet = .foodDetail(IdentifiedFood(food: food))
+        }
+    }
 
     @State private var vm              = FoodSearchViewModel()
     @State private var selectedTab     = 0
@@ -289,7 +301,7 @@ struct FoodSearchView: View {
                             FoodSearchResultRow(
                                 food:         anyFood(from: food),
                                 showQuickAdd: !isIngredientMode,
-                                onTap:        { activeSheet = .foodDetail(IdentifiedFood(food: anyFood(from: food))) },
+                                onTap:        { handleFoodTap(anyFood(from: food)) },
                                 onQuickAdd:   { Task { await quickAdd(food: anyFood(from: food)) } })
                         }
                     }
@@ -306,7 +318,7 @@ struct FoodSearchView: View {
                             FoodSearchResultRow(
                                 food:         anyFood(from: food),
                                 showQuickAdd: !isIngredientMode,
-                                onTap:        { activeSheet = .foodDetail(IdentifiedFood(food: anyFood(from: food))) },
+                                onTap:        { handleFoodTap(anyFood(from: food)) },
                                 onQuickAdd:   { Task { await quickAdd(food: anyFood(from: food)) } })
                         }
                     }
@@ -348,7 +360,7 @@ struct FoodSearchView: View {
                             FoodSearchResultRow(
                                 food:         anyF,
                                 showQuickAdd: false,
-                                onTap:        { activeSheet = .foodDetail(IdentifiedFood(food: anyF)) },
+                                onTap:        { handleFoodTap(anyF) },
                                 onQuickAdd:   nil)
                         }
                     }
@@ -366,7 +378,7 @@ struct FoodSearchView: View {
                             FoodSearchResultRow(
                                 food:         anyF,
                                 showQuickAdd: false,
-                                onTap:        { activeSheet = .foodDetail(IdentifiedFood(food: anyF)) },
+                                onTap:        { handleFoodTap(anyF) },
                                 onQuickAdd:   nil)
                         }
                     }
@@ -384,7 +396,7 @@ struct FoodSearchView: View {
                             FoodSearchResultRow(
                                 food:         anyF,
                                 showQuickAdd: false,
-                                onTap:        { activeSheet = .foodDetail(IdentifiedFood(food: anyF)) },
+                                onTap:        { handleFoodTap(anyF) },
                                 onQuickAdd:   nil)
                         }
                     }
@@ -487,7 +499,7 @@ struct FoodSearchView: View {
                                 FoodSearchResultRow(
                                     food:         anyF,
                                     showQuickAdd: false,
-                                    onTap:        { activeSheet = .foodDetail(IdentifiedFood(food: anyF)) },
+                                    onTap:        { handleFoodTap(anyF) },
                                     onQuickAdd:   nil)
                             }
                         }

@@ -36,6 +36,7 @@ function mapEntry(entry: {
   quantity: number;
   unit: string;
   source: string;
+  confirmedViaScale?: boolean;
   usdaFdcId: number | null;
   customFoodId: string | null;
   communityFoodId: string | null;
@@ -55,6 +56,7 @@ function mapEntry(entry: {
     quantity: entry.quantity,
     unit: entry.unit,
     source: entry.source as FoodSource,
+    confirmedViaScale: entry.confirmedViaScale || undefined,
     usdaFdcId: entry.usdaFdcId ?? undefined,
     customFoodId: entry.customFoodId ?? undefined,
     communityFoodId: entry.communityFoodId ?? undefined,
@@ -257,6 +259,7 @@ export async function foodRoutes(app: FastifyInstance) {
           quantity: body.quantity,
           unit: body.unit,
           source: body.source,
+          confirmedViaScale: body.confirmedViaScale ?? false,
           usdaFdcId: body.usdaFdcId,
           customFoodId: body.customFoodId,
           communityFoodId: body.communityFoodId,

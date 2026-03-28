@@ -20,6 +20,7 @@ struct KitchenModeView: View {
     @State private var kitchenPillExpanded: Bool = false
     @State private var pillPressing: Bool = false
     @State private var showJumpToTop: Bool = false
+    @State private var cameraControlsVisible: Bool = true
 
     let onDismiss: () -> Void
 
@@ -51,6 +52,18 @@ struct KitchenModeView: View {
             default:
                 break
             }
+        }
+        .onChange(of: vm.barcodeModeActive) { _, active in
+            // Re-show the camera overlay whenever camera mode is turned on
+            if active { cameraControlsVisible = true }
+        }
+        .onChange(of: vm.isScaleConnected) { wasConnected, isConnected in
+            if wasConnected && !isConnected {
+                vm.handleScaleStateChange(vm.scaleState)
+            }
+        }
+        .onChange(of: vm.scaleReading?.display) { _, _ in
+            vm.updateLastScaleReading()
         }
         .alert("Cancel Session", isPresented: $showCancelAlert) {
             Button("Keep Going", role: .cancel) {}
@@ -95,8 +108,8 @@ struct KitchenModeView: View {
         .sheet(isPresented: $vm.showFoodSearch) {
             FoodSearchView(
                 onDismiss: { vm.showFoodSearch = false },
-                onAddIngredient: { ingredient in
-                    vm.addLocalDraftItem(from: ingredient)
+                onSelectFoodDirect: { food in
+                    vm.addLocalDraftItemDirect(food: food)
                     vm.showFoodSearch = false
                 }
             )
@@ -115,8 +128,9 @@ struct KitchenModeView: View {
             let feedHeight = geo.size.width * 3 / 4
 
             VStack(spacing: 0) {
-                // Top navigation bar — hidden in barcode mode (buttons move onto camera feed)
-                if !vm.barcodeModeActive {
+                // Top navigation bar — hidden while camera overlay is visible.
+                // Shown in normal mode, and also in camera mode once the sheet scrolls past the feed.
+                if !vm.barcodeModeActive || !cameraControlsVisible {
                     topBar
                 }
 
@@ -172,8 +186,16 @@ struct KitchenModeView: View {
             // Cards scroll below the camera feed as a sheet
             ScrollView {
                 VStack(spacing: 0) {
-                    // Transparent spacer: pushes sheet below camera
-                    Color.clear.frame(height: feedHeight)
+                    // Transparent spacer: pushes sheet below camera.
+                    // CameraScrollTracker hooks into UIScrollView KVO for reliable
+                    // per-frame scroll offset — hides camera controls on any upward scroll.
+                    Color.clear
+                        .frame(height: feedHeight)
+                        .background(
+                            CameraScrollTracker { offsetY in
+                                cameraControlsVisible = offsetY < 1
+                            }
+                        )
 
                     // Sheet header — rounded top corners, clears floating macro pill
                     UnevenRoundedRectangle(topLeadingRadius: BorderRadius.xl,
@@ -183,11 +205,12 @@ struct KitchenModeView: View {
 
                     // Sheet body — cards
                     VStack(spacing: Spacing.md) {
-                        // Scale card — same as normal mode
-                        if vm.scaleState != .idle {
+                        // Scale card — hidden once readings flow to draft cards
+                        if vm.shouldShowScaleCard {
                             KitchenScaleCard(
                                 connectionState: vm.scaleState,
                                 reading: vm.scaleReading,
+                                showConnectedBanner: vm.showScaleConnectedBanner,
                                 onConnect: { vm.connectScale() },
                                 onDisconnect: { vm.disconnectScale() },
                                 onCancelScan: { vm.cancelScaleScan() },
@@ -211,18 +234,15 @@ struct KitchenModeView: View {
             }
             .scrollIndicators(.hidden)
 
-            // Nav overlay — must be last in ZStack so it renders above the ScrollView
-            cameraNavOverlay
-                .padding(.horizontal, Spacing.lg)
-                .padding(.vertical, Spacing.md)
-                .frame(height: feedHeight)
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) {
-                    vm.flipCamera()
-                }
-                .onTapGesture {
-                    // Single-tap no-op — prevents double-tap from blocking button taps
-                }
+            // Nav overlay — only shown while the camera feed is visible (not scrolled past).
+            // When hidden, topBar takes over in the parent VStack.
+            if cameraControlsVisible {
+                cameraNavOverlay
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.vertical, Spacing.md)
+                    .frame(height: feedHeight, alignment: .top)
+                    .transition(.opacity)
+            }
 
             // Debug barcode card — floats near bottom of camera feed
             if let gtin = vm.debugBarcode {
@@ -277,10 +297,9 @@ struct KitchenModeView: View {
 
             Spacer()
 
-            // Bottom right: flash + flip camera
+            // Bottom-right: flash + flip — hidden before sheet scrolls up to cover them
             HStack {
                 Spacer()
-
                 VStack(spacing: Spacing.sm) {
                     if vm.cameraFacing == .back {
                         Button {
@@ -294,7 +313,6 @@ struct KitchenModeView: View {
                                 .clipShape(Circle())
                         }
                     }
-
                     Button {
                         vm.flipCamera()
                     } label: {
@@ -318,8 +336,15 @@ struct KitchenModeView: View {
             isHero: item.id == vm.heroId,
             isEditing: item.id == vm.editingItemId,
             heroMinHeight: heroMinHeight,
-            scaleReading: vm.isScaleConnected ? vm.scaleReading : nil,
+            scaleReading: vm.isScaleConnected ? vm.adjustedScaleReading : nil,
             scaleSkipped: vm.scaleSkippedIds.contains(item.id),
+            isScaleConnected: vm.isScaleConnected,
+            itemHasWeightUnit: vm.itemHasWeightUnit(item),
+            hasZeroOffset: vm.zeroOffset != nil,
+            keepZeroOffset: vm.keepZeroOffset,
+            isSubtractiveMode: vm.isInSubtractiveMode(item.id),
+            subtractiveStartWeight: vm.subtractiveStartWeight,
+            subtractiveDelta: vm.subtractiveDelta,
             onSendTranscript: { text in
                 vm.sendTranscript(text)
             },
@@ -351,10 +376,31 @@ struct KitchenModeView: View {
             onScaleSkip: {
                 vm.scaleSkippedIds.insert(item.id)
             },
+            onReweigh: {
+                vm.reweighItem(itemId: item.id)
+            },
             onTapToExpand: {
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
                     vm.expandItem(item.id)
                 }
+            },
+            onZeroScale: {
+                vm.zeroScale()
+            },
+            onClearZero: {
+                vm.clearZero()
+            },
+            onToggleKeepZero: {
+                vm.keepZeroOffset.toggle()
+            },
+            onStartSubtractive: {
+                vm.startSubtractiveMode(for: item.id)
+            },
+            onCancelSubtractive: {
+                vm.cancelSubtractiveMode()
+            },
+            onConfirmSubtractive: {
+                vm.confirmSubtractiveDelta(for: item.id)
             }
         )
     }
@@ -369,8 +415,8 @@ struct KitchenModeView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: Spacing.md) {
-                            // Scale card
-                            if vm.scaleState != .idle {
+                            // Scale card (hidden once readings flow to draft cards)
+                            if vm.shouldShowScaleCard {
                                 KitchenScaleCard(
                                     connectionState: vm.scaleState,
                                     reading: vm.scaleReading,
@@ -684,14 +730,7 @@ struct KitchenModeView: View {
 
             // Scale toggle
             Button {
-                switch vm.scaleState {
-                case .idle, .error:
-                    vm.connectScale()
-                case .scanning, .connecting:
-                    vm.cancelScaleScan()
-                case .connected:
-                    vm.disconnectScale()
-                }
+                vm.toggleScale()
             } label: {
                 Image(systemName: vm.isScaleConnected ? "scalemass.fill" : "scalemass")
                     .font(.system(size: 22))
@@ -792,6 +831,55 @@ private struct ScrollOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
+    }
+}
+
+// MARK: - Camera Scroll Tracker
+//
+// UIViewRepresentable that walks up the UIKit hierarchy to find the parent
+// UIScrollView and observes its contentOffset via KVO. This fires on every
+// scroll frame — unlike SwiftUI PreferenceKey which only fires on view-tree
+// re-renders and misses live-scroll updates.
+
+private struct CameraScrollTracker: UIViewRepresentable {
+    let onOffsetChange: (CGFloat) -> Void
+
+    func makeUIView(context: Context) -> TrackerView {
+        TrackerView(onOffsetChange: onOffsetChange)
+    }
+
+    func updateUIView(_ uiView: TrackerView, context: Context) {
+        uiView.onOffsetChange = onOffsetChange
+    }
+
+    final class TrackerView: UIView {
+        var onOffsetChange: (CGFloat) -> Void
+        private var observation: NSKeyValueObservation?
+
+        init(onOffsetChange: @escaping (CGFloat) -> Void) {
+            self.onOffsetChange = onOffsetChange
+            super.init(frame: .zero)
+            backgroundColor = .clear
+            isUserInteractionEnabled = false
+        }
+
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func didMoveToSuperview() {
+            super.didMoveToSuperview()
+            observation = nil
+            var view: UIView? = superview
+            while let v = view {
+                if let sv = v as? UIScrollView {
+                    // UIScrollView.contentOffset always changes on the main thread.
+                    observation = sv.observe(\.contentOffset, options: .new) { [weak self] sv, _ in
+                        self?.onOffsetChange(sv.contentOffset.y)
+                    }
+                    return
+                }
+                view = v.superview
+            }
+        }
     }
 }
 

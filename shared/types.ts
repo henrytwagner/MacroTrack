@@ -163,6 +163,7 @@ export interface FoodEntry extends Macros {
   quantity: number;
   unit: string;
   source: FoodSource;
+  confirmedViaScale?: boolean;
   usdaFdcId?: number;
   customFoodId?: string;
   communityFoodId?: string;
@@ -283,6 +284,7 @@ export interface CreateFoodEntryRequest {
   unit: string;
   source: FoodSource;
   mealLabel: MealLabel;
+  confirmedViaScale?: boolean;
   usdaFdcId?: number;
   customFoodId?: string;
   communityFoodId?: string;
@@ -451,6 +453,7 @@ export interface DraftItem extends Macros {
     collectedValues: CreatingFoodProgress;
   };
   isAssumed?: boolean; // true when quantity/unit inferred from history
+  confirmedViaScale?: boolean; // true when quantity was confirmed via BLE scale
   isEstimate?: boolean; // true when macros are AI-estimated
   estimateConfidence?: "high" | "medium" | "low";
   disambiguationOptions?: DisambiguationOption[]; // populated when state === "disambiguate"

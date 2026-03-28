@@ -5,6 +5,7 @@ import SwiftUI
 struct KitchenScaleCard: View {
     let connectionState: ScaleConnectionState
     let reading: ScaleReading?
+    var showConnectedBanner: Bool = false
     var onConnect: () -> Void = {}
     var onDisconnect: () -> Void = {}
     var onCancelScan: () -> Void = {}
@@ -13,14 +14,18 @@ struct KitchenScaleCard: View {
     var body: some View {
         Group {
             switch connectionState {
-            case .idle, .error:
-                idleOrErrorContent
+            case .idle:
+                idleContent
+            case .error:
+                errorBanner
             case .scanning:
                 scanningContent
             case .connecting:
                 connectingContent
             case .connected:
-                if let reading {
+                if showConnectedBanner {
+                    connectedBanner
+                } else if let reading {
                     readingContent(reading)
                 } else {
                     waitingContent
@@ -30,30 +35,22 @@ struct KitchenScaleCard: View {
         .glassCard(isHero: false)
     }
 
-    // MARK: - Idle / Error
+    // MARK: - Idle
 
-    private var idleOrErrorContent: some View {
+    private var idleContent: some View {
         HStack(spacing: Spacing.sm) {
             Image(systemName: "scalemass")
                 .font(.system(size: 20))
                 .foregroundStyle(Color.appTextSecondary)
 
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Button(action: onConnect) {
-                    Text("Connect to Scale")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, Spacing.lg)
-                        .padding(.vertical, Spacing.xs)
-                        .background(Color.appTint)
-                        .clipShape(Capsule())
-                }
-
-                if case .error(let message) = connectionState {
-                    Text(message)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.appDestructive)
-                }
+            Button(action: onConnect) {
+                Text("Connect to Scale")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.vertical, Spacing.xs)
+                    .background(Color.appTint)
+                    .clipShape(Capsule())
             }
 
             Spacer()
@@ -63,6 +60,44 @@ struct KitchenScaleCard: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Color.appTextTertiary)
             #endif
+        }
+    }
+
+    // MARK: - Error Banner
+
+    private var errorBanner: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 14))
+                .foregroundStyle(Color.appDestructive)
+
+            Text("Failed to connect")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.appTextSecondary)
+
+            Spacer()
+
+            Button(action: onConnect) {
+                Text("try again")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.appTint)
+            }
+        }
+    }
+
+    // MARK: - Connected Banner
+
+    private var connectedBanner: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 14))
+                .foregroundStyle(Color.appSuccess)
+
+            Text("Scale connected")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.appTextSecondary)
+
+            Spacer()
         }
     }
 

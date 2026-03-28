@@ -11,6 +11,11 @@ final class ScaleManager {
     private(set) var connectionState: ScaleConnectionState = .idle
     private(set) var latestReading: ScaleReading? = nil
 
+    /// Momentary banner flags — set on state transitions, auto-dismissed.
+    private(set) var showConnectedBanner = false
+    private(set) var showErrorBanner = false
+    private var bannerDismissTask: Task<Void, Never>?
+
     // MARK: - Preferences
 
     @ObservationIgnored
@@ -25,6 +30,41 @@ final class ScaleManager {
     private var readingTask: Task<Void, Never>?
 
     private init() {}
+
+    // MARK: - State Setter
+
+    /// Central state setter — updates connectionState and triggers banner logic.
+    private func transition(to newState: ScaleConnectionState) {
+        let oldState = connectionState
+        connectionState = newState
+        guard oldState != newState else { return }
+
+        bannerDismissTask?.cancel()
+        bannerDismissTask = nil
+
+        if newState == .connected && oldState != .connected {
+            showErrorBanner = false
+            showConnectedBanner = true
+            bannerDismissTask = Task {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                self.showConnectedBanner = false
+            }
+        } else if newState.isError {
+            showConnectedBanner = false
+            showErrorBanner = true
+            bannerDismissTask = Task {
+                try? await Task.sleep(for: .seconds(4))
+                guard !Task.isCancelled else { return }
+                self.showErrorBanner = false
+                self.activeService = nil
+                self.connectionState = .idle
+            }
+        } else {
+            showConnectedBanner = false
+            showErrorBanner = false
+        }
+    }
 
     // MARK: - Public API
 
@@ -43,7 +83,7 @@ final class ScaleManager {
         Task {
             await service.connect()
             // Sync service state back to manager
-            self.connectionState = service.connectionState
+            self.transition(to: service.connectionState)
         }
     }
 
@@ -53,7 +93,7 @@ final class ScaleManager {
         activeService?.disconnect()
         activeService = nil
         latestReading = nil
-        connectionState = .idle
+        transition(to: .idle)
     }
 
     func cancelScan() {
@@ -61,7 +101,14 @@ final class ScaleManager {
         readingTask?.cancel()
         readingTask = nil
         activeService = nil
-        connectionState = .idle
+        transition(to: .idle)
+    }
+
+    /// Reset from error state back to idle (used when "try again" is tapped).
+    func dismissError() {
+        guard connectionState.isError else { return }
+        activeService = nil
+        transition(to: .idle)
     }
 
     /// Called on Kitchen Mode entry. Auto-connects if enabled and a scale was previously used.
@@ -101,7 +148,7 @@ final class ScaleManager {
                 guard let self, let service = self.activeService else { break }
                 let newState = service.connectionState
                 if self.connectionState != newState {
-                    self.connectionState = newState
+                    self.transition(to: newState)
                 }
             }
         }

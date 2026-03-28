@@ -22,6 +22,17 @@ struct DraftMealCard: View {
     // Scale integration
     var scaleReading: ScaleReading? = nil
     var scaleSkipped: Bool = false
+    var isScaleConnected: Bool = false
+    var itemHasWeightUnit: Bool = false
+
+    // Zero offset
+    var hasZeroOffset: Bool = false
+    var keepZeroOffset: Bool = false
+
+    // Subtractive weighing
+    var isSubtractiveMode: Bool = false
+    var subtractiveStartWeight: Double? = nil
+    var subtractiveDelta: Double? = nil
 
     var onSendTranscript: ((String) -> Void)? = nil
     var onRemove: (() -> Void)? = nil
@@ -32,7 +43,14 @@ struct DraftMealCard: View {
     var onEditPreview: ((Double) -> Void)? = nil
     var onScaleConfirm: ((Double, String) -> Void)? = nil
     var onScaleSkip: (() -> Void)? = nil
+    var onReweigh: (() -> Void)? = nil
     var onTapToExpand: (() -> Void)? = nil
+    var onZeroScale: (() -> Void)? = nil
+    var onClearZero: (() -> Void)? = nil
+    var onToggleKeepZero: (() -> Void)? = nil
+    var onStartSubtractive: (() -> Void)? = nil
+    var onCancelSubtractive: (() -> Void)? = nil
+    var onConfirmSubtractive: (() -> Void)? = nil
 
     // MARK: - Animation State
 
@@ -67,11 +85,36 @@ struct DraftMealCard: View {
     @State private var editServingSize: String = ""
     @State private var editServingUnit: String = ""
 
-    private static let commonUnits = [
-        "g", "oz", "ml", "cups", "tbsp", "tsp",
-        "servings", "pieces", "slices", "portion",
-        "can", "bottle", "scoop", "clove", "packet", "L", "fl oz",
-    ]
+    /// Available units for this food: base unit + "servings" + saved conversions + same-system auto-units.
+    private var availableUnits: [String] {
+        let baseUnit = item.baseServingUnit ?? item.unit
+        var units: [String] = [baseUnit, "servings"]
+
+        // Add saved conversions
+        for conv in item.conversions {
+            if !units.contains(conv.unitName) {
+                units.append(conv.unitName)
+            }
+        }
+
+        // Auto-include same-system units from ratio tables
+        if weightRatiosG[baseUnit] != nil {
+            for key in weightRatiosG.keys where !units.contains(key) {
+                units.append(key)
+            }
+        } else if volumeRatiosMl[baseUnit] != nil {
+            for key in volumeRatiosMl.keys where !units.contains(key) {
+                units.append(key)
+            }
+        }
+
+        return units
+    }
+
+    // Stable macro preview for live scale weighing (only updates on stable readings)
+    @State private var stableMacroPreview: Macros? = nil
+
+    @State private var confirmQtyPulse: Double = 1
 
     // Previous values for flash detection
     @State private var prevQuantity: Double?
@@ -255,11 +298,35 @@ struct DraftMealCard: View {
                 sourceIcon
             }
 
-            // Quantity
-            Text("\(formatNumber(item.quantity)) \(item.unit)")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(Color.appTextSecondary)
-                .scaleEffect(quantityFlash)
+            // Quantity (tap number → manual edit) + scale icon
+            HStack(spacing: Spacing.sm) {
+                Text("\(formatNumber(item.quantity, decimals: decimalsForUnit(item.unit))) \(item.unit)")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Color.appTextSecondary)
+                    .scaleEffect(quantityFlash)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onStartEdit?() }
+
+                if item.confirmedViaScale {
+                    // Always show scale icon for scale-confirmed items
+                    if isScaleConnected {
+                        // Tappable — allows reweigh
+                        Button {
+                            onReweigh?()
+                        } label: {
+                            Image(systemName: "scalemass.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color.appTint)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        // Decorative — scale not connected
+                        Image(systemName: "scalemass.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.appTint.opacity(0.5))
+                    }
+                }
+            }
 
             // Macro dashboard
             macroDashboard(
@@ -270,8 +337,6 @@ struct DraftMealCard: View {
             // Action bar
             heroActionBar
         }
-        .contentShape(Rectangle())
-        .onTapGesture { onStartEdit?() }
     }
 
     // MARK: - Macro Dashboard (Hero)
@@ -347,8 +412,22 @@ struct DraftMealCard: View {
 
     // MARK: - Incomplete Quantity Content (needs confirmation)
 
+    @ViewBuilder
     private var incompleteQuantityContent: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
+        if item.scaleWeighingActive && isScaleConnected {
+            if isSubtractiveMode {
+                subtractiveWeighingContent
+            } else {
+                scaleWeighingContent
+            }
+        } else {
+            manualQuantityContent
+        }
+    }
+
+    /// Live scale weighing mode — shows real-time weight and lock-in button.
+    private var scaleWeighingContent: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             // Header
             HStack {
                 Text(item.name)
@@ -360,59 +439,310 @@ struct DraftMealCard: View {
                 sourceIcon
             }
 
-            // Scale suggestion
-            if let reading = scaleReading, reading.stable, !scaleSkipped {
-                Button {
-                    onScaleConfirm?(reading.value, reading.unit.rawValue)
-                } label: {
-                    HStack(spacing: Spacing.sm) {
-                        Image(systemName: "scalemass.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(Color.appTint)
+            if let reading = scaleReading {
+                // Live weight display
+                Text(reading.display)
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.appTint)
+                    .contentTransition(.numericText())
+                    .animation(.easeOut(duration: 0.15), value: reading.display)
 
-                        Text(reading.display)
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(Color.appText)
-
-                        Spacer()
-
-                        Text("Use")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, Spacing.md)
-                            .padding(.vertical, Spacing.xs)
-                            .background(Color.appTint)
-                            .clipShape(Capsule())
-                    }
-                    .padding(Spacing.sm)
-                    .background(Color.appTint.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
+                // Macro preview (updates on stable readings)
+                if let macros = stableMacroPreview {
+                    macroDashboard(cal: macros.calories, protein: macros.proteinG,
+                                   carbs: macros.carbsG, fat: macros.fatG)
                 }
-                .buttonStyle(.plain)
+
+                // Lock in + Subtract buttons
+                HStack(spacing: Spacing.sm) {
+                    Button {
+                        onScaleConfirm?(reading.value, reading.unit.rawValue)
+                    } label: {
+                        HStack(spacing: Spacing.sm) {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 13))
+                            Text("Lock in")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.vertical, Spacing.sm)
+                        .frame(maxWidth: .infinity)
+                        .background(reading.value > 0 ? Color.appTint : Color.appTint.opacity(0.4))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(reading.value <= 0)
+
+                    Button {
+                        onStartSubtractive?()
+                    } label: {
+                        HStack(spacing: Spacing.xs) {
+                            Image(systemName: "minus.circle")
+                                .font(.system(size: 13))
+                            Text("Subtract")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .foregroundStyle(Color.appText)
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.vertical, Spacing.sm)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // Zero button + Keep Zero toggle
+                HStack(spacing: Spacing.sm) {
+                    Button {
+                        if hasZeroOffset {
+                            onClearZero?()
+                        } else {
+                            onZeroScale?()
+                        }
+                    } label: {
+                        HStack(spacing: Spacing.xs) {
+                            Image(systemName: hasZeroOffset ? "arrow.counterclockwise" : "scope")
+                                .font(.system(size: 12))
+                            Text(hasZeroOffset ? "Reset Zero" : "Zero")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundStyle(hasZeroOffset ? Color.caloriesAccent : Color.appTextSecondary)
+                    }
+                    .buttonStyle(.plain)
+
+                    if hasZeroOffset {
+                        Button {
+                            onToggleKeepZero?()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: keepZeroOffset ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 11))
+                                Text("Keep zero")
+                                    .font(.system(size: 11))
+                            }
+                            .foregroundStyle(keepZeroOffset ? Color.appTint : Color.appTextSecondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Spacer()
+                }
+            } else {
+                // Connected but no reading yet
+                HStack(spacing: Spacing.sm) {
+                    ProgressView()
+                        .tint(Color.appTextSecondary)
+                    Text("Place food on scale…")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                .padding(.vertical, Spacing.md)
             }
 
-            // Manual quantity entry
+            // Manual fallback
             Button {
                 onStartEdit?()
             } label: {
                 HStack(spacing: Spacing.xs) {
                     Image(systemName: "pencil")
                         .font(.system(size: 12))
-                    Text("Set quantity manually")
+                    Text("Set manually")
                         .font(.system(size: 12))
                 }
                 .foregroundStyle(Color.appTextSecondary)
             }
             .buttonStyle(.plain)
-
-            // Dashed macros
-            HStack(spacing: Spacing.sm) {
-                dashedMacroChip("Cal", "—")
-                dashedMacroChip("P", "—")
-                dashedMacroChip("C", "—")
-                dashedMacroChip("F", "—")
+        }
+        .onChange(of: scaleReading) { _, newReading in
+            guard item.scaleWeighingActive,
+                  let reading = newReading,
+                  reading.stable else { return }
+            stableMacroPreview = scaledMacrosForReading(reading)
+        }
+        .onAppear {
+            if let reading = scaleReading, reading.stable {
+                stableMacroPreview = scaledMacrosForReading(reading)
             }
         }
+    }
+
+    /// Subtractive weighing mode — lock start weight, show live delta as food is removed.
+    private var subtractiveWeighingContent: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            // Header
+            HStack {
+                Text(item.name)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Color.appText)
+                    .lineLimit(1)
+
+                Spacer()
+                sourceIcon
+            }
+
+            // Start weight (locked)
+            HStack(spacing: Spacing.sm) {
+                Text("Start:")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.appTextSecondary)
+                Text("\(formatNumber(subtractiveStartWeight ?? 0)) \(scaleReading?.unit.rawValue ?? "g")")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.appTextSecondary)
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.appSuccess)
+            }
+
+            // Current weight (live)
+            if let reading = scaleReading {
+                HStack(spacing: Spacing.sm) {
+                    Text("Now:")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.appTextSecondary)
+                    Text(reading.display)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.appTextSecondary)
+                        .contentTransition(.numericText())
+                        .animation(.easeOut(duration: 0.15), value: reading.display)
+                }
+            }
+
+            // Delta (hero-sized)
+            if let delta = subtractiveDelta {
+                Text("\u{0394} Food: \(formatNumber(delta)) \(scaleReading?.unit.rawValue ?? "g")")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.appTint)
+                    .contentTransition(.numericText())
+                    .animation(.easeOut(duration: 0.15), value: delta)
+
+                // Macro preview based on delta
+                if let macros = scaledMacrosForValue(delta, unit: scaleReading?.unit) {
+                    macroDashboard(cal: macros.calories, protein: macros.proteinG,
+                                   carbs: macros.carbsG, fat: macros.fatG)
+                }
+            }
+
+            // Action buttons
+            HStack(spacing: Spacing.sm) {
+                Button {
+                    onConfirmSubtractive?()
+                } label: {
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 13))
+                        Text("Lock in \(formatNumber(subtractiveDelta ?? 0)) \(scaleReading?.unit.rawValue ?? "g")")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.vertical, Spacing.sm)
+                    .frame(maxWidth: .infinity)
+                    .background((subtractiveDelta ?? 0) > 0 ? Color.appTint : Color.appTint.opacity(0.4))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled((subtractiveDelta ?? 0) <= 0)
+
+                Button {
+                    onCancelSubtractive?()
+                } label: {
+                    Text("Cancel")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    /// Fallback for non-weight units or no scale — shows base serving macros with prompt to confirm quantity.
+    private var manualQuantityContent: some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            // Name + source
+            HStack {
+                Text(item.name)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Color.appText)
+                    .lineLimit(2)
+
+                Spacer()
+                sourceIcon
+            }
+
+            // Quantity (tap to edit) with unconfirmed indicator
+            HStack(spacing: Spacing.sm) {
+                Text("\(formatNumber(item.quantity, decimals: decimalsForUnit(item.unit))) \(item.unit)")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Color.appTextSecondary)
+
+                Text("· Confirm qty")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.appTint)
+                    .opacity(confirmQtyPulse)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { onStartEdit?() }
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                    confirmQtyPulse = 0.5
+                }
+            }
+
+            // Macro dashboard (shows base serving macros)
+            macroDashboard(
+                cal: item.calories, protein: item.proteinG,
+                carbs: item.carbsG, fat: item.fatG
+            )
+
+            // Action bar
+            heroActionBar
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { onStartEdit?() }
+    }
+
+    /// Compute scaled macros from a scale reading using base serving data.
+    private func scaledMacrosForReading(_ reading: ScaleReading) -> Macros? {
+        guard let baseMacros = item.baseMacros,
+              let baseSize = item.baseServingSize,
+              baseSize > 0 else { return nil }
+        let baseUnit = item.baseServingUnit ?? "g"
+        let readingUnit = reading.unit.rawValue
+        var readingInBaseUnit = reading.value
+        if readingUnit != baseUnit,
+           let fromG = weightRatiosG[readingUnit],
+           let toG = weightRatiosG[baseUnit] {
+            readingInBaseUnit = reading.value * fromG / toG
+        }
+        let scale = readingInBaseUnit / baseSize
+        return Macros(
+            calories: baseMacros.calories * scale,
+            proteinG: baseMacros.proteinG * scale,
+            carbsG:   baseMacros.carbsG   * scale,
+            fatG:     baseMacros.fatG     * scale)
+    }
+
+    /// Scale macros for a raw weight value (used by subtractive mode).
+    private func scaledMacrosForValue(_ value: Double, unit: ScaleUnit?) -> Macros? {
+        guard let baseMacros = item.baseMacros,
+              let baseSize = item.baseServingSize,
+              baseSize > 0 else { return nil }
+        let baseUnit = item.baseServingUnit ?? "g"
+        let readingUnit = unit?.rawValue ?? "g"
+        var valueInBaseUnit = value
+        if readingUnit != baseUnit,
+           let fromG = weightRatiosG[readingUnit],
+           let toG = weightRatiosG[baseUnit] {
+            valueInBaseUnit = value * fromG / toG
+        }
+        let scale = valueInBaseUnit / baseSize
+        return Macros(
+            calories: baseMacros.calories * scale,
+            proteinG: baseMacros.proteinG * scale,
+            carbsG:   baseMacros.carbsG   * scale,
+            fatG:     baseMacros.fatG     * scale)
     }
 
     private func dashedMacroChip(_ label: String, _ value: String) -> some View {
@@ -447,15 +777,23 @@ struct DraftMealCard: View {
                         .font(.appCaption1)
                         .foregroundStyle(Color.appTextTertiary)
 
-                    Text("\(formatNumber(item.quantity)) \(item.unit)")
+                    Text("\(formatNumber(item.quantity, decimals: decimalsForUnit(item.unit))) \(item.unit)")
                         .font(.appCaption1)
                         .foregroundStyle(Color.appTextTertiary)
                         .lineLimit(1)
                 }
 
-                Image(systemName: FoodSourceIndicator.systemImage(for: item.source))
-                    .font(.system(size: 12))
-                    .foregroundStyle(FoodSourceIndicator.accentColor(for: item.source))
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: FoodSourceIndicator.systemImage(for: item.source))
+                        .font(.system(size: 12))
+                        .foregroundStyle(FoodSourceIndicator.accentColor(for: item.source))
+
+                    if item.confirmedViaScale {
+                        Image(systemName: "scalemass.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.appTint)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -706,12 +1044,40 @@ struct DraftMealCard: View {
 
     // MARK: - Shared Sub-views
 
-    /// Scale factor from the edited quantity relative to the item's stored quantity.
+    /// Scale factor from the edited quantity relative to base serving.
+    /// Uses conversion data when the unit differs from the item's stored unit.
     private var editScaleFactor: Double {
-        guard item.quantity > 0,
-              let editQty = Double(editQuantityText), editQty > 0
-        else { return 1 }
+        guard let editQty = Double(editQuantityText), editQty > 0 else { return 1 }
+        // Use base macro data if available for accurate conversion
+        if let baseSize = item.baseServingSize, baseSize > 0 {
+            let baseUnit = item.baseServingUnit ?? item.unit
+            let qtyInBase = convertQuantityToBaseUnit(editQty, from: editUnit, baseUnit: baseUnit)
+            return qtyInBase / baseSize
+        }
+        // Fallback: simple ratio from stored quantity
+        guard item.quantity > 0 else { return 1 }
         return editQty / item.quantity
+    }
+
+    /// Convert a quantity from one unit to the base serving unit using ratio tables and conversions.
+    private func convertQuantityToBaseUnit(_ qty: Double, from unit: String, baseUnit: String) -> Double {
+        if unit == baseUnit { return qty }
+        if unit == "servings", let baseSize = item.baseServingSize {
+            return qty * baseSize
+        }
+        // Check saved conversions
+        if let conv = item.conversions.first(where: { $0.unitName == unit }),
+           let baseSize = item.baseServingSize, baseSize > 0 {
+            return qty * conv.quantityInBaseServings * baseSize
+        }
+        // Same-system ratio table conversion
+        if let fromG = weightRatiosG[unit], let toG = weightRatiosG[baseUnit] {
+            return qty * fromG / toG
+        }
+        if let fromMl = volumeRatiosMl[unit], let toMl = volumeRatiosMl[baseUnit] {
+            return qty * fromMl / toMl
+        }
+        return qty
     }
 
     @ViewBuilder
@@ -782,6 +1148,22 @@ struct DraftMealCard: View {
                     .padding(.vertical, Spacing.sm)
                     .background(KitchenTheme.fieldBackground)
                     .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
+                }
+
+                // Scale button — switch from manual to scale weighing
+                if isScaleConnected && itemHasWeightUnit {
+                    Button {
+                        onReweigh?()
+                    } label: {
+                        Image(systemName: "scalemass.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.appTint)
+                            .padding(.horizontal, Spacing.sm)
+                            .padding(.vertical, Spacing.sm)
+                            .background(Color.appTint.opacity(0.15))
+                            .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
+                    }
+                    .buttonStyle(.plain)
                 }
             }
 
@@ -976,7 +1358,7 @@ struct DraftMealCard: View {
     }
 
     private var unitOptions: [String] {
-        var opts = Self.commonUnits
+        var opts = availableUnits
         if !opts.contains(item.unit) { opts.insert(item.unit, at: 0) }
         return opts
     }
@@ -1018,6 +1400,10 @@ struct DraftMealCard: View {
             return String(Int(n.rounded()))
         }
         return String(format: "%.\(decimals)f", n)
+    }
+
+    private func decimalsForUnit(_ unit: String) -> Int {
+        unit == "oz" ? 1 : 0
     }
 }
 

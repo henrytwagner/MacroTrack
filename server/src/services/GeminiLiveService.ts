@@ -114,7 +114,7 @@ If the user asks something off-topic, say: "I can only help with logging food. W
   {
     name: "FOOD LOOKUP WORKFLOW",
     content: `1. When user mentions a food → call lookup_food() immediately, do not wait.
-2. lookup_food returns a single match → immediately call add_to_draft() with the returned food_ref, quantity (default 1 if not specified), and the serving_unit from the lookup result. Briefly confirm. Go silent.
+2. lookup_food returns a single match → immediately call add_to_draft() with the returned food_ref, quantity (default 1 if not specified), and the serving_unit from the lookup result. Set quantity_specified=true ONLY if the user explicitly stated a quantity (e.g. "200 grams of chicken", "2 cups of rice"). Omit quantity_specified when using the default serving size. Briefly confirm. Go silent.
 3. lookup_food returns multiple matches → present options verbally (briefly), wait for user choice, then call add_to_draft() with the chosen food_ref.
 4. lookup_food returns not_found → briefly tell the user. Ask: "Would you like to create a custom food, or try the USDA database?" Wait for their answer.
 5. User says "try USDA" → call search_usda(). Handle single/multiple/not_found the same as lookup_food.`,
@@ -147,7 +147,7 @@ If the user asks something off-topic, say: "I can only help with logging food. W
   {
     name: "BARCODE INPUT",
     content: `If you receive a [barcode] message:
-- If the barcode matched a food, call add_to_draft with the provided food_ref, quantity, and unit.
+- If the barcode matched a food, call add_to_draft with the provided food_ref, quantity, and unit. Do NOT set quantity_specified — barcode defaults are not user-specified.
 - If the barcode did not match, ask the user to name the food so you can call lookup_food.`,
   },
   {
@@ -226,6 +226,7 @@ const addToDraftDecl: GeminiFunctionDeclaration = {
       quantity: { type: "NUMBER", description: "Amount to add" } as object,
       unit: { type: "STRING", description: "Unit for the amount" } as object,
       meal_label: { type: "STRING", description: "Meal label. Auto-categorized by the server based on time clustering — only provide if the user explicitly names a meal.", enum: ["breakfast", "lunch", "dinner", "snack"] } as object,
+      quantity_specified: { type: "BOOLEAN", description: "Set to true ONLY when the user explicitly stated a quantity (e.g. '200 grams', '2 cups'). Omit or set false when using default serving size." } as object,
     },
     required: ["food_ref", "quantity", "unit"],
   } as object,

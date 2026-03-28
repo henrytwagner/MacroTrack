@@ -14,7 +14,7 @@ struct KitchenCameraPreview: UIViewRepresentable {
         view.previewLayer.videoGravity = .resizeAspectFill
         // Assigning the session on the main thread causes a hang (I/O).
         // Defer to a background queue so the preview layer connects without blocking.
-        let layer = view.previewLayer
+        nonisolated(unsafe) let layer = view.previewLayer
         let captureSession = session
         DispatchQueue.global(qos: .userInitiated).async {
             layer.session = captureSession
@@ -24,7 +24,7 @@ struct KitchenCameraPreview: UIViewRepresentable {
 
     func updateUIView(_ uiView: PreviewUIView, context: Context) {
         // Only reassign if the session actually changed.
-        let layer = uiView.previewLayer
+        nonisolated(unsafe) let layer = uiView.previewLayer
         let captureSession = session
         if layer.session !== captureSession {
             DispatchQueue.global(qos: .userInitiated).async {

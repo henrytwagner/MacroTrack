@@ -244,6 +244,7 @@ async function handleAddToDraft(
   const unit = String(args.unit ?? "servings");
   const mealLabelArg = args.meal_label as MealLabel | undefined;
   const mealLabel: MealLabel = mealLabelArg ?? getProvisionalMealLabel();
+  const quantitySpecified = Boolean(args.quantity_specified ?? false);
 
   if (!foodRef) return { error: "food_ref is required" };
 
@@ -258,6 +259,8 @@ async function handleAddToDraft(
   if (!draft) {
     return { error: `Could not build draft item from ref: ${foodRef}. Food may no longer exist.` };
   }
+
+  draft.isAssumed = !quantitySpecified;
 
   snapshotDraft(session);
   session.items.push(draft);
@@ -666,6 +669,7 @@ async function handleSaveSession(session: KitchenSession): Promise<unknown> {
         usdaFdcId: item.usdaFdcId ?? null,
         customFoodId: item.customFoodId ?? null,
         communityFoodId: item.communityFoodId ?? null,
+        confirmedViaScale: item.confirmedViaScale ?? false,
         voiceSessionId: session.voiceSessionId,
       })),
     });
@@ -767,7 +771,7 @@ async function dispatchFunctionCall(
 }
 
 // ---------------------------------------------------------------------------
-// Barcode scan handler (client → server → Gemini text turn)
+// Barcode scan handler — adds directly to draft, notifies Gemini only for verbal feedback
 // ---------------------------------------------------------------------------
 
 async function handleBarcodeScan(
@@ -776,42 +780,61 @@ async function handleBarcodeScan(
 ): Promise<void> {
   const result = await lookupBarcode(gtin, session.userId);
 
-  switch (result.source) {
-    case "custom": {
-      const f = result.food;
-      notifyGemini(session, {
-        source: "barcode",
-        action: "food_found",
-        details:
-          `Found custom food "${f.name}". ` +
-          `Call add_to_draft with food_ref "custom:${f.id}", ` +
-          `quantity ${f.servingSize}, unit "${f.servingUnit}". ` +
-          `Do not ask the user for quantity — use these defaults.`,
-      });
-      return;
-    }
-    case "community": {
-      const f = result.food;
-      notifyGemini(session, {
-        source: "barcode",
-        action: "food_found",
-        details:
-          `Found community food "${f.name}". ` +
-          `Call add_to_draft with food_ref "community:${f.id}", ` +
-          `quantity 1, unit "${(f as any).defaultServingUnit ?? "serving"}". ` +
-          `Do not ask the user for quantity — use these defaults.`,
-      });
-      return;
-    }
-    case "not_found":
-      notifyGemini(session, {
-        source: "barcode",
-        action: "not_found",
-        details:
-          `GTIN ${result.normalizedGtin} — no matching food found. ` +
-          `Tell the user the scan didn't match anything and ask them to name the food so you can call lookup_food.`,
-      });
+  if (result.source === "not_found") {
+    notifyGemini(session, {
+      source: "barcode",
+      action: "not_found",
+      details:
+        `GTIN ${result.normalizedGtin} — no matching food found. ` +
+        `Tell the user the scan didn't match anything and ask them to name the food so you can call lookup_food.`,
+    });
+    return;
   }
+
+  // Build food_ref and default quantity/unit from the matched food
+  let foodRef: string;
+  let quantity: number;
+  let unit: string;
+
+  if (result.source === "custom") {
+    const f = result.food;
+    foodRef = `custom:${f.id}`;
+    quantity = f.servingSize;
+    unit = f.servingUnit;
+  } else {
+    const f = result.food;
+    foodRef = `community:${f.id}`;
+    quantity = 1;
+    unit = (f as any).defaultServingUnit ?? "serving";
+  }
+
+  const draft = await buildDraftItemFromRef(
+    foodRef,
+    quantity,
+    unit,
+    getProvisionalMealLabel(),
+    session.userId,
+  );
+  if (!draft) return;
+
+  draft.isAssumed = true; // barcode quantities are always default/assumed
+
+  snapshotDraft(session);
+  session.items.push(draft);
+
+  send(session.socket, {
+    type: "items_added",
+    items: [draft],
+  } satisfies WSItemsAddedMessage);
+
+  // Notify Gemini so it can verbally confirm (if audio feedback is active)
+  notifyGemini(session, {
+    source: "barcode",
+    action: "food_added",
+    details:
+      `Added "${draft.name}" (${draft.quantity} ${draft.unit}) to draft via barcode scan. ` +
+      `Do NOT call add_to_draft — the item is already added. Just briefly confirm it.`,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -971,7 +994,7 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
                 const idx = session.items.findIndex((i) => i.id === msg.itemId);
                 const itemName = idx !== -1 ? session.items[idx].name : msg.itemId;
                 if (idx !== -1) {
-                  session.items[idx] = { ...session.items[idx], ...editMsg.changes };
+                  session.items[idx] = { ...session.items[idx], ...editMsg.changes, confirmedViaScale: true };
                 }
                 send(socket, editMsg);
                 notifyGemini(session, {

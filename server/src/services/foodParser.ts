@@ -241,26 +241,74 @@ export function shouldDisambiguate(query: string, results: USDASearchResult[]): 
 // When unit matches base (e.g. "g"), quantity is in base units → ratio = quantity / baseServingSize.
 // ---------------------------------------------------------------------------
 
+// Weight and volume ratio tables for unit conversion
+const weightRatiosG: Record<string, number> = {
+  g: 1,
+  oz: 28.3495,
+  kg: 1000,
+  lb: 453.592,
+};
+
+const volumeRatiosMl: Record<string, number> = {
+  ml: 1,
+  L: 1000,
+  "fl oz": 29.5735,
+  tbsp: 14.787,
+  tsp: 4.929,
+  cups: 236.588,
+};
+
+/** Convert requestedQuantity from requestedUnit to baseServingUnit using ratio tables. */
+function convertToBaseUnit(
+  requestedQuantity: number,
+  requestedUnit: string,
+  baseServingUnit: string,
+): number {
+  if (requestedUnit === baseServingUnit) return requestedQuantity;
+  // Same-system weight conversion
+  const fromW = weightRatiosG[requestedUnit];
+  const toW = weightRatiosG[baseServingUnit];
+  if (fromW !== undefined && toW !== undefined) {
+    return (requestedQuantity * fromW) / toW;
+  }
+  // Same-system volume conversion
+  const fromV = volumeRatiosMl[requestedUnit];
+  const toV = volumeRatiosMl[baseServingUnit];
+  if (fromV !== undefined && toV !== undefined) {
+    return (requestedQuantity * fromV) / toV;
+  }
+  // No conversion possible — assume same unit
+  return requestedQuantity;
+}
+
 function scaleMacros(
   baseMacros: { calories: number; proteinG: number; carbsG: number; fatG: number },
   baseServingSize: number,
   requestedQuantity: number,
   requestedUnit?: string,
+  baseServingUnit?: string,
 ): { calories: number; proteinG: number; carbsG: number; fatG: number } {
   const isServings =
     !requestedUnit ||
     requestedUnit.toLowerCase() === "servings" ||
     requestedUnit.toLowerCase() === "serving";
-  const ratio = isServings
-    ? requestedQuantity
-    : baseServingSize <= 0
-      ? 1
-      : requestedQuantity / baseServingSize;
+  let ratio: number;
+  if (isServings) {
+    ratio = requestedQuantity;
+  } else if (baseServingSize <= 0) {
+    ratio = 1;
+  } else {
+    // Convert requested quantity to the base serving unit before dividing
+    const qtyInBaseUnit = baseServingUnit && requestedUnit
+      ? convertToBaseUnit(requestedQuantity, requestedUnit, baseServingUnit)
+      : requestedQuantity;
+    ratio = qtyInBaseUnit / baseServingSize;
+  }
   return {
-    calories: Math.round(baseMacros.calories * ratio),
-    proteinG: Math.round(baseMacros.proteinG * ratio * 10) / 10,
-    carbsG: Math.round(baseMacros.carbsG * ratio * 10) / 10,
-    fatG: Math.round(baseMacros.fatG * ratio * 10) / 10,
+    calories: Math.round(baseMacros.calories * ratio * 10) / 10,
+    proteinG: Math.round(baseMacros.proteinG * ratio * 100) / 100,
+    carbsG: Math.round(baseMacros.carbsG * ratio * 100) / 100,
+    fatG: Math.round(baseMacros.fatG * ratio * 100) / 100,
   };
 }
 
@@ -290,14 +338,15 @@ async function lookupItem(
       const usdaResult = await getFoodByFdcId(history.usdaFdcId);
       if (usdaResult) {
         const servingSize = usdaResult.servingSize ?? 100;
-        const macros = scaleMacros(usdaResult.macros, servingSize, histQty, histUnit);
+        const baseUnit = usdaResult.servingSizeUnit ?? "g";
+        const macros = scaleMacros(usdaResult.macros, servingSize, histQty, histUnit, baseUnit);
         return {
           found: true,
           draft: {
             id: tmpId,
             name: usdaResult.description,
             quantity: histQty,
-            unit: histUnit === "servings" ? (usdaResult.servingSizeUnit ?? "g") : histUnit,
+            unit: histUnit === "servings" ? baseUnit : histUnit,
             ...macros,
             source: "DATABASE" as FoodSource,
             usdaFdcId: history.usdaFdcId,
@@ -316,7 +365,7 @@ async function lookupItem(
         select: { id: true, name: true, servingSize: true, servingUnit: true, calories: true, proteinG: true, carbsG: true, fatG: true },
       });
       if (custom) {
-        const macros = scaleMacros(custom, custom.servingSize, histQty, histUnit);
+        const macros = scaleMacros(custom, custom.servingSize, histQty, histUnit, custom.servingUnit);
         return {
           found: true,
           draft: {
@@ -342,7 +391,7 @@ async function lookupItem(
         select: { id: true, name: true, brandName: true, defaultServingSize: true, defaultServingUnit: true, calories: true, proteinG: true, carbsG: true, fatG: true },
       });
       if (community) {
-        const macros = scaleMacros(community, community.defaultServingSize, histQty, histUnit);
+        const macros = scaleMacros(community, community.defaultServingSize, histQty, histUnit, community.defaultServingUnit);
         const displayName = community.brandName ? `${community.brandName} — ${community.name}` : community.name;
         return {
           found: true,
@@ -366,7 +415,7 @@ async function lookupItem(
   // Tier 2: Check custom foods (name match)
   const custom = await findCustomFood(item.name, userId);
   if (custom) {
-    const macros = scaleMacros(custom, custom.servingSize, quantity, unit);
+    const macros = scaleMacros(custom, custom.servingSize, quantity, unit, custom.servingUnit);
     return {
       found: true,
       draft: {
@@ -386,7 +435,7 @@ async function lookupItem(
   // Tier 2b: Check community foods
   const community = await findCommunityFood(item.name);
   if (community) {
-    const macros = scaleMacros(community, community.defaultServingSize, quantity, unit);
+    const macros = scaleMacros(community, community.defaultServingSize, quantity, unit, community.defaultServingUnit);
     // Fire-and-forget: increment usage stats
     prisma.communityFood.update({
       where: { id: community.id },
@@ -447,7 +496,7 @@ export async function lookupItemInUsda(
 
   const best = usdaResults[0];
   const servingSize = best.servingSize ?? 100;
-  const macros = scaleMacros(best.macros, servingSize, qty, u);
+  const macros = scaleMacros(best.macros, servingSize, qty, u, best.servingSizeUnit ?? "g");
 
   return {
     found: true,
@@ -677,7 +726,7 @@ export async function buildDraftItemFromRef(
       select: { id: true, name: true, servingSize: true, servingUnit: true, calories: true, proteinG: true, carbsG: true, fatG: true },
     });
     if (!custom) return null;
-    const macros = scaleMacros(custom, custom.servingSize, quantity, unit);
+    const macros = scaleMacros(custom, custom.servingSize, quantity, unit, custom.servingUnit);
     return {
       id: tmpId,
       name: custom.name,
@@ -704,7 +753,7 @@ export async function buildDraftItemFromRef(
     const displayName = community.brandName
       ? `${community.brandName} — ${community.name}`
       : community.name;
-    const macros = scaleMacros(community, community.defaultServingSize, quantity, unit);
+    const macros = scaleMacros(community, community.defaultServingSize, quantity, unit, community.defaultServingUnit);
     return {
       id: tmpId,
       name: displayName,
@@ -723,12 +772,13 @@ export async function buildDraftItemFromRef(
     const usdaResult = await getFoodByFdcId(fdcId);
     if (!usdaResult) return null;
     const servingSize = usdaResult.servingSize ?? 100;
-    const macros = scaleMacros(usdaResult.macros, servingSize, quantity, unit);
+    const baseUnit = usdaResult.servingSizeUnit ?? "g";
+    const macros = scaleMacros(usdaResult.macros, servingSize, quantity, unit, baseUnit);
     return {
       id: tmpId,
       name: usdaResult.description,
       quantity,
-      unit: unit === "servings" ? (usdaResult.servingSizeUnit ?? "g") : unit,
+      unit: unit === "servings" ? baseUnit : unit,
       ...macros,
       source: "DATABASE",
       usdaFdcId: fdcId,
@@ -914,6 +964,7 @@ async function handleEditItem(
         base.baseServingSize,
         newQuantity,
         newUnit,
+        base.baseServingUnit,
       );
       changes.calories = scaled.calories;
       changes.proteinG = scaled.proteinG;
@@ -993,7 +1044,7 @@ export async function handleScaleConfirm(
     userId,
   );
   if (base) {
-    const scaled = scaleMacros(base.baseMacros, base.baseServingSize, quantity, unit);
+    const scaled = scaleMacros(base.baseMacros, base.baseServingSize, quantity, unit, base.baseServingUnit);
     changes.calories = scaled.calories;
     changes.proteinG = scaled.proteinG;
     changes.carbsG = scaled.carbsG;

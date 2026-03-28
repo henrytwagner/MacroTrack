@@ -61,6 +61,7 @@ model FoodEntry {
   usdaFdcId       Int?
   customFoodId    String?
   communityFoodId String?
+  confirmedViaScale Boolean  @default(false)
   voiceSessionId  String?
   savedMealId     String?
   mealInstanceId  String?

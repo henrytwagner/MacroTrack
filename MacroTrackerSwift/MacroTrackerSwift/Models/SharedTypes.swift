@@ -166,7 +166,7 @@ enum MeasurementSystem: String, Codable, Sendable {
     case weight, volume, abstract
 }
 
-struct FoodUnitConversion: Codable, Identifiable, Sendable {
+struct FoodUnitConversion: Codable, Identifiable, Sendable, Equatable {
     var id:                       String
     var unitName:                 String
     var quantityInBaseServings:   Double
@@ -189,6 +189,7 @@ struct FoodEntry: Codable, Identifiable, Sendable {
     var carbsG:          Double
     var fatG:            Double
     var source:          FoodSource
+    var confirmedViaScale: Bool?
     var usdaFdcId:       Int?
     var customFoodId:    String?
     var communityFoodId: String?
@@ -317,6 +318,7 @@ struct CreateFoodEntryRequest: Codable, Sendable {
     var unit:            String
     var source:          FoodSource
     var mealLabel:       MealLabel
+    var confirmedViaScale: Bool?
     var usdaFdcId:       Int?
     var customFoodId:    String?
     var communityFoodId: String?
@@ -569,6 +571,24 @@ struct DraftItem: Codable, Identifiable, Sendable, Equatable {
     var estimateConfidence:     String?
     var disambiguationOptions:  [DisambiguationOption]?
     var historyData:            HistoryData?
+
+    // Client-only fields (excluded from Codable)
+    var quantityConfirmed:      Bool = false
+    var isLocalItem:            Bool = false
+    var scaleWeighingActive:    Bool = false
+    var confirmedViaScale:      Bool = false
+    var baseServingSize:        Double? = nil
+    var baseServingUnit:        String? = nil
+    var baseMacros:             Macros? = nil
+    var conversions:            [FoodUnitConversion] = []
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, quantity, unit, calories, proteinG, carbsG, fatG
+        case source, usdaFdcId, customFoodId, communityFoodId, mealLabel, state
+        case clarifyQuestion, creatingProgress, initialQuantity, initialUnit
+        case confirmingData, isAssumed, isEstimate, estimateConfidence
+        case disambiguationOptions, historyData
+    }
 
     struct ConfirmingData: Codable, Sendable, Equatable {
         var quantityMismatch:  Bool

@@ -18,10 +18,10 @@ final class DraftStore {
 
     // MARK: - Computed
 
-    /// Live projected totals: savedTotals + all normal draft items.
+    /// Live projected totals: savedTotals + all confirmed normal draft items.
     var projectedTotals: Macros {
         let draft = items
-            .filter { $0.state == .normal }
+            .filter { $0.state == .normal && $0.quantityConfirmed }
             .reduce(Macros.zero) { acc, item in
                 Macros(
                     calories: acc.calories + item.calories,
@@ -58,7 +58,19 @@ final class DraftStore {
         switch msg {
 
         case .itemsAdded(let incoming):
-            for newItem in incoming {
+            for var newItem in incoming {
+                // Items with assumed quantity need user confirmation
+                newItem.quantityConfirmed = !(newItem.isAssumed ?? false)
+                // Populate base macro data for live scale scaling
+                if newItem.baseMacros == nil {
+                    newItem.baseServingSize = newItem.quantity
+                    newItem.baseServingUnit = newItem.unit
+                    newItem.baseMacros = Macros(
+                        calories: newItem.calories,
+                        proteinG: newItem.proteinG,
+                        carbsG:   newItem.carbsG,
+                        fatG:     newItem.fatG)
+                }
                 if let idx = items.firstIndex(where: { $0.id == newItem.id }) {
                     items[idx] = newItem
                 } else {
@@ -70,13 +82,13 @@ final class DraftStore {
             if let idx = items.firstIndex(where: { $0.id == itemId }) {
                 var item = items[idx]
                 if let v = changes.name      { item.name      = v }
-                if let v = changes.quantity  { item.quantity  = v; item.isAssumed = false }
-                if let v = changes.unit      { item.unit      = v; item.isAssumed = false }
-                if let v = changes.calories  { item.calories  = v }
-                if let v = changes.proteinG  { item.proteinG  = v }
-                if let v = changes.carbsG    { item.carbsG    = v }
-                if let v = changes.fatG      { item.fatG      = v }
-                if let v = changes.isAssumed { item.isAssumed = v }
+                if let v = changes.quantity   { item.quantity  = v; item.isAssumed = false; item.quantityConfirmed = true }
+                if let v = changes.unit       { item.unit      = v; item.isAssumed = false }
+                if let v = changes.calories   { item.calories  = v }
+                if let v = changes.proteinG   { item.proteinG  = v }
+                if let v = changes.carbsG     { item.carbsG    = v }
+                if let v = changes.fatG        { item.fatG      = v }
+                if let v = changes.isAssumed  { item.isAssumed = v }
                 items[idx] = item
             }
 

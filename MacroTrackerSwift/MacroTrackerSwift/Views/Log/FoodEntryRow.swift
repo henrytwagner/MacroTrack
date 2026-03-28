@@ -79,10 +79,19 @@ struct FoodEntryRow: View {
                         .foregroundStyle(Color.appTextTertiary)
                         .lineLimit(1)
                 }
-                Image(systemName: FoodSourceIndicator.systemImage(for: entry.source))
-                    .font(.system(size: 12))
-                    .foregroundStyle(FoodSourceIndicator.accentColor(for: entry.source))
-                    .accessibilityLabel(accessibilitySourceLabel)
+                HStack(spacing: 4) {
+                    Image(systemName: FoodSourceIndicator.systemImage(for: entry.source))
+                        .font(.system(size: 12))
+                        .foregroundStyle(FoodSourceIndicator.accentColor(for: entry.source))
+                        .accessibilityLabel(accessibilitySourceLabel)
+
+                    if entry.confirmedViaScale == true {
+                        Image(systemName: "scalemass.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.appTint)
+                            .accessibilityLabel("Weighed on scale")
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
