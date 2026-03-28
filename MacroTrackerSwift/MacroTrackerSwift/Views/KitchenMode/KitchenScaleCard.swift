@@ -27,13 +27,7 @@ struct KitchenScaleCard: View {
                 }
             }
         }
-        .padding(Spacing.lg)
-        .background(Color.appSurface)
-        .clipShape(RoundedRectangle(cornerRadius: BorderRadius.lg))
-        .overlay(
-            RoundedRectangle(cornerRadius: BorderRadius.lg)
-                .strokeBorder(Color.appBorder, lineWidth: 0.5)
-        )
+        .glassCard(isHero: false)
     }
 
     // MARK: - Idle / Error
@@ -47,9 +41,7 @@ struct KitchenScaleCard: View {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Button(action: onConnect) {
                     Text("Connect to Scale")
-                        .font(.appFootnote)
-                        .tracking(Typography.Tracking.footnote)
-                        .fontWeight(.semibold)
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, Spacing.lg)
                         .padding(.vertical, Spacing.xs)
@@ -59,8 +51,7 @@ struct KitchenScaleCard: View {
 
                 if case .error(let message) = connectionState {
                     Text(message)
-                        .font(.appCaption1)
-                        .tracking(Typography.Tracking.caption1)
+                        .font(.system(size: 12))
                         .foregroundStyle(Color.appDestructive)
                 }
             }
@@ -69,8 +60,7 @@ struct KitchenScaleCard: View {
 
             #if DEBUG
             Button("Simulate", action: onSimulate)
-                .font(.appCaption1)
-                .tracking(Typography.Tracking.caption1)
+                .font(.system(size: 12))
                 .foregroundStyle(Color.appTextTertiary)
             #endif
         }
@@ -81,18 +71,16 @@ struct KitchenScaleCard: View {
     private var scanningContent: some View {
         HStack(spacing: Spacing.sm) {
             ProgressView()
-                .tint(Color.appTint)
+                .tint(.white)
 
             Text("Scanning for scale\u{2026}")
-                .font(.appFootnote)
-                .tracking(Typography.Tracking.footnote)
+                .font(.system(size: 13))
                 .foregroundStyle(Color.appTextSecondary)
 
             Spacer()
 
             Button("Cancel", action: onCancelScan)
-                .font(.appCaption1)
-                .tracking(Typography.Tracking.caption1)
+                .font(.system(size: 12))
                 .foregroundStyle(Color.appTextTertiary)
         }
     }
@@ -102,11 +90,10 @@ struct KitchenScaleCard: View {
     private var connectingContent: some View {
         HStack(spacing: Spacing.sm) {
             ProgressView()
-                .tint(Color.appTint)
+                .tint(.white)
 
             Text("Connecting\u{2026}")
-                .font(.appFootnote)
-                .tracking(Typography.Tracking.footnote)
+                .font(.system(size: 13))
                 .foregroundStyle(Color.appTextSecondary)
         }
     }
@@ -116,18 +103,16 @@ struct KitchenScaleCard: View {
     private var waitingContent: some View {
         HStack(spacing: Spacing.sm) {
             ProgressView()
-                .tint(Color.appTint)
+                .tint(.white)
 
             Text("Waiting for scale\u{2026}")
-                .font(.appFootnote)
-                .tracking(Typography.Tracking.footnote)
+                .font(.system(size: 13))
                 .foregroundStyle(Color.appTextSecondary)
 
             Spacer()
 
             Button("Disconnect", action: onDisconnect)
-                .font(.appCaption1)
-                .tracking(Typography.Tracking.caption1)
+                .font(.system(size: 12))
                 .foregroundStyle(Color.appTextTertiary)
         }
     }
@@ -139,9 +124,7 @@ struct KitchenScaleCard: View {
             HStack(spacing: Spacing.sm) {
                 // Stable / Measuring badge
                 Text(reading.stable ? "Stable" : "Measuring\u{2026}")
-                    .font(.appCaption1)
-                    .tracking(Typography.Tracking.caption1)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(reading.stable ? Color.appSuccess : Color.appTextSecondary)
                     .padding(.horizontal, Spacing.sm)
                     .padding(.vertical, 2)
@@ -161,8 +144,7 @@ struct KitchenScaleCard: View {
             Spacer()
 
             Button("Disconnect", action: onDisconnect)
-                .font(.appCaption1)
-                .tracking(Typography.Tracking.caption1)
+                .font(.system(size: 12))
                 .foregroundStyle(Color.appTextTertiary)
         }
     }

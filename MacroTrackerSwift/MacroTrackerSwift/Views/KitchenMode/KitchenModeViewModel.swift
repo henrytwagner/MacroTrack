@@ -62,6 +62,10 @@ final class KitchenModeViewModel {
     /// Set of item IDs where the user tapped "Skip" on the scale chip.
     var scaleSkippedIds: Set<String> = []
 
+    /// The single card currently shown as hero. Nil = no items.
+    /// Auto-set to newest non-normal item when items change.
+    var expandedItemId: String? = nil
+
     /// Currently-editing card ID (nil = no card in edit mode).
     var editingItemId: String? = nil
 
@@ -73,6 +77,28 @@ final class KitchenModeViewModel {
 
     /// Last scanned barcode GTIN — shown as a debug overlay card, auto-dismissed.
     var debugBarcode: String? = nil
+
+    /// Whether the food search sheet is presented.
+    var showFoodSearch: Bool = false
+
+    /// Whether there are unconfirmed items (blocks save).
+    var hasUnconfirmedItems: Bool {
+        draft.items.contains { $0.state == .normal && !$0.quantityConfirmed }
+    }
+
+    // MARK: - Feature Toggles (persisted)
+
+    @ObservationIgnored
+    @AppStorage("kitchenVoiceEnabled") var voiceEnabled: Bool = false
+
+    @ObservationIgnored
+    @AppStorage("kitchenScaleEnabled") var scaleEnabled: Bool = true
+
+    @ObservationIgnored
+    @AppStorage("kitchenCameraEnabled") var cameraEnabled: Bool = false
+
+    /// Whether audio is currently active in this session (started by voice toggle).
+    private(set) var audioActive = false
 
     // MARK: - Dependencies (singletons)
 
@@ -97,8 +123,36 @@ final class KitchenModeViewModel {
     }
 
     /// The "active" card: first non-normal card, or topmost card.
+    /// Used as fallback when expandedItemId hasn't been set yet.
     var activeId: String? {
         reversedItems.first(where: { $0.state != .normal })?.id ?? reversedItems.first?.id
+    }
+
+    /// The effective hero card ID — uses explicit expandedItemId if set, otherwise auto-computed.
+    var heroId: String? {
+        if let id = expandedItemId, draft.items.contains(where: { $0.id == id }) {
+            return id
+        }
+        return activeId
+    }
+
+    /// Expand a specific card (collapses the previous one since only one hero at a time).
+    func expandItem(_ id: String) {
+        expandedItemId = id
+    }
+
+    /// Auto-focus the newest non-normal item (called when items change).
+    func autoFocusNewestItem() {
+        if let nonNormal = reversedItems.first(where: { $0.state != .normal }) {
+            expandedItemId = nonNormal.id
+        } else if let first = reversedItems.first {
+            // Only auto-switch if current expanded item was removed
+            if expandedItemId == nil || !draft.items.contains(where: { $0.id == expandedItemId }) {
+                expandedItemId = first.id
+            }
+        } else {
+            expandedItemId = nil
+        }
     }
 
     var projectedTotals: Macros {
@@ -154,6 +208,10 @@ final class KitchenModeViewModel {
     /// User tapped the scale chip on a draft card — apply current reading.
     func confirmScaleReading(for itemId: String) {
         guard let reading = scaleReading, reading.stable else { return }
+        // Mark confirmed locally (server response will also update, but this prevents flicker)
+        if let idx = draft.items.firstIndex(where: { $0.id == itemId }) {
+            draft.items[idx].quantityConfirmed = true
+        }
         sendScaleConfirm(itemId: itemId, quantity: reading.value, unit: reading.unit.rawValue)
     }
 
@@ -172,7 +230,7 @@ final class KitchenModeViewModel {
 
     // MARK: - Session Lifecycle
 
-    /// Start the Kitchen Mode session: fetch data, connect WS, start audio.
+    /// Start the Kitchen Mode session: fetch data, connect WS, optionally start audio.
     func startSession() async {
         guard case .idle = sessionState else { return }
         sessionState = .connecting
@@ -184,21 +242,6 @@ final class KitchenModeViewModel {
         // Initialize draft with current saved totals
         draft.initSession(savedTotals: dailyLog.totals)
 
-        // Request mic permission
-        let micGranted = await capture.requestPermission()
-        guard micGranted else {
-            sessionState = .error("Microphone access required for Kitchen Mode.")
-            return
-        }
-
-        // Start audio playback engine
-        do {
-            try playback.startEngine()
-        } catch {
-            sessionState = .error("Audio playback failed: \(error.localizedDescription)")
-            return
-        }
-
         // Wire WS message handler
         ws.onMessage = { [weak self] msg in
             self?.handleServerMessage(msg)
@@ -209,36 +252,119 @@ final class KitchenModeViewModel {
             self.stopAudio()
         }
 
-        // Connect WebSocket
+        // Connect WebSocket (always — needed for session management and touch actions)
         ws.connect(date: dateStore.selectedDate)
 
-        // Start audio capture
-        do {
-            try capture.start()
-        } catch {
-            sessionState = .error("Microphone start failed: \(error.localizedDescription)")
-            return
+        // Start voice if enabled
+        if voiceEnabled {
+            let started = await startAudio()
+            if !started { return }
+        }
+
+        // Auto-connect scale if enabled
+        if scaleEnabled {
+            scale.autoConnectIfNeeded()
         }
 
         // Keep screen awake
         UIApplication.shared.isIdleTimerDisabled = true
 
-        // Auto-connect scale if enabled
-        scale.autoConnectIfNeeded()
-
         sessionState = .active
     }
 
-    /// Save the session — server persists entries, sends session_saved.
+    /// Start audio capture + playback. Returns false on failure (sets error state).
+    private func startAudio() async -> Bool {
+        let micGranted = await capture.requestPermission()
+        guard micGranted else {
+            sessionState = .error("Microphone access required for voice mode.")
+            return false
+        }
+
+        do {
+            try playback.startEngine()
+        } catch {
+            sessionState = .error("Audio playback failed: \(error.localizedDescription)")
+            return false
+        }
+
+        do {
+            try capture.start()
+        } catch {
+            sessionState = .error("Microphone start failed: \(error.localizedDescription)")
+            return false
+        }
+
+        audioActive = true
+        return true
+    }
+
+    /// Toggle voice on/off mid-session.
+    func toggleVoice() {
+        if audioActive {
+            // Disable voice
+            stopAudio()
+            audioActive = false
+            voiceEnabled = false
+            isPaused = false
+            textDisplayMode = .off
+        } else {
+            // Enable voice
+            voiceEnabled = true
+            Task {
+                let started = await startAudio()
+                if !started {
+                    voiceEnabled = false
+                }
+            }
+        }
+    }
+
+    /// Save the session — local items via REST, server items via WS.
     func save() {
         guard !sessionEnded else { return }
         sessionEnded = true   // prevent cleanupOnDisappear from disconnecting early
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         capture.stop()
         camera.stop()
         barcodeModeActive = false
-        ws.send(.save)
-        // sessionState set to .saving (triggering navigation) only after session_saved arrives
+
+        let localItems = draft.items.filter { $0.isLocalItem && $0.state == .normal && $0.quantityConfirmed }
+        let hasServerItems = draft.items.contains { !$0.isLocalItem && $0.state == .normal }
+
+        Task {
+            // Save local (touch-added) items via REST
+            for item in localItems {
+                let req = CreateFoodEntryRequest(
+                    date: dateStore.selectedDate,
+                    name: item.name,
+                    calories: item.calories,
+                    proteinG: item.proteinG,
+                    carbsG: item.carbsG,
+                    fatG: item.fatG,
+                    quantity: item.quantity,
+                    unit: item.unit,
+                    source: item.source,
+                    mealLabel: item.mealLabel,
+                    usdaFdcId: item.usdaFdcId,
+                    customFoodId: item.customFoodId,
+                    communityFoodId: item.communityFoodId
+                )
+                _ = try? await dailyLog.createEntry(req)
+            }
+
+            // Save server items via WS (if any)
+            if hasServerItems {
+                ws.send(.save)
+                // sessionState set to .saving after session_saved arrives
+            } else {
+                // No server items — dismiss directly
+                await dailyLog.fetch(date: dateStore.selectedDate)
+                stopAudio()
+                ws.disconnect()
+                scale.disconnect()
+                draft.reset()
+                sessionState = .saving
+            }
+        }
     }
 
     /// Cancel the session — server deletes custom foods, sends session_cancelled.
@@ -257,7 +383,7 @@ final class KitchenModeViewModel {
         guard !sessionEnded else { return }
         sessionEnded = true
         sessionState = .cancelled
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
         stopAudio()
         camera.stop()
         barcodeModeActive = false
@@ -318,13 +444,44 @@ final class KitchenModeViewModel {
 
     /// User edited quantity via touch UI.
     func touchEditItem(itemId: String, quantity: Double, unit: String) {
+        // Mark quantity as confirmed when user explicitly sets it
+        if let idx = draft.items.firstIndex(where: { $0.id == itemId }) {
+            draft.items[idx].quantityConfirmed = true
+        }
         ws.send(.touchEditItem(itemId: itemId, quantity: quantity, unit: unit))
     }
 
     /// User swiped to delete an item via touch UI.
     func touchRemoveItem(itemId: String) {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        // Local items don't exist on server — just remove from draft
+        if let idx = draft.items.firstIndex(where: { $0.id == itemId }), draft.items[idx].isLocalItem {
+            draft.items.remove(at: idx)
+            return
+        }
         ws.send(.touchRemoveItem(itemId: itemId))
+    }
+
+    /// Add a food item via touch (from FoodSearchView). Creates a local draft item.
+    func addLocalDraftItem(from ingredient: SavedMealItem) {
+        let item = DraftItem(
+            id: UUID().uuidString,
+            name: ingredient.name,
+            quantity: ingredient.quantity,
+            unit: ingredient.unit,
+            calories: ingredient.calories,
+            proteinG: ingredient.proteinG,
+            carbsG: ingredient.carbsG,
+            fatG: ingredient.fatG,
+            source: ingredient.source,
+            usdaFdcId: ingredient.usdaFdcId,
+            customFoodId: ingredient.customFoodId,
+            communityFoodId: ingredient.communityFoodId,
+            mealLabel: .snack,
+            state: .normal,
+            quantityConfirmed: true,
+            isLocalItem: true
+        )
+        draft.items.append(item)
     }
 
     /// User completed food creation via manual form.
@@ -340,7 +497,7 @@ final class KitchenModeViewModel {
 
     func togglePause() {
         guard case .active = sessionState else { return }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
         if isPaused {
             isPaused = false
             do { try capture.start() } catch { /* already started or error */ }
@@ -390,7 +547,7 @@ final class KitchenModeViewModel {
     /// Does NOT pause audio capture — barcode mode is non-interrupting (matches RN).
     func toggleBarcodeMode() {
         guard case .active = sessionState else { return }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
 
         if barcodeModeActive {
             // Deactivate
@@ -494,6 +651,14 @@ final class KitchenModeViewModel {
 
         // Let DraftStore process all draft-related messages
         draft.applyServerMessage(msg)
+
+        // Auto-focus on item changes
+        switch msg {
+        case .itemsAdded, .itemRemoved, .clarify, .createFoodPrompt, .disambiguate, .foodChoice:
+            autoFocusNewestItem()
+        default:
+            break
+        }
 
         switch msg {
         case .sessionSaved:

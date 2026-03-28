@@ -19,6 +19,7 @@ struct KitchenModeView: View {
     @AppStorage("kitchenMacroPillStyleIndex") private var macroStyleIndex: Int = 0
     @State private var kitchenPillExpanded: Bool = false
     @State private var pillPressing: Bool = false
+    @State private var showJumpToTop: Bool = false
 
     let onDismiss: () -> Void
 
@@ -36,7 +37,7 @@ struct KitchenModeView: View {
                 mainContent
             }
         }
-        .background(Color.appBackground)
+        .background(Color.appBackground.ignoresSafeArea())
         .task {
             await vm.startSession()
         }
@@ -147,8 +148,8 @@ struct KitchenModeView: View {
     // MARK: - Normal Mode Content (no camera)
 
     private var normalModeContent: some View {
-        cardList(topPadding: Spacing.sm, emptyIcon: "mic",
-                 emptyText: "Start speaking to log food.\nTry: \"200 grams of chicken breast\"")
+        cardScrollView(emptyIcon: "mic",
+                       emptyText: "Start speaking to log food.\nTry: \"200 grams of chicken breast\"")
     }
 
     // MARK: - Barcode Mode Content (camera + sheet)
@@ -254,6 +255,7 @@ struct KitchenModeView: View {
                 Spacer()
 
                 inlineMacroPill
+                    .environment(\.colorScheme, .dark)
                     .padding(.horizontal, Spacing.sm)
                     .padding(.vertical, Spacing.xs)
                     .background(Color.black.opacity(0.55))
@@ -310,11 +312,12 @@ struct KitchenModeView: View {
 
     // MARK: - Shared Card Builder
 
-    private func draftCard(item: DraftItem) -> some View {
+    private func draftCard(item: DraftItem, heroMinHeight: CGFloat? = nil) -> some View {
         DraftMealCard(
             item: item,
-            isActive: item.id == vm.activeId,
+            isHero: item.id == vm.heroId,
             isEditing: item.id == vm.editingItemId,
+            heroMinHeight: heroMinHeight,
             scaleReading: vm.isScaleConnected ? vm.scaleReading : nil,
             scaleSkipped: vm.scaleSkippedIds.contains(item.id),
             onSendTranscript: { text in
@@ -347,81 +350,108 @@ struct KitchenModeView: View {
             },
             onScaleSkip: {
                 vm.scaleSkippedIds.insert(item.id)
+            },
+            onTapToExpand: {
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                    vm.expandItem(item.id)
+                }
             }
         )
     }
 
-    // MARK: - Card List (normal mode — uses List for swipe actions)
+    // MARK: - Card Scroll View
 
-    private func cardList(topPadding: CGFloat, emptyIcon: String, emptyText: String) -> some View {
-        ScrollViewReader { proxy in
-            List {
-                // Scale card — always shown when scale is active
-                if vm.scaleState != .idle {
-                    KitchenScaleCard(
-                        connectionState: vm.scaleState,
-                        reading: vm.scaleReading,
-                        onConnect: { vm.connectScale() },
-                        onDisconnect: { vm.disconnectScale() },
-                        onCancelScan: { vm.cancelScaleScan() },
-                        onSimulate: { vm.simulateScale() }
-                    )
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(
-                        top: Spacing.xs, leading: Spacing.lg,
-                        bottom: Spacing.sm, trailing: Spacing.lg))
-                }
+    private func cardScrollView(emptyIcon: String, emptyText: String) -> some View {
+        GeometryReader { geo in
+            let heroHeight = geo.size.height * 0.4
 
-                if vm.items.isEmpty {
-                    VStack(spacing: Spacing.md) {
-                        Image(systemName: emptyIcon)
-                            .font(.system(size: 48))
-                            .foregroundStyle(Color.appTextTertiary)
+            ZStack(alignment: .bottomTrailing) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: Spacing.md) {
+                            // Scale card
+                            if vm.scaleState != .idle {
+                                KitchenScaleCard(
+                                    connectionState: vm.scaleState,
+                                    reading: vm.scaleReading,
+                                    onConnect: { vm.connectScale() },
+                                    onDisconnect: { vm.disconnectScale() },
+                                    onCancelScan: { vm.cancelScaleScan() },
+                                    onSimulate: { vm.simulateScale() }
+                                )
+                            }
 
-                        Text(emptyText)
-                            .font(.appBody)
-                            .tracking(Typography.Tracking.body)
-                            .foregroundStyle(Color.appTextSecondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding(.horizontal, Spacing.xl)
-                    .padding(.vertical, Spacing.xxxl)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(
-                        top: Spacing.xxxl, leading: Spacing.xl,
-                        bottom: Spacing.xxxl, trailing: Spacing.xl))
-                } else {
-                    ForEach(vm.reversedItems, id: \.id) { item in
-                        draftCard(item: item)
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(
-                                top: Spacing.xs, leading: Spacing.lg,
-                                bottom: Spacing.xs, trailing: Spacing.lg))
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                if item.state == .normal && item.id != vm.editingItemId {
-                                    Button(role: .destructive) {
-                                        vm.touchRemoveItem(itemId: item.id)
-                                    } label: {
-                                        Label("Remove", systemImage: "trash")
-                                    }
+                            if vm.items.isEmpty {
+                                VStack(spacing: Spacing.md) {
+                                    Image(systemName: emptyIcon)
+                                        .font(.system(size: 48))
+                                        .foregroundStyle(Color.appTextTertiary)
+
+                                    Text(emptyText)
+                                        .font(.system(size: 15))
+                                        .foregroundStyle(Color.appTextSecondary)
+                                        .multilineTextAlignment(.center)
+                                }
+                                .padding(.horizontal, Spacing.xl)
+                                .padding(.vertical, Spacing.xxxl)
+                            } else {
+                                ForEach(vm.reversedItems, id: \.id) { item in
+                                    draftCard(item: item, heroMinHeight: heroHeight)
+                                        .id(item.id)
                                 }
                             }
+                        }
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.vertical, Spacing.md)
+                        .background(GeometryReader { inner in
+                            Color.clear.preference(
+                                key: ScrollOffsetKey.self,
+                                value: inner.frame(in: .named("kitchenScroll")).minY
+                            )
+                        })
                     }
-                }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .scrollIndicators(.hidden)
-            .scrollDismissesKeyboard(.interactively)
-            .contentMargins(.top, topPadding, for: .scrollContent)
-            .contentMargins(.bottom, Spacing.lg, for: .scrollContent)
-            .onChange(of: vm.items.count) { _, _ in
-                if let firstId = vm.reversedItems.first?.id {
-                    withAnimation {
-                        proxy.scrollTo(firstId, anchor: .top)
+                    .coordinateSpace(name: "kitchenScroll")
+                    .scrollIndicators(.hidden)
+                    .scrollDismissesKeyboard(.interactively)
+                    .onPreferenceChange(ScrollOffsetKey.self) { offset in
+                        let shouldShow = offset < -100
+                        if shouldShow != showJumpToTop {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                showJumpToTop = shouldShow
+                            }
+                        }
+                    }
+                    .onChange(of: vm.items.count) { _, _ in
+                        if let firstId = vm.reversedItems.first?.id {
+                            withAnimation {
+                                proxy.scrollTo(firstId, anchor: .top)
+                            }
+                        }
+                    }
+
+                    // Jump-to-top button (needs proxy in scope)
+                    if showJumpToTop {
+                        VStack {
+                            Spacer()
+                            HStack {
+                                Spacer()
+                                Button {
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                        proxy.scrollTo(vm.reversedItems.first?.id, anchor: .top)
+                                    }
+                                } label: {
+                                    Image(systemName: "arrow.up")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                        .frame(width: 40, height: 40)
+                                        .background(.ultraThinMaterial)
+                                        .clipShape(Circle())
+                                        .overlay(Circle().stroke(KitchenTheme.cardBorder, lineWidth: 1))
+                                }
+                                .padding(Spacing.lg)
+                            }
+                        }
+                        .transition(.scale.combined(with: .opacity))
                     }
                 }
             }
@@ -584,11 +614,11 @@ struct KitchenModeView: View {
             }
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, Spacing.sm)
-            .background(Color.appSurfaceSecondary)
+            .background(.ultraThinMaterial)
             .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
             .overlay(
                 RoundedRectangle(cornerRadius: BorderRadius.md)
-                    .stroke(Color.appBorder, lineWidth: 0.5)
+                    .stroke(KitchenTheme.cardBorder, lineWidth: 0.5)
             )
         } else if vm.textDisplayMode == .captions {
             HStack {
@@ -611,7 +641,7 @@ struct KitchenModeView: View {
             }
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, Spacing.sm)
-            .background(Color.appSurfaceSecondary)
+            .background(.ultraThinMaterial)
             .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
         }
     }
@@ -753,6 +783,15 @@ struct KitchenModeView: View {
         } else {
             showCancelAlert = true
         }
+    }
+}
+
+// MARK: - ScrollOffsetKey
+
+private struct ScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 

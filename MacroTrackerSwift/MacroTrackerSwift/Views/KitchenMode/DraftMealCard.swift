@@ -2,17 +2,22 @@ import SwiftUI
 
 // MARK: - DraftMealCard
 
-/// Kitchen Mode draft food card with states: normal, pending, disambiguate, choice, creating.
-/// Port of mobile/components/DraftMealCard.tsx (simplified for Gemini Live).
+/// Kitchen Mode draft food card — dark glassmorphic design.
+///
+/// Two visual modes:
+/// - **Hero**: Large card with giant macro dashboard (one at a time)
+/// - **Compact**: Condensed 2-line card for previous entries
 ///
 /// Animations:
 /// - Entry: slide-up (20pt) + fade-in
 /// - Flash: macro values spring-scale to 1.25x on change
-/// - Pulse: opacity oscillates on disambiguate state
+/// - Pulse: opacity oscillates on disambiguate/choice/creating states
+/// - Expand/collapse: spring animation when switching hero ↔ compact
 struct DraftMealCard: View {
     let item: DraftItem
-    let isActive: Bool
+    let isHero: Bool
     let isEditing: Bool
+    var heroMinHeight: CGFloat? = nil
 
     // Scale integration
     var scaleReading: ScaleReading? = nil
@@ -27,6 +32,7 @@ struct DraftMealCard: View {
     var onEditPreview: ((Double) -> Void)? = nil
     var onScaleConfirm: ((Double, String) -> Void)? = nil
     var onScaleSkip: (() -> Void)? = nil
+    var onTapToExpand: (() -> Void)? = nil
 
     // MARK: - Animation State
 
@@ -77,35 +83,24 @@ struct DraftMealCard: View {
     // MARK: - Derived
 
     private var isCompact: Bool {
-        !isActive && !isEditing && item.state == .normal
+        !isHero && !isEditing && item.state == .normal
     }
 
-    private var borderColor: Color {
-        if isEditing { return .appTint }
-        switch item.state {
-        case .disambiguate: return .appTint
-        case .choice:       return .appWarning
-        case .creating:     return .appTint
-        case .pending:      return .appBorder
-        default:            return .appBorder
-        }
+    /// Whether to enforce hero minimum height (only for normal state).
+    private var effectiveMinHeight: CGFloat? {
+        isHero && item.state == .normal ? heroMinHeight : nil
     }
 
     // MARK: - Body
 
     var body: some View {
         cardContent
-            .padding(isCompact ? Spacing.md : Spacing.lg)
-            .background(Color.appSurface)
-            .clipShape(RoundedRectangle(cornerRadius: BorderRadius.lg))
-            .overlay(
-                RoundedRectangle(cornerRadius: BorderRadius.lg)
-                    .stroke(borderColor, lineWidth: 1.5)
-            )
+            .glassCard(isHero: isHero)
+            .frame(minHeight: effectiveMinHeight)
             .opacity(entryOpacity * pulseOpacity)
             .offset(y: entryOffset)
+            .animation(.spring(response: 0.45, dampingFraction: 0.85), value: isHero)
             .onAppear {
-                // Entry animation: slide up + fade in
                 withAnimation(.easeOut(duration: 0.28)) {
                     entryOpacity = 1
                 }
@@ -115,7 +110,6 @@ struct DraftMealCard: View {
             }
             .onChange(of: item.state) { oldState, newState in
                 startPulseIfNeeded(newState)
-                // Only collapse editing if state actually changed (not echoes).
                 if isEditing && oldState != newState {
                     onEndEdit?()
                 }
@@ -149,30 +143,24 @@ struct DraftMealCard: View {
                 prevFat = new
             }
             .task {
-                // Initialize prev values (skip flash on first render)
                 prevQuantity = item.quantity
                 prevCalories = item.calories
                 prevProtein = item.proteinG
                 prevCarbs = item.carbsG
                 prevFat = item.fatG
             }
-            // Initialize/commit edit fields when editing state changes
             .onChange(of: isEditing) { wasEditing, nowEditing in
                 if nowEditing && !isManualNutritionMode {
-                    // Init quantity edit fields
                     editQuantityText = formatNumber(item.quantity)
                     editUnit = item.unit
                     editTimeoutToken = 0
                     onEditPreview?(item.quantity)
-                    // Auto-focus the quantity field after a brief delay
-                    // (SwiftUI needs a runloop tick to lay out the TextField)
                     Task { @MainActor in
                         try? await Task.sleep(for: .milliseconds(100))
                         quantityFieldFocused = true
                     }
                 }
                 if wasEditing && !nowEditing && !isManualNutritionMode {
-                    // Auto-commit quantity edit
                     quantityFieldFocused = false
                     if let qty = Double(editQuantityText), qty > 0,
                        !editUnit.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -183,7 +171,6 @@ struct DraftMealCard: View {
                     isManualNutritionMode = false
                 }
             }
-            // Auto-timeout for quantity editing (not nutrition form)
             .task(id: editTimeoutToken) {
                 guard isEditing && !isManualNutritionMode else { return }
                 do {
@@ -194,8 +181,6 @@ struct DraftMealCard: View {
                 guard isEditing && !isManualNutritionMode else { return }
                 onEndEdit?()
             }
-            // Tap-outside-to-save: when focus leaves the quantity field,
-            // wait briefly (Menu popups may drop focus momentarily) then close.
             .onChange(of: quantityFieldFocused) { _, focused in
                 if !focused && isEditing && !isManualNutritionMode {
                     focusLossToken += 1
@@ -207,7 +192,6 @@ struct DraftMealCard: View {
                 do {
                     try await Task.sleep(for: .milliseconds(350))
                 } catch { return }
-                // If focus returned (e.g. Menu closed), don't close
                 guard !quantityFieldFocused else { return }
                 guard isEditing && !isManualNutritionMode else { return }
                 onEndEdit?()
@@ -218,7 +202,7 @@ struct DraftMealCard: View {
 
     @ViewBuilder
     private var cardContent: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
+        VStack(alignment: .leading, spacing: isHero ? Spacing.lg : Spacing.xs) {
             switch item.state {
             case .normal:
                 if isEditing {
@@ -226,7 +210,7 @@ struct DraftMealCard: View {
                 } else if isCompact {
                     compactNormalContent
                 } else {
-                    expandedNormalContent
+                    heroNormalContent
                 }
             case .pending:
                 pendingContent
@@ -241,109 +225,260 @@ struct DraftMealCard: View {
                     creatingContent
                 }
             default:
-                // Other states handled by Gemini voice — show minimal card
-                expandedNormalContent
+                heroNormalContent
             }
         }
     }
 
-    // MARK: - Expanded Normal Card (active)
+    // MARK: - Hero Normal Card
 
-    private var expandedNormalContent: some View {
-        Group {
-            // Header
+    @ViewBuilder
+    private var heroNormalContent: some View {
+        if item.state == .normal && !item.quantityConfirmed {
+            incompleteQuantityContent
+        } else {
+            confirmedHeroContent
+        }
+    }
+
+    private var confirmedHeroContent: some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            // Name + source
             HStack {
                 Text(item.name)
-                    .font(.appHeadline)
-                    .tracking(Typography.Tracking.headline)
+                    .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(Color.appText)
-                    .lineLimit(1)
+                    .lineLimit(2)
 
                 Spacer()
 
-                HStack(spacing: Spacing.xs) {
-                    if item.isAssumed == true {
-                        Text("\u{2726}assumed")
-                            .font(.appCaption2)
-                            .tracking(Typography.Tracking.caption2)
-                            .foregroundStyle(Color.appTextTertiary)
-                    }
-                    sourceIcon
-                }
+                sourceIcon
             }
 
             // Quantity
             Text("\(formatNumber(item.quantity)) \(item.unit)")
-                .font(.appSubhead)
-                .tracking(Typography.Tracking.subhead)
+                .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(Color.appTextSecondary)
                 .scaleEffect(quantityFlash)
 
-            // Scale chip — offer to apply stable scale reading
-            if let reading = scaleReading,
-               reading.stable,
-               !scaleSkipped,
-               item.state == .normal {
-                scaleConfirmChip(reading)
-                    .transition(.scale.combined(with: .opacity))
-            }
+            // Macro dashboard
+            macroDashboard(
+                cal: item.calories, protein: item.proteinG,
+                carbs: item.carbsG, fat: item.fatG
+            )
 
-            // Macro chips
-            macroRow
+            // Action bar
+            heroActionBar
         }
         .contentShape(Rectangle())
         .onTapGesture { onStartEdit?() }
     }
 
-    // MARK: - Compact Normal Card (inactive)
+    // MARK: - Macro Dashboard (Hero)
+
+    private func macroDashboard(cal: Double, protein: Double, carbs: Double, fat: Double) -> some View {
+        HStack(spacing: 0) {
+            macroDashboardColumn(value: cal, label: "Cal", color: Color.caloriesAccent, flash: caloriesFlash)
+            macroDashboardColumn(value: protein, label: "Protein", color: Color.proteinAccent, flash: proteinFlash)
+            macroDashboardColumn(value: carbs, label: "Carbs", color: Color.carbsAccent, flash: carbsFlash)
+            macroDashboardColumn(value: fat, label: "Fat", color: Color.fatAccent, flash: fatFlash)
+        }
+    }
+
+    private func macroDashboardColumn(value: Double, label: String, color: Color, flash: CGFloat = 1) -> some View {
+        VStack(spacing: 4) {
+            Text(label == "Cal" ? "\(Int(value.rounded()))" : String(format: "%.1fg", value))
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.appText)
+                .scaleEffect(flash)
+
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.appTextSecondary)
+
+            RoundedRectangle(cornerRadius: 2)
+                .fill(color)
+                .frame(height: 3)
+                .padding(.horizontal, Spacing.sm)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Hero Action Bar
+
+    private var heroActionBar: some View {
+        HStack {
+            Button {
+                onStartEdit?()
+            } label: {
+                Label("Edit", systemImage: "pencil")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.appText)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
+                    .background(KitchenTheme.fieldBackground)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(KitchenTheme.cardBorder, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                onRemove?()
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.appDestructive)
+                    .padding(Spacing.sm)
+                    .background(KitchenTheme.fieldBackground)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(KitchenTheme.cardBorder, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            if item.isAssumed == true {
+                Text("\u{2726}assumed")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.appTextTertiary)
+            }
+        }
+    }
+
+    // MARK: - Incomplete Quantity Content (needs confirmation)
+
+    private var incompleteQuantityContent: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            // Header
+            HStack {
+                Text(item.name)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Color.appText)
+                    .lineLimit(1)
+
+                Spacer()
+                sourceIcon
+            }
+
+            // Scale suggestion
+            if let reading = scaleReading, reading.stable, !scaleSkipped {
+                Button {
+                    onScaleConfirm?(reading.value, reading.unit.rawValue)
+                } label: {
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "scalemass.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.appTint)
+
+                        Text(reading.display)
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(Color.appText)
+
+                        Spacer()
+
+                        Text("Use")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, Spacing.xs)
+                            .background(Color.appTint)
+                            .clipShape(Capsule())
+                    }
+                    .padding(Spacing.sm)
+                    .background(Color.appTint.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Manual quantity entry
+            Button {
+                onStartEdit?()
+            } label: {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 12))
+                    Text("Set quantity manually")
+                        .font(.system(size: 12))
+                }
+                .foregroundStyle(Color.appTextSecondary)
+            }
+            .buttonStyle(.plain)
+
+            // Dashed macros
+            HStack(spacing: Spacing.sm) {
+                dashedMacroChip("Cal", "—")
+                dashedMacroChip("P", "—")
+                dashedMacroChip("C", "—")
+                dashedMacroChip("F", "—")
+            }
+        }
+    }
+
+    private func dashedMacroChip(_ label: String, _ value: String) -> some View {
+        HStack(spacing: 2) {
+            Text(value)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.appTextTertiary)
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.appTextTertiary)
+        }
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, 4)
+        .background(Color.appSurfaceSecondary.opacity(0.5))
+        .clipShape(Capsule())
+    }
+
+    // MARK: - Compact Normal Card (matches FoodEntryRow layout)
 
     private var compactNormalContent: some View {
-        Group {
-            // Header
-            HStack {
-                Text(item.name)
-                    .font(.appSubhead)
-                    .tracking(Typography.Tracking.subhead)
-                    .foregroundStyle(Color.appText)
-                    .lineLimit(1)
+        HStack(spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                    Text(item.name)
+                        .font(.appBody)
+                        .fontWeight(.regular)
+                        .foregroundStyle(Color.appText)
+                        .lineLimit(1)
+                        .layoutPriority(1)
 
-                Spacer()
+                    Text("\u{00B7}")
+                        .font(.appCaption1)
+                        .foregroundStyle(Color.appTextTertiary)
 
-                HStack(spacing: Spacing.xs) {
-                    if item.isAssumed == true {
-                        Text("\u{2726}assumed")
-                            .font(.appCaption2)
-                            .tracking(Typography.Tracking.caption2)
-                            .foregroundStyle(Color.appTextTertiary)
-                    }
-                    sourceIcon
+                    Text("\(formatNumber(item.quantity)) \(item.unit)")
+                        .font(.appCaption1)
+                        .foregroundStyle(Color.appTextTertiary)
+                        .lineLimit(1)
                 }
+
+                Image(systemName: FoodSourceIndicator.systemImage(for: item.source))
+                    .font(.system(size: 12))
+                    .foregroundStyle(FoodSourceIndicator.accentColor(for: item.source))
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Quantity
-            Text("\(formatNumber(item.quantity)) \(item.unit)")
-                .font(.appCaption2)
-                .tracking(Typography.Tracking.caption2)
-                .foregroundStyle(Color.appTextSecondary)
-                .scaleEffect(quantityFlash)
-
-            // Macro chips
-            macroRow
+            MacroNutrientsColumn(macros: Macros(
+                calories: item.calories,
+                proteinG: item.proteinG,
+                carbsG: item.carbsG,
+                fatG: item.fatG))
         }
+        .padding(.vertical, Spacing.md)
         .contentShape(Rectangle())
-        .onTapGesture { onStartEdit?() }
+        .onTapGesture { onTapToExpand?() }
     }
 
     // MARK: - Pending Card
 
     private var pendingContent: some View {
-        Group {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
             HStack {
                 Text(item.name)
-                    .font(.appHeadline)
-                    .tracking(Typography.Tracking.headline)
+                    .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(Color.appText)
-                    .lineLimit(1)
+                    .lineLimit(2)
 
                 Spacer()
 
@@ -352,23 +487,23 @@ struct DraftMealCard: View {
             }
 
             Text("Looking up\u{2026}")
-                .font(.appCaption1)
-                .tracking(Typography.Tracking.caption1)
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(Color.appTextSecondary)
+
+            // Placeholder dashboard
+            creatingMacroDashboard(progress: nil)
         }
     }
 
     // MARK: - Disambiguate Card
 
     private var disambiguateContent: some View {
-        Group {
-            // Header
+        VStack(alignment: .leading, spacing: Spacing.lg) {
             HStack {
                 Text(item.name)
-                    .font(.appHeadline)
-                    .tracking(Typography.Tracking.headline)
+                    .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(Color.appText)
-                    .lineLimit(1)
+                    .lineLimit(2)
 
                 Spacer()
 
@@ -378,43 +513,38 @@ struct DraftMealCard: View {
             }
 
             Text("Which one did you mean?")
-                .font(.appCaption1)
-                .tracking(Typography.Tracking.caption1)
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(Color.appTextSecondary)
 
-            // Option buttons
             if let options = item.disambiguationOptions {
-                ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-                    Button {
-                        onSendTranscript?("\(index + 1)")
-                    } label: {
-                        Text("\(index + 1). \(option.label)")
-                            .font(.appFootnote)
-                            .tracking(Typography.Tracking.footnote)
-                            .fontWeight(.semibold)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, Spacing.xs)
-                            .padding(.horizontal, Spacing.sm)
+                VStack(spacing: Spacing.sm) {
+                    ForEach(Array(options.enumerated()), id: \.offset) { index, option in
+                        Button {
+                            onSendTranscript?("\(index + 1)")
+                        } label: {
+                            Text("\(index + 1). \(option.label)")
+                                .font(.system(size: 14, weight: .semibold))
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, Spacing.sm)
+                                .padding(.horizontal, Spacing.md)
+                        }
+                        .buttonStyle(GlassButtonStyle(color: Color.appTint))
                     }
-                    .buttonStyle(ChoiceButtonStyle(color: .appTint))
-                    .padding(.top, index == 0 ? Spacing.xs : 0)
                 }
             }
         }
     }
 
-    // MARK: - Choice Card (not found — create vs USDA)
+    // MARK: - Choice Card (not found)
 
     private var choiceContent: some View {
-        Group {
-            // Header
+        VStack(alignment: .leading, spacing: Spacing.lg) {
             HStack {
                 Text(item.name)
-                    .font(.appHeadline)
-                    .tracking(Typography.Tracking.headline)
+                    .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(Color.appText)
-                    .lineLimit(1)
+                    .lineLimit(2)
 
                 Spacer()
 
@@ -424,65 +554,57 @@ struct DraftMealCard: View {
             }
 
             Text("Not found in your foods")
-                .font(.appCaption1)
-                .tracking(Typography.Tracking.caption1)
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(Color.appTextSecondary)
 
-            // Action buttons
-            VStack(spacing: Spacing.xs) {
+            VStack(spacing: Spacing.sm) {
                 Button {
                     onSendTranscript?("create it")
                 } label: {
                     Text("Create new food")
-                        .font(.appFootnote)
-                        .tracking(Typography.Tracking.footnote)
-                        .fontWeight(.semibold)
+                        .font(.system(size: 14, weight: .semibold))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, Spacing.xs)
-                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.sm)
+                        .padding(.horizontal, Spacing.md)
                 }
-                .buttonStyle(ChoiceButtonStyle(color: .appTint))
+                .buttonStyle(GlassButtonStyle(color: Color.appTint))
 
                 Button {
                     onSendTranscript?("try USDA")
                 } label: {
                     Text("Try USDA (less reliable)")
-                        .font(.appFootnote)
-                        .tracking(Typography.Tracking.footnote)
+                        .font(.system(size: 14))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, Spacing.xs)
-                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.sm)
+                        .padding(.horizontal, Spacing.md)
                 }
-                .buttonStyle(ChoiceButtonStyle(color: .appTextSecondary))
+                .buttonStyle(GlassButtonStyle(color: Color.appTextSecondary))
 
                 Button {
                     onSendTranscript?("never mind")
                 } label: {
                     Text("Never mind")
-                        .font(.appFootnote)
-                        .tracking(Typography.Tracking.footnote)
+                        .font(.system(size: 14))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, Spacing.xs)
-                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.sm)
+                        .padding(.horizontal, Spacing.md)
                 }
-                .buttonStyle(ChoiceButtonStyle(color: .appTextSecondary))
+                .buttonStyle(GlassButtonStyle(color: Color.appTextSecondary))
             }
-            .padding(.top, Spacing.xs)
         }
     }
 
-    // MARK: - Creating Card (progressive field fill)
+    // MARK: - Creating Card (progressive field fill — hero layout)
 
     private var creatingContent: some View {
         let progress = item.creatingProgress
-        return Group {
-            // Header
+        return VStack(alignment: .leading, spacing: Spacing.lg) {
+            // Name + spinner (mirrors hero header)
             HStack {
                 Text(item.name)
-                    .font(.appHeadline)
-                    .tracking(Typography.Tracking.headline)
+                    .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(Color.appText)
-                    .lineLimit(1)
+                    .lineLimit(2)
 
                 Spacer()
 
@@ -490,70 +612,82 @@ struct DraftMealCard: View {
                     .controlSize(.small)
             }
 
-            // Current field prompt
-            if let progress {
-                Text(creatingFieldLabel(progress.currentField))
-                    .font(.appCaption1)
-                    .tracking(Typography.Tracking.caption1)
-                    .foregroundStyle(Color.appTextSecondary)
-                    .transition(.opacity)
-                    .id(progress.currentField) // re-renders on field change
+            // Current field prompt + serving size
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                if let progress {
+                    Text(creatingFieldLabel(progress.currentField))
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Color.appTint)
+                        .transition(.opacity)
+                        .id(progress.currentField)
+                }
+
+                if let progress, let size = progress.servingSize, let unit = progress.servingUnit {
+                    Text("\(formatNumber(size, decimals: size.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)) \(unit)")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(Color.appTextSecondary)
+                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                }
             }
 
-            // Serving size (shows once collected)
-            if let progress, let size = progress.servingSize, let unit = progress.servingUnit {
-                Text("\(formatNumber(size, decimals: size.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)) \(unit)")
-                    .font(.appSubhead)
-                    .tracking(Typography.Tracking.subhead)
-                    .foregroundStyle(Color.appTextSecondary)
-                    .transition(.opacity.combined(with: .move(edge: .leading)))
-            }
+            // Macro dashboard — values fill in progressively, empty slots show "—"
+            creatingMacroDashboard(progress: progress)
+                .animation(.easeOut(duration: 0.25), value: progress?.calories)
+                .animation(.easeOut(duration: 0.25), value: progress?.proteinG)
+                .animation(.easeOut(duration: 0.25), value: progress?.carbsG)
+                .animation(.easeOut(duration: 0.25), value: progress?.fatG)
 
-            // Macro chips — collected values flash in; uncollected show "—"
-            HStack(spacing: Spacing.xs) {
-                if let cal = progress?.calories {
-                    MacroChip(label: "cal", value: cal, color: .caloriesAccent)
-                } else {
-                    PlaceholderChip(label: "cal", color: .caloriesAccent)
-                }
-                if let p = progress?.proteinG {
-                    MacroChip(label: "P", value: p, color: .proteinAccent)
-                } else {
-                    PlaceholderChip(label: "P", color: .proteinAccent)
-                }
-                if let c = progress?.carbsG {
-                    MacroChip(label: "C", value: c, color: .carbsAccent)
-                } else {
-                    PlaceholderChip(label: "C", color: .carbsAccent)
-                }
-                if let f = progress?.fatG {
-                    MacroChip(label: "F", value: f, color: .fatAccent)
-                } else {
-                    PlaceholderChip(label: "F", color: .fatAccent)
-                }
-            }
-            .padding(.top, 2)
-            .animation(.easeOut(duration: 0.2), value: progress?.calories)
-            .animation(.easeOut(duration: 0.2), value: progress?.proteinG)
-            .animation(.easeOut(duration: 0.2), value: progress?.carbsG)
-            .animation(.easeOut(duration: 0.2), value: progress?.fatG)
-
-            // Touch fallback — fill in nutrition manually
+            // Action bar
             Button {
                 initNutritionFormFields()
                 isManualNutritionMode = true
                 onStartEdit?()
             } label: {
-                Text("Fill in manually")
-                    .font(.appFootnote)
-                    .tracking(Typography.Tracking.footnote)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Spacing.xs)
-                    .padding(.horizontal, Spacing.sm)
+                Label("Fill in manually", systemImage: "pencil")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.appText)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
+                    .background(KitchenTheme.fieldBackground)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(KitchenTheme.cardBorder, lineWidth: 1))
             }
-            .buttonStyle(ChoiceButtonStyle(color: .appTextSecondary))
-            .padding(.top, Spacing.sm)
+            .buttonStyle(.plain)
         }
+    }
+
+    /// Macro dashboard for creating state — collected values show as numbers, uncollected as "—".
+    private func creatingMacroDashboard(progress: CreatingFoodProgress?) -> some View {
+        HStack(spacing: 0) {
+            creatingDashboardColumn(value: progress?.calories, label: "Cal", color: Color.caloriesAccent, isCal: true)
+            creatingDashboardColumn(value: progress?.proteinG, label: "Protein", color: Color.proteinAccent)
+            creatingDashboardColumn(value: progress?.carbsG, label: "Carbs", color: Color.carbsAccent)
+            creatingDashboardColumn(value: progress?.fatG, label: "Fat", color: Color.fatAccent)
+        }
+    }
+
+    private func creatingDashboardColumn(value: Double?, label: String, color: Color, isCal: Bool = false) -> some View {
+        VStack(spacing: 4) {
+            if let v = value {
+                Text(isCal ? "\(Int(v.rounded()))" : String(format: "%.1fg", v))
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.appText)
+            } else {
+                Text("—")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.appTextTertiary)
+            }
+
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.appTextSecondary)
+
+            RoundedRectangle(cornerRadius: 2)
+                .fill(value != nil ? color : color.opacity(0.25))
+                .frame(height: 3)
+                .padding(.horizontal, Spacing.sm)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func creatingFieldLabel(_ field: CreatingFoodField) -> String {
@@ -570,60 +704,7 @@ struct DraftMealCard: View {
         }
     }
 
-    // MARK: - Scale Chip
-
-    private func scaleConfirmChip(_ reading: ScaleReading) -> some View {
-        HStack(spacing: Spacing.sm) {
-            Image(systemName: "scalemass.fill")
-                .font(.system(size: 12))
-                .foregroundStyle(Color.appTint)
-
-            Text("Use \(reading.display)?")
-                .font(.appCaption1)
-                .tracking(Typography.Tracking.caption1)
-                .foregroundStyle(Color.appText)
-
-            Spacer()
-
-            // Confirm
-            Button {
-                onScaleConfirm?(reading.value, reading.unit.rawValue)
-            } label: {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(Color.appTint)
-            }
-
-            // Skip
-            Button {
-                onScaleSkip?()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(Color.appTextTertiary)
-            }
-        }
-        .padding(.horizontal, Spacing.md)
-        .padding(.vertical, Spacing.xs)
-        .background(Color.appTint.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
-    }
-
     // MARK: - Shared Sub-views
-
-    private var macroRow: some View {
-        HStack(spacing: Spacing.xs) {
-            MacroChip(label: "cal", value: item.calories, color: .caloriesAccent,
-                      flash: caloriesFlash)
-            MacroChip(label: "P", value: item.proteinG, color: .proteinAccent,
-                      flash: proteinFlash)
-            MacroChip(label: "C", value: item.carbsG, color: .carbsAccent,
-                      flash: carbsFlash)
-            MacroChip(label: "F", value: item.fatG, color: .fatAccent,
-                      flash: fatFlash)
-        }
-        .padding(.top, 2)
-    }
 
     /// Scale factor from the edited quantity relative to the item's stored quantity.
     private var editScaleFactor: Double {
@@ -633,49 +714,21 @@ struct DraftMealCard: View {
         return editQty / item.quantity
     }
 
-    /// Macro row that scales live based on the edited quantity.
-    private var liveMacroRow: some View {
-        let scale = editScaleFactor
-        return HStack(spacing: Spacing.xs) {
-            MacroChip(label: "cal", value: item.calories * scale, color: .caloriesAccent)
-            MacroChip(label: "P", value: item.proteinG * scale, color: .proteinAccent)
-            MacroChip(label: "C", value: item.carbsG * scale, color: .carbsAccent)
-            MacroChip(label: "F", value: item.fatG * scale, color: .fatAccent)
-        }
-        .padding(.top, 2)
-        .animation(.easeOut(duration: 0.15), value: editQuantityText)
-    }
-
     @ViewBuilder
     private var sourceIcon: some View {
-        let iconName: String = {
-            switch item.source {
-            case .custom:    return "person.circle"
-            case .community: return "person.2"
-            case .database:  return "exclamationmark.triangle"
-            }
-        }()
-        let iconColor: Color = {
-            switch item.source {
-            case .custom:    return .appTint
-            case .community: return .appSuccess
-            case .database:  return .appWarning
-            }
-        }()
-        Image(systemName: iconName)
+        Image(systemName: FoodSourceIndicator.systemImage(for: item.source))
             .font(.system(size: 14))
-            .foregroundStyle(iconColor)
+            .foregroundStyle(FoodSourceIndicator.accentColor(for: item.source))
     }
 
     // MARK: - Inline Quantity Editor
 
     private var inlineQuantityEditor: some View {
-        Group {
-            // Header (same as expanded normal)
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            // Header
             HStack {
                 Text(item.name)
-                    .font(.appHeadline)
-                    .tracking(Typography.Tracking.headline)
+                    .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(Color.appText)
                     .lineLimit(1)
 
@@ -684,24 +737,23 @@ struct DraftMealCard: View {
                 HStack(spacing: Spacing.xs) {
                     if item.isAssumed == true {
                         Text("\u{2726}assumed")
-                            .font(.appCaption2)
-                            .tracking(Typography.Tracking.caption2)
+                            .font(.system(size: 11))
                             .foregroundStyle(Color.appTextTertiary)
                     }
                     sourceIcon
                 }
             }
 
-            // Editable quantity + unit row
+            // Editable quantity + unit
             HStack(spacing: Spacing.sm) {
                 TextField("0", text: $editQuantityText)
                     .keyboardType(.decimalPad)
                     .focused($quantityFieldFocused)
-                    .font(.appSubhead)
-                    .tracking(Typography.Tracking.subhead)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Color.appText)
                     .padding(.horizontal, Spacing.sm)
-                    .padding(.vertical, Spacing.xs)
-                    .background(Color.gray.opacity(0.1))
+                    .padding(.vertical, Spacing.sm)
+                    .background(KitchenTheme.fieldBackground)
                     .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
                     .frame(maxWidth: 100)
                     .onChange(of: editQuantityText) { _, newVal in
@@ -721,80 +773,111 @@ struct DraftMealCard: View {
                 } label: {
                     HStack(spacing: 4) {
                         Text(editUnit)
-                            .font(.appSubhead)
-                            .tracking(Typography.Tracking.subhead)
+                            .font(.system(size: 17, weight: .medium))
                         Image(systemName: "chevron.down")
                             .font(.system(size: 10, weight: .medium))
                     }
                     .foregroundStyle(Color.appText)
                     .padding(.horizontal, Spacing.sm)
-                    .padding(.vertical, Spacing.xs)
-                    .background(Color.gray.opacity(0.1))
+                    .padding(.vertical, Spacing.sm)
+                    .background(KitchenTheme.fieldBackground)
                     .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
                 }
             }
 
-            // Macro chips (live-scaled by edited quantity)
-            liveMacroRow
+            // Live-scaled macro dashboard
+            liveMacroDashboard
 
-            // Delete button
+            // Actions
             HStack {
-                Spacer()
                 Button(role: .destructive) {
                     onRemove?()
                 } label: {
                     Label("Remove", systemImage: "trash")
-                        .font(.appFootnote)
-                        .tracking(Typography.Tracking.footnote)
+                        .font(.system(size: 14))
                 }
-                .foregroundStyle(.red)
+                .foregroundStyle(Color.appDestructive)
+
+                Spacer()
+
+                Button {
+                    onEndEdit?()
+                } label: {
+                    Text("Done")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.appText)
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.vertical, Spacing.sm)
+                        .background(Color.appTint)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
             }
         }
         .transition(.opacity)
     }
 
-    // MARK: - Inline Nutrition Form
+    /// Macro dashboard that scales live based on the edited quantity.
+    private var liveMacroDashboard: some View {
+        let scale = editScaleFactor
+        return macroDashboard(
+            cal: item.calories * scale,
+            protein: item.proteinG * scale,
+            carbs: item.carbsG * scale,
+            fat: item.fatG * scale
+        )
+        .animation(.easeOut(duration: 0.15), value: editQuantityText)
+    }
+
+    // MARK: - Inline Nutrition Form (hero layout)
 
     private var inlineNutritionForm: some View {
-        Group {
-            // Name field
-            inlineFormRow("Name") {
-                TextField("Food name", text: $editName)
-                    .font(.appSubhead)
-                    .tracking(Typography.Tracking.subhead)
-            }
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            // Name (editable, hero-sized)
+            TextField("Food name", text: $editName)
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(Color.appText)
 
             // Serving size + unit
-            inlineFormRow("Serving") {
-                HStack(spacing: Spacing.xs) {
-                    TextField("100", text: $editServingSize)
-                        .keyboardType(.decimalPad)
-                        .frame(maxWidth: 80)
-                    TextField("g", text: $editServingUnit)
-                        .frame(maxWidth: 50)
-                        .foregroundStyle(Color.appTextSecondary)
-                }
-                .font(.appSubhead)
-                .tracking(Typography.Tracking.subhead)
+            HStack(spacing: Spacing.sm) {
+                TextField("100", text: $editServingSize)
+                    .keyboardType(.decimalPad)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Color.appText)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.sm)
+                    .background(KitchenTheme.fieldBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
+                    .frame(maxWidth: 100)
+
+                TextField("g", text: $editServingUnit)
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(Color.appTextSecondary)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.sm)
+                    .background(KitchenTheme.fieldBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
+                    .frame(maxWidth: 80)
             }
 
-            // Macro fields
-            inlineNutritionRow("Cal", text: $editCalories, unit: "kcal")
-            inlineNutritionRow("Protein", text: $editProtein, unit: "g")
-            inlineNutritionRow("Carbs", text: $editCarbs, unit: "g")
-            inlineNutritionRow("Fat", text: $editFat, unit: "g")
+            // Macro dashboard with editable fields
+            nutritionFormDashboard
 
-            // Action buttons
+            // Action bar
             HStack {
                 Button(role: .destructive) {
                     onEndEdit?()
                     onRemove?()
                 } label: {
-                    Label("Delete", systemImage: "trash")
-                        .font(.appFootnote)
-                        .tracking(Typography.Tracking.footnote)
+                    Image(systemName: "trash")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.appDestructive)
+                        .padding(Spacing.sm)
+                        .background(KitchenTheme.fieldBackground)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(KitchenTheme.cardBorder, lineWidth: 1))
                 }
-                .foregroundStyle(.red)
+                .buttonStyle(.plain)
 
                 Spacer()
 
@@ -802,50 +885,50 @@ struct DraftMealCard: View {
                     submitNutritionForm()
                 } label: {
                     Label("Add Food", systemImage: "checkmark")
-                        .font(.appFootnote)
-                        .tracking(Typography.Tracking.footnote)
-                        .fontWeight(.semibold)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.vertical, Spacing.sm)
+                        .background(isNutritionFormValid ? Color.appTint : Color.appTint.opacity(0.3))
+                        .clipShape(Capsule())
                 }
-                .buttonStyle(ChoiceButtonStyle(color: .appTint))
+                .buttonStyle(.plain)
                 .disabled(!isNutritionFormValid)
             }
-            .padding(.top, Spacing.xs)
         }
         .transition(.opacity)
     }
 
-    // MARK: - Inline Form Helpers
-
-    @ViewBuilder
-    private func inlineFormRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack {
-            Text(label)
-                .font(.appCaption1)
-                .tracking(Typography.Tracking.caption1)
-                .foregroundStyle(Color.appTextSecondary)
-                .frame(width: 60, alignment: .leading)
-            content()
+    /// Editable macro dashboard for the nutrition form — mirrors the hero dashboard layout
+    /// but with text fields instead of static values.
+    private var nutritionFormDashboard: some View {
+        HStack(spacing: 0) {
+            nutritionFormColumn(label: "Cal", text: $editCalories, color: Color.caloriesAccent, unit: "kcal")
+            nutritionFormColumn(label: "Protein", text: $editProtein, color: Color.proteinAccent, unit: "g")
+            nutritionFormColumn(label: "Carbs", text: $editCarbs, color: Color.carbsAccent, unit: "g")
+            nutritionFormColumn(label: "Fat", text: $editFat, color: Color.fatAccent, unit: "g")
         }
     }
 
-    @ViewBuilder
-    private func inlineNutritionRow(_ label: String, text: Binding<String>, unit: String) -> some View {
-        HStack {
-            Text(label)
-                .font(.appCaption1)
-                .tracking(Typography.Tracking.caption1)
-                .foregroundStyle(Color.appTextSecondary)
-                .frame(width: 60, alignment: .leading)
+    private func nutritionFormColumn(label: String, text: Binding<String>, color: Color, unit: String) -> some View {
+        VStack(spacing: 4) {
             TextField("0", text: text)
                 .keyboardType(.decimalPad)
-                .font(.appSubhead)
-                .tracking(Typography.Tracking.subhead)
-                .frame(maxWidth: 80)
-            Text(unit)
-                .font(.appCaption2)
-                .tracking(Typography.Tracking.caption2)
-                .foregroundStyle(Color.appTextTertiary)
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.appText)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.appTextSecondary)
+
+            RoundedRectangle(cornerRadius: 2)
+                .fill(color)
+                .frame(height: 3)
+                .padding(.horizontal, Spacing.sm)
         }
+        .frame(maxWidth: .infinity)
     }
 
     private var isNutritionFormValid: Bool {
@@ -900,12 +983,10 @@ struct DraftMealCard: View {
 
     // MARK: - Flash Animation
 
-    /// Spring-scale to 1.25x then back to 1.0 — matches RN spring(tension:300,friction:6→8)
     private func fireFlash(_ binding: Binding<CGFloat>) {
         withAnimation(.spring(response: 0.15, dampingFraction: 0.4)) {
             binding.wrappedValue = 1.25
         }
-        // Return to 1.0 after a short delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             withAnimation(.spring(response: 0.25, dampingFraction: 0.6)) {
                 binding.wrappedValue = 1.0
@@ -940,9 +1021,9 @@ struct DraftMealCard: View {
     }
 }
 
-// MARK: - MacroChip
+// MARK: - GlassMacroChip
 
-private struct MacroChip: View {
+private struct GlassMacroChip: View {
     let label: String
     let value: Double
     let color: Color
@@ -955,9 +1036,8 @@ private struct MacroChip: View {
                 .frame(width: 5, height: 5)
 
             Text(formattedValue)
-                .font(.appCaption2)
-                .tracking(Typography.Tracking.caption2)
-                .opacity(0.85)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.appText)
         }
         .padding(.horizontal, Spacing.sm)
         .padding(.vertical, 2)
@@ -974,10 +1054,9 @@ private struct MacroChip: View {
     }
 }
 
-// MARK: - PlaceholderChip
+// MARK: - GlassPlaceholderChip
 
-/// Dash chip for macro fields not yet collected during food creation.
-private struct PlaceholderChip: View {
+private struct GlassPlaceholderChip: View {
     let label: String
     let color: Color
 
@@ -988,9 +1067,8 @@ private struct PlaceholderChip: View {
                 .frame(width: 5, height: 5)
 
             Text("— \(label)")
-                .font(.appCaption2)
-                .tracking(Typography.Tracking.caption2)
-                .opacity(0.4)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.appTextTertiary)
         }
         .padding(.horizontal, Spacing.sm)
         .padding(.vertical, 2)
@@ -999,10 +1077,10 @@ private struct PlaceholderChip: View {
     }
 }
 
-// MARK: - ChoiceButtonStyle
+// MARK: - GlassButtonStyle
 
-/// Outlined pill button matching the RN choiceButton style.
-private struct ChoiceButtonStyle: ButtonStyle {
+/// Outlined pill button for dark glassmorphic UI.
+private struct GlassButtonStyle: ButtonStyle {
     let color: Color
 
     func makeBody(configuration: Configuration) -> some View {
@@ -1012,104 +1090,133 @@ private struct ChoiceButtonStyle: ButtonStyle {
             .padding(.horizontal, Spacing.sm)
             .frame(maxWidth: .infinity)
             .background(
-                configuration.isPressed ? color : Color.clear
+                configuration.isPressed ? color.opacity(0.3) : Color.white.opacity(0.04)
             )
             .clipShape(Capsule())
             .overlay(
                 Capsule()
-                    .stroke(color, lineWidth: 1.5)
+                    .stroke(color.opacity(0.5), lineWidth: 1)
             )
     }
 }
 
 // MARK: - Preview
 
-#Preview("Normal (expanded)") {
-    DraftMealCard(
-        item: DraftItem(
-            id: "1", name: "Chicken Breast", quantity: 100, unit: "g",
-            calories: 165, proteinG: 31, carbsG: 0, fatG: 3.6,
-            source: .database, mealLabel: .lunch, state: .normal),
-        isActive: true,
-        isEditing: false
-    )
-    .padding()
+#Preview("Hero (normal)") {
+    ZStack {
+        Color.appBackground.ignoresSafeArea()
+
+        DraftMealCard(
+            item: DraftItem(
+                id: "1", name: "Chicken Breast", quantity: 150, unit: "g",
+                calories: 165, proteinG: 31, carbsG: 0, fatG: 3.6,
+                source: .database, mealLabel: .lunch, state: .normal,
+                quantityConfirmed: true),
+            isHero: true,
+            isEditing: false,
+            heroMinHeight: 300
+        )
+        .padding()
+    }
 }
 
-#Preview("Normal (compact)") {
-    DraftMealCard(
-        item: DraftItem(
-            id: "2", name: "Brown Rice", quantity: 80, unit: "g",
-            calories: 88, proteinG: 2, carbsG: 18.4, fatG: 0.7,
-            source: .custom, mealLabel: .lunch, state: .normal),
-        isActive: false,
-        isEditing: false
-    )
-    .padding()
+#Preview("Compact (normal)") {
+    ZStack {
+        Color.appBackground.ignoresSafeArea()
+
+        DraftMealCard(
+            item: DraftItem(
+                id: "2", name: "Brown Rice", quantity: 80, unit: "g",
+                calories: 88, proteinG: 2, carbsG: 18.4, fatG: 0.7,
+                source: .custom, mealLabel: .lunch, state: .normal,
+                quantityConfirmed: true),
+            isHero: false,
+            isEditing: false
+        )
+        .padding()
+    }
 }
 
-#Preview("Inline Quantity Edit") {
-    DraftMealCard(
-        item: DraftItem(
-            id: "3", name: "Chicken Breast", quantity: 100, unit: "g",
-            calories: 165, proteinG: 31, carbsG: 0, fatG: 3.6,
-            source: .database, mealLabel: .lunch, state: .normal),
-        isActive: true,
-        isEditing: true
-    )
-    .padding()
+#Preview("Hero (editing)") {
+    ZStack {
+        Color.appBackground.ignoresSafeArea()
+
+        DraftMealCard(
+            item: DraftItem(
+                id: "3", name: "Chicken Breast", quantity: 100, unit: "g",
+                calories: 165, proteinG: 31, carbsG: 0, fatG: 3.6,
+                source: .database, mealLabel: .lunch, state: .normal,
+                quantityConfirmed: true),
+            isHero: true,
+            isEditing: true,
+            heroMinHeight: 300
+        )
+        .padding()
+    }
 }
 
 #Preview("Pending") {
-    DraftMealCard(
-        item: DraftItem(
-            id: "3", name: "Salmon", quantity: 1, unit: "servings",
-            calories: 0, proteinG: 0, carbsG: 0, fatG: 0,
-            source: .database, mealLabel: .dinner, state: .pending),
-        isActive: true,
-        isEditing: false
-    )
-    .padding()
+    ZStack {
+        Color.appBackground.ignoresSafeArea()
+
+        DraftMealCard(
+            item: DraftItem(
+                id: "3", name: "Salmon", quantity: 1, unit: "servings",
+                calories: 0, proteinG: 0, carbsG: 0, fatG: 0,
+                source: .database, mealLabel: .dinner, state: .pending),
+            isHero: true,
+            isEditing: false
+        )
+        .padding()
+    }
 }
 
 #Preview("Creating (mid-fill)") {
-    DraftMealCard(
-        item: DraftItem(
-            id: "5", name: "Acai Bowl", quantity: 1, unit: "servings",
-            calories: 0, proteinG: 0, carbsG: 0, fatG: 0,
-            source: .custom, mealLabel: .lunch, state: .creating,
-            creatingProgress: CreatingFoodProgress(
-                servingSize: 100, servingUnit: "g",
-                calories: 200, proteinG: nil, carbsG: nil, fatG: nil,
-                currentField: .protein)),
-        isActive: true,
-        isEditing: false
-    )
-    .padding()
+    ZStack {
+        Color.appBackground.ignoresSafeArea()
+
+        DraftMealCard(
+            item: DraftItem(
+                id: "5", name: "Acai Bowl", quantity: 1, unit: "servings",
+                calories: 0, proteinG: 0, carbsG: 0, fatG: 0,
+                source: .custom, mealLabel: .lunch, state: .creating,
+                creatingProgress: CreatingFoodProgress(
+                    servingSize: 100, servingUnit: "g",
+                    calories: 200, proteinG: nil, carbsG: nil, fatG: nil,
+                    currentField: .protein)),
+            isHero: true,
+            isEditing: false
+        )
+        .padding()
+    }
 }
 
 #Preview("Disambiguate") {
-    DraftMealCard(
-        item: DraftItem(
-            id: "4", name: "Chicken", quantity: 1, unit: "servings",
-            calories: 0, proteinG: 0, carbsG: 0, fatG: 0,
-            source: .database, mealLabel: .lunch, state: .disambiguate,
-            disambiguationOptions: [
-                DisambiguationOption(
-                    label: "Chicken breast, grilled",
-                    usdaResult: USDASearchResult(
-                        fdcId: 1, description: "Chicken breast, grilled",
-                        servingSize: 100, servingSizeUnit: "g",
-                        macros: Macros(calories: 165, proteinG: 31, carbsG: 0, fatG: 3.6))),
-                DisambiguationOption(
-                    label: "Chicken thigh, roasted",
-                    usdaResult: USDASearchResult(
-                        fdcId: 2, description: "Chicken thigh, roasted",
-                        servingSize: 100, servingSizeUnit: "g",
-                        macros: Macros(calories: 209, proteinG: 26, carbsG: 0, fatG: 10.9))),
-            ]),
-        isActive: true,
-        isEditing: false
-    )
-    .padding()
+    ZStack {
+        Color.appBackground.ignoresSafeArea()
+
+        DraftMealCard(
+            item: DraftItem(
+                id: "4", name: "Chicken", quantity: 1, unit: "servings",
+                calories: 0, proteinG: 0, carbsG: 0, fatG: 0,
+                source: .database, mealLabel: .lunch, state: .disambiguate,
+                disambiguationOptions: [
+                    DisambiguationOption(
+                        label: "Chicken breast, grilled",
+                        usdaResult: USDASearchResult(
+                            fdcId: 1, description: "Chicken breast, grilled",
+                            servingSize: 100, servingSizeUnit: "g",
+                            macros: Macros(calories: 165, proteinG: 31, carbsG: 0, fatG: 3.6))),
+                    DisambiguationOption(
+                        label: "Chicken thigh, roasted",
+                        usdaResult: USDASearchResult(
+                            fdcId: 2, description: "Chicken thigh, roasted",
+                            servingSize: 100, servingSizeUnit: "g",
+                            macros: Macros(calories: 209, proteinG: 26, carbsG: 0, fatG: 10.9))),
+                ]),
+            isHero: true,
+            isEditing: false
+        )
+        .padding()
+    }
 }
