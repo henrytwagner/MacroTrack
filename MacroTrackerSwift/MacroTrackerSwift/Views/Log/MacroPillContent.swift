@@ -117,17 +117,13 @@ struct MacroPillContent: View {
         .frame(width: clusterFrame, height: clusterFrame)
     }
 
-    // Icon 1 — 2×2 grid of ghost-track arcs (negative space = remaining)
+    // Icon 1 — 4 rings in a row, just circles with numbers
     private var icon1Arcs: some View {
-        Grid(horizontalSpacing: Spacing.sm, verticalSpacing: Spacing.sm) {
-            GridRow {
-                ghostArc(totals.calories, goals.calories, .caloriesAccent, .caloriesOverflow)
-                ghostArc(totals.proteinG, goals.proteinG, .proteinAccent,  .proteinOverflow)
-            }
-            GridRow {
-                ghostArc(totals.carbsG,   goals.carbsG,   .carbsAccent,    .carbsOverflow)
-                ghostArc(totals.fatG,     goals.fatG,     .fatAccent,      .fatOverflow)
-            }
+        HStack(spacing: Spacing.sm) {
+            compactRing(totals.calories, goals.calories, .caloriesAccent, .caloriesOverflow)
+            compactRing(totals.proteinG, goals.proteinG, .proteinAccent,  .proteinOverflow)
+            compactRing(totals.carbsG,   goals.carbsG,   .carbsAccent,    .carbsOverflow)
+            compactRing(totals.fatG,     goals.fatG,     .fatAccent,      .fatOverflow)
         }
     }
 
@@ -205,6 +201,51 @@ struct MacroPillContent: View {
                 .lineLimit(1)
         }
         .frame(alignment: .leading)
+    }
+
+    /// Ring with remaining value inside, no labels (style 1 compact).
+    @ViewBuilder
+    private func compactRing(
+        _ current: Double, _ goal: Double,
+        _ accent: Color, _ overflow: Color
+    ) -> some View {
+        let size:        CGFloat = 44
+        let sw:          CGFloat = 5
+        let progress     = goal > 0 ? current / goal : 0
+        let fillTrim     = min(progress, 1.0)
+        let overflowTrim = max(progress - 1.0, 0)
+        let remaining    = goal - current
+        let isOver       = remaining < 0
+        ZStack {
+            Circle()
+                .stroke(Color.progressTrack, lineWidth: sw)
+                .frame(width: size, height: size)
+            if fillTrim > 0 {
+                Circle()
+                    .trim(from: 0, to: fillTrim)
+                    .stroke(accent, style: StrokeStyle(lineWidth: sw, lineCap: .round))
+                    .frame(width: size, height: size)
+                    .rotationEffect(.degrees(-90))
+            }
+            if overflowTrim > 0 {
+                Circle()
+                    .trim(from: 0, to: overflowTrim)
+                    .stroke(overflow, style: StrokeStyle(lineWidth: sw, lineCap: .butt))
+                    .frame(width: size, height: size)
+                    .rotationEffect(.degrees(-90))
+                Circle()
+                    .fill(overflow)
+                    .frame(width: sw, height: sw)
+                    .offset(x: size / 2)
+                    .rotationEffect(.degrees(overflowTrim * 360 - 90))
+            }
+            Text(isOver ? "+\(Int((-remaining).rounded()))" : "\(Int(remaining.rounded()))")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(isOver ? overflow : Color.appText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .frame(width: size - sw * 2 - 4)
+        }
     }
 
     /// Ring with remaining value inside + label/status below (style 1 detailed).

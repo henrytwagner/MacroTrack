@@ -14,6 +14,7 @@ struct KitchenModeView: View {
     @State private var vm = KitchenModeViewModel()
     @State private var showCancelAlert = false
     @State private var showSaveAlert = false
+    @State private var showUnconfirmedAlert = false
 
     @AppStorage("kitchenMacroPillStyleIndex") private var macroStyleIndex: Int = 0
     @State private var kitchenPillExpanded: Bool = false
@@ -77,6 +78,33 @@ struct KitchenModeView: View {
                 Text("\(incompleteCount) item\(incompleteCount != 1 ? "s are" : " is") still being set up and won't be saved.")
             }
         }
+        .alert("Unconfirmed Quantities", isPresented: $showUnconfirmedAlert) {
+            Button("Go Back", role: .cancel) {}
+            Button("Discard Unconfirmed", role: .destructive) {
+                // Remove unconfirmed items and save
+                DraftStore.shared.items.removeAll { $0.state == .normal && !$0.quantityConfirmed }
+                if !vm.items.isEmpty {
+                    vm.save()
+                }
+            }
+        } message: {
+            let count = vm.items.filter { $0.state == .normal && !$0.quantityConfirmed }.count
+            Text("\(count) item\(count != 1 ? "s have" : " has") no confirmed quantity and won't be saved.")
+        }
+        .sheet(isPresented: $vm.showFoodSearch) {
+            FoodSearchView(
+                onDismiss: { vm.showFoodSearch = false },
+                onAddIngredient: { ingredient in
+                    vm.addLocalDraftItem(from: ingredient)
+                    vm.showFoodSearch = false
+                }
+            )
+            .environment(dailyLog)
+            .environment(goalStore)
+            .environment(dateStore)
+            .environment(DraftStore.shared)
+            .environment(MealsStore.shared)
+        }
     }
 
     // MARK: - Main Content
@@ -99,12 +127,6 @@ struct KitchenModeView: View {
                         normalModeContent
                     }
 
-                    // Floating macro pill overlay
-                    macroPillOverlay
-                        .padding(.horizontal, Spacing.md)
-                        .padding(.top, vm.barcodeModeActive ? feedHeight - 24 : Spacing.sm)
-                        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: vm.barcodeModeActive)
-
                     // Floating caption / edit row
                     if vm.textDisplayMode != .off {
                         VStack {
@@ -125,7 +147,7 @@ struct KitchenModeView: View {
     // MARK: - Normal Mode Content (no camera)
 
     private var normalModeContent: some View {
-        cardList(topPadding: 64, emptyIcon: "mic",
+        cardList(topPadding: Spacing.sm, emptyIcon: "mic",
                  emptyText: "Start speaking to log food.\nTry: \"200 grams of chicken breast\"")
     }
 
@@ -160,6 +182,18 @@ struct KitchenModeView: View {
 
                     // Sheet body — cards
                     VStack(spacing: Spacing.md) {
+                        // Scale card — same as normal mode
+                        if vm.scaleState != .idle {
+                            KitchenScaleCard(
+                                connectionState: vm.scaleState,
+                                reading: vm.scaleReading,
+                                onConnect: { vm.connectScale() },
+                                onDisconnect: { vm.disconnectScale() },
+                                onCancelScan: { vm.cancelScaleScan() },
+                                onSimulate: { vm.simulateScale() }
+                            )
+                        }
+
                         if vm.items.isEmpty {
                             barcodeModeEmptyState
                         } else {
@@ -177,14 +211,16 @@ struct KitchenModeView: View {
             .scrollIndicators(.hidden)
 
             // Nav overlay — must be last in ZStack so it renders above the ScrollView
-            // Double-tap anywhere in the overlay area also flips the camera
             cameraNavOverlay
-                .padding(.top, Spacing.md)
                 .padding(.horizontal, Spacing.lg)
-                .frame(height: feedHeight, alignment: .top)
+                .padding(.vertical, Spacing.md)
+                .frame(height: feedHeight)
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) {
                     vm.flipCamera()
+                }
+                .onTapGesture {
+                    // Single-tap no-op — prevents double-tap from blocking button taps
                 }
 
             // Debug barcode card — floats near bottom of camera feed
@@ -201,57 +237,73 @@ struct KitchenModeView: View {
     // MARK: - Camera Nav Overlay
 
     private var cameraNavOverlay: some View {
-        HStack {
-            // Back / Cancel
-            Button {
-                handleCancel()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(Color.black.opacity(0.35))
-                    .clipShape(Circle())
+        VStack {
+            // Top row: back / pill / save
+            HStack(alignment: .top) {
+                Button {
+                    handleCancel()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.black.opacity(0.55))
+                        .clipShape(Circle())
+                }
+
+                Spacer()
+
+                inlineMacroPill
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.xs)
+                    .background(Color.black.opacity(0.55))
+                    .clipShape(RoundedRectangle(cornerRadius: BorderRadius.lg))
+
+                Spacer()
+
+                Button {
+                    handleSave()
+                } label: {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Color.appTint)
+                        .clipShape(Capsule())
+                }
             }
 
             Spacer()
 
-            // Flash toggle (back camera only)
-            if vm.cameraFacing == .back {
-                Button {
-                    vm.toggleFlash()
-                } label: {
-                    Image(systemName: vm.flashEnabled ? "bolt.fill" : "bolt.slash")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 36, height: 36)
-                        .background(Color.black.opacity(0.35))
-                        .clipShape(Circle())
+            // Bottom right: flash + flip camera
+            HStack {
+                Spacer()
+
+                VStack(spacing: Spacing.sm) {
+                    if vm.cameraFacing == .back {
+                        Button {
+                            vm.toggleFlash()
+                        } label: {
+                            Image(systemName: vm.flashEnabled ? "bolt.fill" : "bolt.slash")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 36, height: 36)
+                                .background(Color.black.opacity(0.55))
+                                .clipShape(Circle())
+                        }
+                    }
+
+                    Button {
+                        vm.flipCamera()
+                    } label: {
+                        Image(systemName: "arrow.triangle.2.circlepath.camera")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(Color.black.opacity(0.55))
+                            .clipShape(Circle())
+                    }
                 }
-            }
-
-            // Flip camera
-            Button {
-                vm.flipCamera()
-            } label: {
-                Image(systemName: "arrow.triangle.2.circlepath.camera")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(Color.black.opacity(0.35))
-                    .clipShape(Circle())
-            }
-
-            // Save
-            Button {
-                handleSave()
-            } label: {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .background(Color.appTint)
-                    .clipShape(Capsule())
             }
         }
     }
@@ -304,6 +356,23 @@ struct KitchenModeView: View {
     private func cardList(topPadding: CGFloat, emptyIcon: String, emptyText: String) -> some View {
         ScrollViewReader { proxy in
             List {
+                // Scale card — always shown when scale is active
+                if vm.scaleState != .idle {
+                    KitchenScaleCard(
+                        connectionState: vm.scaleState,
+                        reading: vm.scaleReading,
+                        onConnect: { vm.connectScale() },
+                        onDisconnect: { vm.disconnectScale() },
+                        onCancelScan: { vm.cancelScaleScan() },
+                        onSimulate: { vm.simulateScale() }
+                    )
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(
+                        top: Spacing.xs, leading: Spacing.lg,
+                        bottom: Spacing.sm, trailing: Spacing.lg))
+                }
+
                 if vm.items.isEmpty {
                     VStack(spacing: Spacing.md) {
                         Image(systemName: emptyIcon)
@@ -324,23 +393,6 @@ struct KitchenModeView: View {
                         top: Spacing.xxxl, leading: Spacing.xl,
                         bottom: Spacing.xxxl, trailing: Spacing.xl))
                 } else {
-                    // Scale card — shown when scale is active
-                    if vm.scaleState != .idle {
-                        KitchenScaleCard(
-                            connectionState: vm.scaleState,
-                            reading: vm.scaleReading,
-                            onConnect: { vm.connectScale() },
-                            onDisconnect: { vm.disconnectScale() },
-                            onCancelScan: { vm.cancelScaleScan() },
-                            onSimulate: { vm.simulateScale() }
-                        )
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(
-                            top: Spacing.xs, leading: Spacing.lg,
-                            bottom: Spacing.sm, trailing: Spacing.lg))
-                    }
-
                     ForEach(vm.reversedItems, id: \.id) { item in
                         draftCard(item: item)
                             .listRowBackground(Color.clear)
@@ -379,7 +431,7 @@ struct KitchenModeView: View {
     // MARK: - Top Bar
 
     private var topBar: some View {
-        HStack {
+        HStack(alignment: .top) {
             // Back / Cancel
             Button {
                 handleCancel()
@@ -392,13 +444,9 @@ struct KitchenModeView: View {
 
             Spacer()
 
-            // Title
+            // Inline macro preview (replaces title)
             VStack(spacing: 2) {
-                Text("Kitchen Mode")
-                    .font(.appTitle3)
-                    .tracking(Typography.Tracking.title3)
-                    .foregroundStyle(Color.appText)
-
+                inlineMacroPill
                 if let dateLabel = vm.dateLabel {
                     Text(dateLabel)
                         .font(.appFootnote)
@@ -423,25 +471,19 @@ struct KitchenModeView: View {
             .frame(width: 44, height: 44)
         }
         .padding(.horizontal, Spacing.lg)
-        .padding(.vertical, Spacing.md)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.appBorder)
-                .frame(height: 0.5)
-        }
+        .padding(.vertical, Spacing.sm)
     }
 
-    // MARK: - Macro Pill Overlay
+    // MARK: - Inline Macro Pill
 
-    private var macroPillOverlay: some View {
+    private var inlineMacroPill: some View {
         let goals: DailyGoal? = goalStore.goalsByDate[dateStore.selectedDate] ?? nil
         let totals = vm.liveProjectedTotals
-        let radius: CGFloat = 20
 
         return ZStack {
             if kitchenPillExpanded {
                 if let g = goals {
-                    MacroPillContent(totals: totals, goals: g, styleIndex: macroStyleIndex, isIcon: true)
+                    MacroPillContent(totals: totals, goals: g, styleIndex: macroStyleIndex, isIcon: false)
                         .transition(.asymmetric(
                             insertion: .opacity.combined(with: .scale(scale: 0.88)),
                             removal:   .opacity.combined(with: .scale(scale: 0.88))
@@ -449,7 +491,7 @@ struct KitchenModeView: View {
                 }
             } else {
                 if let g = goals {
-                    MacroPillContent(totals: totals, goals: g, styleIndex: macroStyleIndex, isIcon: false)
+                    MacroPillContent(totals: totals, goals: g, styleIndex: macroStyleIndex, isIcon: true)
                         .transition(.asymmetric(
                             insertion: .opacity.combined(with: .scale(scale: 0.88)),
                             removal:   .opacity.combined(with: .scale(scale: 0.88))
@@ -460,15 +502,11 @@ struct KitchenModeView: View {
                 }
             }
         }
-        .padding(.horizontal, kitchenPillExpanded ? Spacing.lg : Spacing.md)
-        .padding(.vertical, kitchenPillExpanded ? Spacing.md : Spacing.sm)
-        .background(Color.appSurface)
-        .clipShape(RoundedRectangle(cornerRadius: radius))
-        .overlay(RoundedRectangle(cornerRadius: radius).stroke(Color.appBorder, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 1)
+        .fixedSize()
+        .animation(.spring(response: 0.4, dampingFraction: 0.82), value: kitchenPillExpanded)
         .scaleEffect(pillPressing ? 0.97 : 1.0, anchor: .center)
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: pillPressing)
-        .contentShape(RoundedRectangle(cornerRadius: radius))
+        .contentShape(Rectangle())
         .onTapGesture {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
@@ -582,13 +620,13 @@ struct KitchenModeView: View {
 
     private var bottomBar: some View {
         HStack {
-            // Text toggle
+            // Voice toggle
             Button {
-                vm.toggleCaptions()
+                vm.toggleVoice()
             } label: {
-                Image(systemName: "text.alignleft")
+                Image(systemName: vm.audioActive ? "mic.fill" : "mic.slash")
                     .font(.system(size: 22))
-                    .foregroundStyle(vm.textDisplayMode != .off ? Color.appTint : Color.appTextSecondary)
+                    .foregroundStyle(vm.audioActive ? Color.appTint : Color.appTextSecondary)
             }
             .frame(width: 44, height: 44)
 
@@ -604,11 +642,13 @@ struct KitchenModeView: View {
 
             Spacer()
 
-            // Listening indicator — center
-            ListeningIndicator(
-                state: vm.listeningState,
-                onPress: { vm.togglePause() }
-            )
+            // Listening indicator — center (only when voice is active)
+            if vm.audioActive {
+                ListeningIndicator(
+                    state: vm.listeningState,
+                    onPress: { vm.togglePause() }
+                )
+            }
 
             Spacer()
 
@@ -629,10 +669,9 @@ struct KitchenModeView: View {
             }
             .frame(width: 44, height: 44)
 
-            // Add food (manual)
+            // Add food (manual search)
             Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                // Could present FoodSearchView, but for now just a stub
+                vm.showFoodSearch = true
             } label: {
                 Image(systemName: "plus.circle")
                     .font(.system(size: 22))
@@ -693,10 +732,14 @@ struct KitchenModeView: View {
     private func handleSave() {
         guard case .active = vm.sessionState else { return }
         let incompleteItems = vm.items.filter { $0.state != .normal }
-        if incompleteItems.isEmpty {
-            vm.save()
-        } else {
+        let unconfirmedItems = vm.items.filter { $0.state == .normal && !$0.quantityConfirmed }
+
+        if !unconfirmedItems.isEmpty {
+            showUnconfirmedAlert = true
+        } else if !incompleteItems.isEmpty {
             showSaveAlert = true
+        } else {
+            vm.save()
         }
     }
 
