@@ -808,13 +808,19 @@ struct KitchenModeView: View {
 
             Spacer()
 
-            // Scale — tap to open connection sheet
+            // Scale — tap to toggle, long press for connection settings
             Image(systemName: vm.isScaleConnected ? "scalemass.fill" : "scalemass")
                 .font(.system(size: 22))
                 .foregroundStyle(vm.scaleState.isActive ? Color.appTint : Color.appTextSecondary)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
-                .onTapGesture { vm.showScaleSettings = true }
+                .onTapGesture { vm.toggleScale() }
+                .contextMenu {
+                    Button { vm.showScaleSettings = true } label: {
+                        Label("Scale Connection (Coming Soon)", systemImage: "antenna.radiowaves.left.and.right")
+                    }
+                    .disabled(true)
+                }
 
             // Add food (manual search)
             Button {
