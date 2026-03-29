@@ -23,7 +23,7 @@ function createClient(): { prisma: PrismaClient; pool: pg.Pool } {
     const parsed = new URL(url);
     const host = parsed.hostname;
     const port = parsed.port;
-    console.log(`[DB] Connecting to ${host}:${port}${parsed.pathname} (ssl: false)`);
+    console.log(`[DB] Connecting to ${host}:${port}${parsed.pathname} (ssl: true)`);
 
     // DNS lookup diagnostic
     import("dns").then(dns => {
@@ -38,7 +38,7 @@ function createClient(): { prisma: PrismaClient; pool: pg.Pool } {
 
   const pool = new pg.Pool({
     connectionString: url,
-    ssl: false,
+    ssl: { rejectUnauthorized: false },
     connectionTimeoutMillis: 10000,
   });
 
