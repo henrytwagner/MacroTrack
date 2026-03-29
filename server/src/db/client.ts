@@ -23,7 +23,8 @@ function createClient(): { prisma: PrismaClient; pool: pg.Pool } {
     const parsed = new URL(url);
     const host = parsed.hostname;
     const port = parsed.port;
-    console.log(`[DB] Connecting to ${host}:${port}${parsed.pathname} (ssl: true)`);
+    const usesSsl = !host.endsWith(".railway.internal");
+    console.log(`[DB] Connecting to ${host}:${port}${parsed.pathname} (ssl: ${usesSsl})`);
 
     // DNS lookup diagnostic
     import("dns").then(dns => {
@@ -36,9 +37,17 @@ function createClient(): { prisma: PrismaClient; pool: pg.Pool } {
     console.log(`[DB] DATABASE_URL is not a valid URL: ${url.substring(0, 30)}...`);
   }
 
+  // Railway private networking (*.railway.internal) is raw TCP — no TLS.
+  // Public proxies (*.proxy.rlwy.net) require SSL.
+  const parsed2 = new URL(url);
+  const isPrivateNetwork = parsed2.hostname.endsWith(".railway.internal");
+  const sslConfig = isPrivateNetwork ? false : { rejectUnauthorized: false };
+
+  console.log(`[DB] SSL: ${isPrivateNetwork ? "disabled (private network)" : "enabled"}`);
+
   const pool = new pg.Pool({
     connectionString: url,
-    ssl: { rejectUnauthorized: false },
+    ssl: sslConfig,
     connectionTimeoutMillis: 10000,
   });
 
