@@ -1,7 +1,11 @@
 import "dotenv/config";
+import dns from "dns";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
+
+// Railway private networking resolves to IPv6 which Docker can't route — force IPv4
+dns.setDefaultResultOrder("ipv4first");
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
