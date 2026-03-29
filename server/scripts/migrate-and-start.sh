@@ -4,6 +4,12 @@ set -e
 MAX_RETRIES=10
 RETRY_INTERVAL=5
 
+# Prefer public URL so migrations work without Railway private networking
+if [ -n "$DATABASE_PUBLIC_URL" ]; then
+  export DATABASE_URL="$DATABASE_PUBLIC_URL"
+  echo "Using DATABASE_PUBLIC_URL for migrations."
+fi
+
 echo "Running database migrations..."
 for i in $(seq 1 $MAX_RETRIES); do
   if npx prisma migrate deploy --schema=src/db/prisma/schema.prisma; then
