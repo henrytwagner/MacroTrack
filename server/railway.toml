@@ -1,0 +1,7 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "bash scripts/migrate-and-start.sh"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
