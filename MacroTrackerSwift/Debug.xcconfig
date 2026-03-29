@@ -1,4 +1,4 @@
 //API_HOST = 192.168.1.63:3000
-API_HOST = backend-production-f8937.up.railway.app
-API_SCHEME = http
+API_HOST = backend-dev-37a1.up.railway.app
+API_SCHEME = https
 
