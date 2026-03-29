@@ -17,7 +17,17 @@ function createClient(): { prisma: PrismaClient; pool: pg.Pool } {
   // Log masked URL for debugging connectivity
   try {
     const parsed = new URL(url);
-    console.log(`[DB] Connecting to ${parsed.hostname}:${parsed.port}${parsed.pathname} (ssl: false)`);
+    const host = parsed.hostname;
+    const port = parsed.port;
+    console.log(`[DB] Connecting to ${host}:${port}${parsed.pathname} (ssl: false)`);
+
+    // DNS lookup diagnostic
+    import("dns").then(dns => {
+      dns.lookup(host, (err, address) => {
+        if (err) console.error(`[DB] DNS lookup FAILED for ${host}: ${err.message}`);
+        else console.log(`[DB] DNS resolved ${host} → ${address}`);
+      });
+    });
   } catch {
     console.log(`[DB] DATABASE_URL is not a valid URL: ${url.substring(0, 30)}...`);
   }
@@ -25,6 +35,7 @@ function createClient(): { prisma: PrismaClient; pool: pg.Pool } {
   const pool = new pg.Pool({
     connectionString: url,
     ssl: false,
+    connectionTimeoutMillis: 10000,
   });
 
   // Test the connection on startup
