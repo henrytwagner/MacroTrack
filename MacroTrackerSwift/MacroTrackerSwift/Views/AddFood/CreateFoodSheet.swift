@@ -9,18 +9,21 @@ struct CreateFoodSheet: View {
     let onSaved:   ((CustomFood?) -> Void)?
     let onDismiss: () -> Void
 
-    @State private var vm:          CreateFoodViewModel
+    @State private var vm:                 CreateFoodViewModel
     @State private var showOptional:       Bool = false
     @State private var showBarcode:        Bool = false
     @State private var showBarcodePreview: Bool = false
+    @State private var showLabelScanner:   Bool = false
+    @State private var showPrefillBanner:  Bool = false
 
     init(mode: CreateFoodMode,
+         vm: CreateFoodViewModel? = nil,
          onSaved: ((CustomFood?) -> Void)? = nil,
          onDismiss: @escaping () -> Void) {
         self.mode      = mode
         self.onSaved   = onSaved
         self.onDismiss = onDismiss
-        _vm = State(initialValue: CreateFoodViewModel(mode: mode))
+        _vm = State(initialValue: vm ?? CreateFoodViewModel(mode: mode))
     }
 
     var body: some View {
@@ -79,10 +82,44 @@ struct CreateFoodSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onDismiss() }
                 }
+                // Scan Label button — only for new food creation
+                if case .new = mode {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            showLabelScanner = true
+                        } label: {
+                            Label("Scan Label", systemImage: "text.viewfinder")
+                                .labelStyle(.iconOnly)
+                        }
+                        .tint(formAccent)
+                    }
+                }
             }
+            .overlay(alignment: .top) {
+                if showPrefillBanner {
+                    prefillBanner
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .zIndex(20)
+                }
+            }
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showPrefillBanner)
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .fullScreenCover(isPresented: $showLabelScanner) {
+            LabelCameraOverlay(
+                onScanned: { parsed in
+                    showLabelScanner = false
+                    vm.prefill(from: parsed)
+                    showPrefillBanner = true
+                    Task {
+                        try? await Task.sleep(for: .seconds(3))
+                        showPrefillBanner = false
+                    }
+                },
+                onDismiss: { showLabelScanner = false })
+        }
         .fullScreenCover(isPresented: $showBarcode) {
             BarcodeScannerOverlay(
                 onScanned: { gtin in
@@ -374,6 +411,25 @@ struct CreateFoodSheet: View {
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.sm)
         .background(Color.appSurface.ignoresSafeArea())
+    }
+
+    // MARK: - Prefill Banner
+
+    private var prefillBanner: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(Color.appSuccess)
+            Text("Label scanned — review and save")
+                .font(.appSubhead)
+                .foregroundStyle(Color.appText)
+            Spacer()
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(Color.appSurface.shadow(.drop(radius: 4, y: 2)))
+        .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
+        .padding(.horizontal, Spacing.lg)
+        .padding(.top, Spacing.sm)
     }
 
     // MARK: - Helpers

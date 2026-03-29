@@ -74,6 +74,7 @@ function mapFoodToResult(food: USDASearchFood): USDASearchResult {
     fdcId: food.fdcId,
     description: food.description,
     brandName: food.brandOwner ?? food.brandName,
+    dataType: food.dataType,
     servingSize: food.servingSize,
     servingSizeUnit: food.servingSizeUnit,
     macros,
@@ -124,6 +125,74 @@ export async function searchFoods(query: string): Promise<USDASearchResult[]> {
   } catch (error: unknown) {
     if (error instanceof DOMException && error.name === "AbortError") {
       console.error("USDA API request timed out");
+      return [];
+    }
+    console.error("USDA API error:", error);
+    return [];
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Enhanced search with configurable options (used by foodSearchPipeline)
+// ---------------------------------------------------------------------------
+
+export interface USDASearchOptions {
+  dataTypes?: string[];
+  pageSize?: number;
+  timeoutMs?: number;
+}
+
+export async function searchFoodsEnhanced(
+  query: string,
+  options: USDASearchOptions = {},
+): Promise<USDASearchResult[]> {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
+
+  let apiKey: string;
+  try {
+    apiKey = getApiKey();
+  } catch {
+    console.warn("USDA search skipped: API key not configured");
+    return [];
+  }
+
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${USDA_BASE_URL}/foods/search?api_key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: trimmed,
+        pageSize: options.pageSize ?? MAX_RESULTS,
+        pageNumber: 1,
+        dataType: options.dataTypes ?? ["Foundation", "SR Legacy", "Survey (FNDDS)", "Branded"],
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`USDA API returned ${response.status}: ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as USDASearchResponse;
+    if (!data.foods || !Array.isArray(data.foods)) return [];
+
+    return data.foods
+      .map(mapFoodToResult)
+      .filter((r) => {
+        // Filter out junk entries with no meaningful macro data
+        const m = r.macros;
+        return m.calories > 0 || m.proteinG > 0 || m.carbsG > 0 || m.fatG > 0;
+      });
+  } catch (error: unknown) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      console.error(`USDA API request timed out (${timeoutMs}ms)`);
       return [];
     }
     console.error("USDA API error:", error);

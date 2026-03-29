@@ -1,2 +1,2 @@
-API_HOST = api.macrotrack.app
+API_HOST = backend-production-f8937.up.railway.app
 API_SCHEME = https

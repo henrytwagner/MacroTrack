@@ -21,6 +21,8 @@ struct KitchenModeView: View {
     @State private var pillPressing: Bool = false
     @State private var showJumpToTop: Bool = false
     @State private var cameraControlsVisible: Bool = true
+    @State private var showCameraProcessingDebug: Bool = false
+    @State private var cameraProcessingStartTime: Date? = nil
 
     let onDismiss: () -> Void
 
@@ -107,17 +109,29 @@ struct KitchenModeView: View {
         }
         .sheet(isPresented: $vm.showFoodSearch) {
             FoodSearchView(
-                onDismiss: { vm.showFoodSearch = false },
+                onDismiss: {
+                    vm.pendingSearchName = nil
+                    vm.showFoodSearch = false
+                },
                 onSelectFoodDirect: { food in
                     vm.addLocalDraftItemDirect(food: food)
+                    vm.pendingSearchName = nil
                     vm.showFoodSearch = false
-                }
+                },
+                onCreateFoodDirect: { name in
+                    vm.pendingSearchName = nil
+                    vm.createLocalDraftItem(name: name)
+                },
+                initialQuery: vm.pendingSearchName
             )
             .environment(dailyLog)
             .environment(goalStore)
             .environment(dateStore)
             .environment(DraftStore.shared)
             .environment(MealsStore.shared)
+        }
+        .sheet(isPresented: $vm.showScaleSettings) {
+            ScaleConnectionSheet()
         }
     }
 
@@ -175,9 +189,6 @@ struct KitchenModeView: View {
                 KitchenCameraPreview(session: KitchenCameraSession.shared.captureSession)
                     .frame(height: feedHeight)
                     .clipped()
-                    .onTapGesture(count: 2) {
-                        vm.flipCamera()
-                    }
             } else {
                 Color.black
                     .frame(height: feedHeight)
@@ -241,7 +252,22 @@ struct KitchenModeView: View {
                     .padding(.horizontal, Spacing.lg)
                     .padding(.vertical, Spacing.md)
                     .frame(height: feedHeight, alignment: .top)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        vm.flipCamera()
+                    }
+                    .onTapGesture(count: 1) {
+                        vm.captureAndIdentifyFood()
+                        if vm.isCameraProcessing { cameraProcessingStartTime = Date() }
+                    }
                     .transition(.opacity)
+            }
+
+            // Processing indicator — floats center of camera feed while identifying food
+            if vm.isCameraProcessing && cameraControlsVisible {
+                cameraProcessingIndicator
+                    .frame(height: feedHeight)
+                    .allowsHitTesting(true)
             }
 
             // Debug barcode card — floats near bottom of camera feed
@@ -297,7 +323,7 @@ struct KitchenModeView: View {
 
             Spacer()
 
-            // Bottom-right: flash + flip — hidden before sheet scrolls up to cover them
+            // Bottom-right: flash + flip
             HStack {
                 Spacer()
                 VStack(spacing: Spacing.sm) {
@@ -325,6 +351,41 @@ struct KitchenModeView: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - Camera Processing Indicator
+
+    private var cameraProcessingIndicator: some View {
+        VStack {
+            Spacer()
+            Button {
+                showCameraProcessingDebug = true
+            } label: {
+                HStack(spacing: Spacing.sm) {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.white)
+                        .scaleEffect(0.85)
+                    Text("Identifying food…")
+                        .font(.appSubhead)
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, Spacing.lg)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.black.opacity(0.6))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            Spacer()
+        }
+        .alert("Camera Processing", isPresented: $showCameraProcessingDebug) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            let elapsed = cameraProcessingStartTime.map {
+                String(format: "%.1fs ago", Date().timeIntervalSince($0))
+            } ?? "unknown"
+            Text("State: waiting for Gemini Live response\nPhoto sent: \(elapsed)\nExpect draft cards to appear when complete.")
         }
     }
 
@@ -378,6 +439,13 @@ struct KitchenModeView: View {
             },
             onReweigh: {
                 vm.reweighItem(itemId: item.id)
+            },
+            onSearchManually: { name in
+                vm.pendingSearchName = name
+                vm.showFoodSearch = true
+            },
+            onSelectDisambiguateOption: { option in
+                vm.selectDisambiguateOption(itemId: item.id, option: option)
             },
             onTapToExpand: {
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
@@ -696,25 +764,37 @@ struct KitchenModeView: View {
 
     private var bottomBar: some View {
         HStack {
-            // Voice toggle
-            Button {
-                vm.toggleVoice()
-            } label: {
-                Image(systemName: vm.audioActive ? "mic.fill" : "mic.slash")
-                    .font(.system(size: 22))
-                    .foregroundStyle(vm.audioActive ? Color.appTint : Color.appTextSecondary)
-            }
-            .frame(width: 44, height: 44)
+            // Voice toggle — long press for audio settings
+            Image(systemName: vm.audioActive ? "mic.fill" : "mic.slash")
+                .font(.system(size: 22))
+                .foregroundStyle(vm.audioActive ? Color.appTint : Color.appTextSecondary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                .onTapGesture { vm.toggleVoice() }
+                .contextMenu {
+                    Button {} label: {
+                        Label("Audio Feedback (Coming Soon)", systemImage: "speaker.wave.2")
+                    }
+                    .disabled(true)
+                }
 
-            // Camera toggle (barcode + future food recognition)
-            Button {
-                vm.toggleBarcodeMode()
-            } label: {
-                Image(systemName: "camera")
-                    .font(.system(size: 22))
-                    .foregroundStyle(vm.barcodeModeActive ? Color.appTint : Color.appTextSecondary)
-            }
-            .frame(width: 44, height: 44)
+            // Camera toggle — long press for camera settings
+            Image(systemName: "camera")
+                .font(.system(size: 22))
+                .foregroundStyle(vm.barcodeModeActive ? Color.appTint : Color.appTextSecondary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                .onTapGesture { vm.toggleBarcodeMode() }
+                .contextMenu {
+                    Button { vm.toggleBarcodeMode() } label: {
+                        Label("Barcode Scanning",
+                              systemImage: vm.barcodeModeActive ? "checkmark" : "barcode.viewfinder")
+                    }
+                    Button {} label: {
+                        Label("Food Identification (Coming Soon)", systemImage: "sparkles")
+                    }
+                    .disabled(true)
+                }
 
             Spacer()
 
@@ -728,15 +808,13 @@ struct KitchenModeView: View {
 
             Spacer()
 
-            // Scale toggle
-            Button {
-                vm.toggleScale()
-            } label: {
-                Image(systemName: vm.isScaleConnected ? "scalemass.fill" : "scalemass")
-                    .font(.system(size: 22))
-                    .foregroundStyle(vm.scaleState.isActive ? Color.appTint : Color.appTextSecondary)
-            }
-            .frame(width: 44, height: 44)
+            // Scale — tap to open connection sheet
+            Image(systemName: vm.isScaleConnected ? "scalemass.fill" : "scalemass")
+                .font(.system(size: 22))
+                .foregroundStyle(vm.scaleState.isActive ? Color.appTint : Color.appTextSecondary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                .onTapGesture { vm.showScaleSettings = true }
 
             // Add food (manual search)
             Button {
@@ -880,6 +958,51 @@ private struct CameraScrollTracker: UIViewRepresentable {
                 view = v.superview
             }
         }
+    }
+}
+
+// MARK: - Scale Connection Sheet
+
+@MainActor
+private struct ScaleConnectionSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: Spacing.xl) {
+            Spacer()
+
+            Image(systemName: "scalemass")
+                .font(.system(size: 48))
+                .foregroundStyle(Color.appTextSecondary)
+
+            VStack(spacing: Spacing.sm) {
+                Text("Scale Connection")
+                    .font(.appHeadline)
+                    .foregroundStyle(Color.appText)
+
+                Text("Bluetooth scale pairing is coming soon.")
+                    .font(.appBody)
+                    .foregroundStyle(Color.appTextSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, Spacing.xxl)
+            }
+
+            Spacer()
+
+            Button { dismiss() } label: {
+                Text("Done")
+                    .font(.appSubhead)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.appTint)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.md)
+            }
+            .padding(.horizontal, Spacing.xl)
+            .padding(.bottom, Spacing.lg)
+        }
+        .background(Color.appBackground.ignoresSafeArea())
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
 }
 

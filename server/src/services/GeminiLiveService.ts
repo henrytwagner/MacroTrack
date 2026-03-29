@@ -19,10 +19,15 @@
 interface GeminiSession {
   sendRealtimeInput(params: {
     audio?: { data: string; mimeType: string };
+    media?: { data: string; mimeType: string };
     audioStreamEnd?: boolean;
   }): void;
   sendClientContent(params: {
-    turns: Array<{ role: string; parts: Array<{ text: string }> }>;
+    turns: Array<{
+      role: string;
+      parts: Array<{ text?: string; inlineData?: { data: string; mimeType: string } }>;
+    }>;
+    turnComplete?: boolean;
   }): void;
   sendToolResponse(params: { functionResponses: GeminiFunctionResponse[] }): void;
   close(): void;
@@ -116,8 +121,8 @@ If the user asks something off-topic, say: "I can only help with logging food. W
     content: `1. When user mentions a food → call lookup_food() immediately, do not wait.
 2. lookup_food returns a single match → immediately call add_to_draft() with the returned food_ref, quantity (default 1 if not specified), and the serving_unit from the lookup result. Set quantity_specified=true ONLY if the user explicitly stated a quantity (e.g. "200 grams of chicken", "2 cups of rice"). Omit quantity_specified when using the default serving size. Briefly confirm. Go silent.
 3. lookup_food returns multiple matches → present options verbally (briefly), wait for user choice, then call add_to_draft() with the chosen food_ref.
-4. lookup_food returns not_found → briefly tell the user. Ask: "Would you like to create a custom food, or try the USDA database?" Wait for their answer.
-5. User says "try USDA" → call search_usda(). Handle single/multiple/not_found the same as lookup_food.`,
+4. lookup_food returns not_found → this means the food was NOT found in any database (personal, community, or USDA). Briefly tell the user. Ask: "Would you like to create a custom food, or try searching with different terms?" Wait for their answer.
+5. User says "search again" or wants to try different terms → call search_usda() with the modified search terms. Handle single/multiple/not_found the same as lookup_food.`,
   },
   {
     name: "CUSTOM FOOD CREATION FLOW",
@@ -149,6 +154,18 @@ If the user asks something off-topic, say: "I can only help with logging food. W
     content: `If you receive a [barcode] message:
 - If the barcode matched a food, call add_to_draft with the provided food_ref, quantity, and unit. Do NOT set quantity_specified — barcode defaults are not user-specified.
 - If the barcode did not match, ask the user to name the food so you can call lookup_food.`,
+  },
+  {
+    name: "CAMERA INPUT",
+    content: `If you receive a [camera] message with a food photo:
+- The image has been sent to you separately via the media stream — examine it carefully.
+- Identify ALL distinct food items visible in the image.
+- Briefly list what you see: "I can see X, Y, and Z. Should I add all of them?"
+- Wait for the user to confirm (voice or they'll tap items). Do NOT call add_to_draft until confirmed.
+- Once confirmed, for each confirmed food: call lookup_food() with the food name and estimated grams. Then call add_to_draft().
+- If depth context is provided, use it to inform gram estimates (items closer to the camera = larger portion).
+- NEVER estimate nutritional values from the image — ALWAYS use lookup_food() first.
+- If you cannot identify a food clearly, describe what you see and ask the user to name it.`,
   },
   {
     name: "DRAFT CONTEXT",
@@ -190,11 +207,18 @@ interface ToolGroup {
 const lookupFoodDecl: GeminiFunctionDeclaration = {
   name: "lookup_food",
   description:
-    "Look up a food in the database. You MUST call this before EVERY add_to_draft — no exceptions. Never call add_to_draft without first getting a food_ref from lookup_food or search_usda.",
+    "Look up a food in the database (searches personal foods, community foods, AND USDA automatically). You MUST call this before EVERY add_to_draft — no exceptions. Never call add_to_draft without first getting a food_ref from lookup_food or search_usda. " +
+    "Extract the food name in its simplest canonical form: " +
+    "1) Use singular form ('egg' not 'eggs', 'banana' not 'bananas'). " +
+    "2) Put the food noun first, modifiers after ('chicken breast grilled' not 'grilled chicken breast'). " +
+    "3) If a brand is mentioned, put the brand in the 'brand' field and keep the generic food name in 'name'. " +
+    "4) Drop filler words ('a', 'some', 'piece of', 'serving of'). " +
+    "5) Keep cooking method only if nutritionally relevant ('fried' matters, 'sliced' does not).",
   parameters: {
     type: "OBJECT",
     properties: {
-      name: { type: "STRING", description: "The food name to look up (e.g. 'chicken breast', 'brown rice')" } as object,
+      name: { type: "STRING", description: "Canonical food name (e.g. 'chicken breast', 'brown rice', 'greek yogurt')" } as object,
+      brand: { type: "STRING", description: "Brand name if the user mentioned one (e.g. 'Chobani', 'Fairlife'). Omit if generic." } as object,
       quantity: { type: "NUMBER", description: "Amount the user wants to add (optional)" } as object,
       unit: { type: "STRING", description: "Unit for the amount (g, oz, cups, servings, etc.) (optional)" } as object,
     },
@@ -205,7 +229,7 @@ const lookupFoodDecl: GeminiFunctionDeclaration = {
 const searchUsdaDecl: GeminiFunctionDeclaration = {
   name: "search_usda",
   description:
-    "Explicitly search the USDA database for a food. Only call this when the user has chosen to try USDA after lookup_food returned not_found. USDA data may be inconsistent — mention this briefly.",
+    "Re-search the USDA database with different search terms. Note: USDA is already searched automatically by lookup_food. Only call this when the user wants to retry with a different or more specific query after lookup_food returned not_found.",
   parameters: {
     type: "OBJECT",
     properties: {
@@ -490,6 +514,37 @@ export class GeminiLiveService {
       this.session.sendRealtimeInput({ audioStreamEnd: true });
     } catch (err) {
       console.error("[GeminiLive] sendAudioEnd threw:", err);
+    }
+  }
+
+  /**
+   * Send a captured JPEG photo to Gemini with an accompanying text prompt.
+   * Uses sendClientContent (ordered turn) so the image and text arrive together
+   * and Gemini processes them as one multimodal turn. sendRealtimeInput/media is
+   * for streaming video frames and has non-deterministic ordering — unsuitable
+   * for single-shot photo identification.
+   */
+  sendImageWithPrompt(base64JPEG: string, prompt: string): void {
+    if (!this.session) {
+      console.warn("[GeminiLive] sendImageWithPrompt called but session is null — dropping");
+      return;
+    }
+    console.log(`[GeminiLive] → sendImageWithPrompt, ~${Math.floor(base64JPEG.length * 0.75)} bytes`);
+    try {
+      this.session.sendClientContent({
+        turns: [
+          {
+            role: "user",
+            parts: [
+              { inlineData: { data: base64JPEG, mimeType: "image/jpeg" } },
+              { text: prompt },
+            ],
+          },
+        ],
+        turnComplete: true,
+      });
+    } catch (err) {
+      console.error("[GeminiLive] sendImageWithPrompt threw:", err);
     }
   }
 

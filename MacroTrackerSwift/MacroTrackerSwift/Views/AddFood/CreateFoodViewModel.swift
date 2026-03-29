@@ -268,6 +268,48 @@ final class CreateFoodViewModel {
         }
     }
 
+    // MARK: - Prefill from Nutrition Label
+
+    /// Populate form fields from a parsed nutrition label.
+    /// Call immediately after init with `.new(...)` mode.
+    func prefill(from label: ParsedNutritionLabel) {
+        if let n = label.name { name = n }
+        if let b = label.brandName { brandName = b }
+        servingSizeText = Self.fmt(label.servingSize.canonicalQuantity)
+        servingUnit     = label.servingSize.canonicalUnit
+        if let v = label.calories { caloriesText = Self.fmt(v) }
+        if let v = label.proteinG { proteinText  = Self.fmt(v) }
+        if let v = label.carbsG   { carbsText    = Self.fmt(v) }
+        if let v = label.fatG     { fatText      = Self.fmt(v) }
+        if let v = label.sodiumMg       { sodiumText       = Self.fmt(v) }
+        if let v = label.cholesterolMg  { cholesterolText  = Self.fmt(v) }
+        if let v = label.fiberG         { fiberText        = Self.fmt(v) }
+        if let v = label.sugarG         { sugarText        = Self.fmt(v) }
+        if let v = label.saturatedFatG  { saturatedFatText = Self.fmt(v) }
+        if let v = label.transFatG      { transFatText     = Self.fmt(v) }
+
+        // If the label listed a secondary unit (e.g. "1 cup (240mL)"), add a pending
+        // unit conversion so the user can log in that unit later.
+        //
+        // qibs semantics: 1 origUnit = qibs base servings.
+        // origQty original units = 1 base serving, therefore:
+        //   qibs = 1 / origQty
+        //
+        // Examples:
+        //   "1 cup (240mL)"  → origQty=1  → qibs=1.0  (1 cup  = 1 serving)
+        //   "2 tbsp (30g)"   → origQty=2  → qibs=0.5  (1 tbsp = 0.5 servings)
+        //   "0.5 cup (120mL)"→ origQty=0.5→ qibs=2.0  (1 cup  = 2 servings)
+        if let origQty = label.servingSize.originalQuantity,
+           let origUnit = label.servingSize.originalUnit,
+           origUnit != label.servingSize.canonicalUnit,
+           origQty > 0 {
+            let qibs = 1.0 / origQty
+            pendingConversions.append(PendingUnitConversion(
+                unitName: origUnit,
+                quantityInBaseServings: qibs))
+        }
+    }
+
     // MARK: - Helper
 
     private static func fmt(_ v: Double) -> String {

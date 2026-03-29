@@ -47,6 +47,9 @@ final class KitchenModeViewModel {
     /// Barcode mode (camera section).
     private(set) var barcodeModeActive = false
 
+    /// True while a camera photo is being identified by the server.
+    private(set) var isCameraProcessing = false
+
     /// Camera permission granted (checked on first barcode mode activation).
     private(set) var cameraPermissionGranted = false
 
@@ -80,6 +83,13 @@ final class KitchenModeViewModel {
 
     /// Whether the food search sheet is presented.
     var showFoodSearch: Bool = false
+
+    /// Whether the Scale Connection sheet is presented.
+    var showScaleSettings: Bool = false
+
+    /// Pre-fill name for FoodSearchView when bridging from a voice choice card (food not found).
+    /// Cleared whenever the search sheet is dismissed.
+    var pendingSearchName: String? = nil
 
     /// Whether there are unconfirmed items (blocks save).
     var hasUnconfirmedItems: Bool {
@@ -700,7 +710,7 @@ final class KitchenModeViewModel {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             editingItemId = nil
         }
-        if !isPaused, case .active = sessionState {
+        if audioActive, !isPaused, case .active = sessionState {
             do { try capture.start() } catch {}
         }
     }
@@ -824,14 +834,99 @@ final class KitchenModeViewModel {
             }
         }
 
-        // Auto-open inline quantity editor when voice is disabled,
+        // Always open inline quantity editor for manually-selected items,
         // unless the scale is connected and the food uses a weight unit (scale weighing takes over)
-        if !voiceEnabled && !item.scaleWeighingActive {
+        if !item.scaleWeighingActive {
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(200))
                 openInlineEdit(itemId: itemId)
             }
         }
+    }
+
+    /// User tapped a USDA disambiguation option directly (touch path, no Gemini transcript needed).
+    /// Removes the disambiguation card and adds the selected food as a local draft item.
+    func selectDisambiguateOption(itemId: String, option: DisambiguationOption) {
+        // Remove the disambiguate card
+        if let idx = draft.items.firstIndex(where: { $0.id == itemId }), draft.items[idx].isLocalItem {
+            draft.items.remove(at: idx)
+        } else {
+            ws.send(.touchRemoveItem(itemId: itemId))
+        }
+        let usda = option.usdaResult
+        let servingSize = usda.servingSize ?? 100.0
+        let servingUnit = usda.servingSizeUnit ?? "g"
+        let unitIsWeight = measurementSystem(for: servingUnit) == .weight
+        let newId = UUID().uuidString
+        var item = DraftItem(
+            id: newId,
+            name: usda.description,
+            quantity: servingSize,
+            unit: servingUnit,
+            calories: usda.macros.calories,
+            proteinG: usda.macros.proteinG,
+            carbsG: usda.macros.carbsG,
+            fatG: usda.macros.fatG,
+            source: .database,
+            usdaFdcId: usda.fdcId,
+            mealLabel: .snack,
+            state: .normal,
+            quantityConfirmed: false,
+            isLocalItem: true
+        )
+        item.baseServingSize = servingSize
+        item.baseServingUnit = servingUnit
+        item.baseMacros = usda.macros
+        item.scaleWeighingActive = unitIsWeight && isScaleConnected
+        draft.items.append(item)
+        expandedItemId = item.id
+        Task {
+            let conversions = try? await APIClient.shared.getFoodUnitConversionsForUsdaFood(usda.fdcId)
+            if let idx = draft.items.firstIndex(where: { $0.id == newId }) {
+                draft.items[idx].conversions = conversions ?? []
+            }
+        }
+        if !voiceEnabled && !item.scaleWeighingActive {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(200))
+                openInlineEdit(itemId: newId)
+            }
+        }
+    }
+
+    /// Create a new local draft item in `.creating` state with the given name pre-filled.
+    /// Used by the touch path when a user taps "Create [name]" after searching and finding
+    /// no results — bypasses CreateFoodSheet, using the inline inlineNutritionForm instead.
+    func createLocalDraftItem(name: String) {
+        let itemId = UUID().uuidString
+        var item = DraftItem(
+            id: itemId,
+            name: name,
+            quantity: 1,
+            unit: "serving",
+            calories: 0,
+            proteinG: 0,
+            carbsG: 0,
+            fatG: 0,
+            source: .custom,
+            mealLabel: .snack,
+            state: .creating,
+            quantityConfirmed: false,
+            isLocalItem: true
+        )
+        item.creatingProgress = CreatingFoodProgress(
+            servingSize: nil,
+            servingUnit: "g",
+            calories: nil,
+            proteinG: nil,
+            carbsG: nil,
+            fatG: nil,
+            brand: nil,
+            barcode: nil,
+            currentField: .servingSize
+        )
+        draft.items.append(item)
+        expandedItemId = item.id
     }
 
     /// Fetch FoodUnitConversions for a food from the server.
@@ -887,6 +982,27 @@ final class KitchenModeViewModel {
     func touchCompleteCreation(itemId: String, name: String, calories: Double,
                                 proteinG: Double, carbsG: Double, fatG: Double,
                                 servingSize: Double, servingUnit: String) {
+        // Local items were never sent to the server — complete them client-side.
+        if let idx = draft.items.firstIndex(where: { $0.id == itemId }),
+           draft.items[idx].isLocalItem {
+            draft.items[idx].name = name
+            draft.items[idx].quantity = servingSize
+            draft.items[idx].unit = servingUnit
+            draft.items[idx].calories = calories
+            draft.items[idx].proteinG = proteinG
+            draft.items[idx].carbsG = carbsG
+            draft.items[idx].fatG = fatG
+            draft.items[idx].state = .normal
+            draft.items[idx].creatingProgress = nil
+            draft.items[idx].quantityConfirmed = false
+            draft.items[idx].baseServingSize = servingSize
+            draft.items[idx].baseServingUnit = servingUnit
+            draft.items[idx].baseMacros = Macros(
+                calories: calories, proteinG: proteinG, carbsG: carbsG, fatG: fatG)
+            let unitIsWeight = measurementSystem(for: servingUnit) == .weight
+            draft.items[idx].scaleWeighingActive = unitIsWeight && isScaleConnected
+            return
+        }
         ws.send(.touchCompleteCreation(itemId: itemId, name: name, calories: calories,
                                        proteinG: proteinG, carbsG: carbsG, fatG: fatG,
                                        servingSize: servingSize, servingUnit: servingUnit))
@@ -899,7 +1015,9 @@ final class KitchenModeViewModel {
 
         if isPaused {
             isPaused = false
-            do { try capture.start() } catch { /* already started or error */ }
+            if audioActive {
+                do { try capture.start() } catch { /* already started or error */ }
+            }
         } else {
             isPaused = true
             capture.stop()
@@ -927,7 +1045,9 @@ final class KitchenModeViewModel {
         editText = ""
         textDisplayMode = .captions
         isPaused = false
-        do { try capture.start() } catch {}
+        if audioActive {
+            do { try capture.start() } catch {}
+        }
     }
 
     func submitEdit() {
@@ -937,7 +1057,9 @@ final class KitchenModeViewModel {
         textDisplayMode = .captions
         isPaused = false
         ws.send(.transcript(text: trimmed))
-        do { try capture.start() } catch {}
+        if audioActive {
+            do { try capture.start() } catch {}
+        }
     }
 
     // MARK: - Camera / Barcode Mode
@@ -977,6 +1099,30 @@ final class KitchenModeViewModel {
 
     func toggleFlash() {
         camera.torchEnabled.toggle()
+    }
+
+    /// Capture a photo and send it to the server for food recognition.
+    /// Server forwards the image to Gemini Live, which identifies foods and
+    /// adds them to the draft via the existing lookup_food / add_to_draft pipeline.
+    func captureAndIdentifyFood() {
+        guard !isCameraProcessing else { return }
+        isCameraProcessing = true
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+        Task {
+            guard let image = await camera.capturePhoto() else {
+                isCameraProcessing = false
+                return
+            }
+            // Resize to max 1024px and compress
+            let resized = image.resizedForUpload(maxDimension: 1024)
+            guard let jpeg = resized.jpegData(compressionQuality: 0.6) else {
+                isCameraProcessing = false
+                return
+            }
+            let base64 = jpeg.base64EncodedString()
+            ws.send(.cameraCapture(imageBase64: base64, depthContext: nil, voiceEnabled: audioActive))
+        }
     }
 
     /// Handle barcode detected by the camera.
@@ -1052,6 +1198,9 @@ final class KitchenModeViewModel {
 
         // Let DraftStore process all draft-related messages
         draft.applyServerMessage(msg)
+
+        // Clear camera processing indicator when items arrive
+        if case .itemsAdded = msg { isCameraProcessing = false }
 
         // For newly added items, populate base macro data and activate scale weighing if applicable
         if case .itemsAdded(let incoming) = msg {

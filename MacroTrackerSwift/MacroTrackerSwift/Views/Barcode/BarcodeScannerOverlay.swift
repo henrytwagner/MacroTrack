@@ -17,11 +17,16 @@ import UIKit
 struct BarcodeScannerOverlay: View {
     let onScanned: (String) -> Void
     let onDismiss: () -> Void
+    /// Optional: if provided, tapping the camera preview triggers food recognition via REST.
+    var onPhotoIdentified: ((PhotoIdentificationResult) -> Void)? = nil
 
     @State private var isManualEntry = false
     @State private var manualText    = ""
     @State private var keyboardInset: CGFloat = 0
     @State private var hasScanned    = false
+    @State private var isIdentifying = false
+    @State private var showIdentifyingDebug = false
+    @State private var identifyingStartTime: Date? = nil
     @FocusState private var fieldFocused: Bool
 
     private let camera = KitchenCameraSession.shared
@@ -32,11 +37,28 @@ struct BarcodeScannerOverlay: View {
             KitchenCameraPreview(session: camera.captureSession)
                 .ignoresSafeArea()
 
+            // Tap-to-identify — only active when food recognition is available
+            // and not in manual entry mode (to avoid interfering with text input).
+            // Double-tap is not registered here so no accidental double-fire.
+            if onPhotoIdentified != nil && !isManualEntry {
+                Color.clear
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 1) {
+                        captureAndIdentify()
+                    }
+            }
+
             VStack {
                 Spacer()
                 bottomChrome
             }
             .padding(.bottom, keyboardInset)
+
+            // Floating processing indicator
+            if isIdentifying {
+                photoProcessingIndicator
+            }
         }
         .ignoresSafeArea()
         .animation(.easeOut(duration: 0.25), value: keyboardInset)
@@ -87,11 +109,15 @@ struct BarcodeScannerOverlay: View {
                 manualEntryPanel
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             } else {
-                VStack(spacing: Spacing.md) {
-                    Text("Point at a barcode")
+                VStack(spacing: Spacing.lg) {
+                    Text(onPhotoIdentified != nil
+                         ? "Point at a barcode · Tap to identify food"
+                         : "Point at a barcode")
                         .font(.appSubhead)
                         .foregroundStyle(.white.opacity(0.85))
+                        .multilineTextAlignment(.center)
 
+                    // Type it in
                     Button {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                             isManualEntry = true
@@ -113,6 +139,67 @@ struct BarcodeScannerOverlay: View {
         }
         .padding(.horizontal, Spacing.lg)
         .padding(.bottom, isManualEntry ? Spacing.lg : Spacing.xxxl + Spacing.xxl)
+    }
+
+    private func captureAndIdentify() {
+        guard let callback = onPhotoIdentified, !isIdentifying else { return }
+        isIdentifying = true
+        identifyingStartTime = Date()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+        Task {
+            guard let image = await camera.capturePhoto() else {
+                isIdentifying = false
+                return
+            }
+            let resized = image.resizedForUpload(maxDimension: 1024)
+            guard let jpeg = resized.jpegData(compressionQuality: 0.6) else {
+                isIdentifying = false
+                return
+            }
+            let base64 = jpeg.base64EncodedString()
+            do {
+                let result = try await APIClient.shared.identifyPhoto(imageBase64: base64)
+                isIdentifying = false
+                callback(result)
+            } catch {
+                isIdentifying = false
+            }
+        }
+    }
+
+    private var photoProcessingIndicator: some View {
+        VStack {
+            Spacer()
+            Button {
+                showIdentifyingDebug = true
+            } label: {
+                HStack(spacing: Spacing.sm) {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.white)
+                        .scaleEffect(0.85)
+                    Text("Identifying food…")
+                        .font(.appSubhead)
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, Spacing.lg)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.black.opacity(0.6))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            Spacer()
+        }
+        .allowsHitTesting(true)
+        .alert("Camera Processing", isPresented: $showIdentifyingDebug) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            let elapsed = identifyingStartTime.map {
+                String(format: "%.1fs ago", Date().timeIntervalSince($0))
+            } ?? "unknown"
+            Text("State: awaiting REST response\nPhoto sent: \(elapsed)\nResult will open food detail sheet.")
+        }
     }
 
     private var closeButton: some View {

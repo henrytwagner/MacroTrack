@@ -325,3 +325,18 @@ nonisolated private final class CameraOutputDelegate: NSObject,
         session?.handlePhotoCaptureResult(image)
     }
 }
+
+// MARK: - UIImage + Upload Helpers
+
+extension UIImage {
+    /// Resize to fit within `maxDimension` × `maxDimension` while preserving aspect ratio.
+    /// Returns self unchanged if already within bounds.
+    @MainActor func resizedForUpload(maxDimension: CGFloat) -> UIImage {
+        let w = size.width, h = size.height
+        guard w > maxDimension || h > maxDimension else { return self }
+        let scale = maxDimension / max(w, h)
+        let newSize = CGSize(width: w * scale, height: h * scale)
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in self.draw(in: CGRect(origin: .zero, size: newSize)) }
+    }
+}

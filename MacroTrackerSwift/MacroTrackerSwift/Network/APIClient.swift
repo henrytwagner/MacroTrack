@@ -238,6 +238,12 @@ struct ApiError: Error, LocalizedError, Sendable {
         return try await get("/api/barcode/lookup?code=\(code.urlEncoded)")
     }
 
+    func identifyPhoto(imageBase64: String, depthContext: String? = nil) async throws -> PhotoIdentificationResult {
+        struct Body: Encodable { let imageBase64: String; let depthContext: String? }
+        return try await post("/api/food/identify-photo",
+                               body: Body(imageBase64: imageBase64, depthContext: depthContext))
+    }
+
     func uploadImageForBarcodeScan(imageData: Data,
                                     mimeType: String = "image/jpeg",
                                     fileName: String = "image.jpg") async throws -> BarcodeScanResult? {
@@ -282,6 +288,13 @@ struct ApiError: Error, LocalizedError, Sendable {
 
     func logMeal(savedMealId: String, req: LogMealRequest) async throws -> [FoodEntry] {
         return try await post("/api/meals/\(savedMealId)/log", body: req)
+    }
+
+    // MARK: - Nutrition Label Parsing
+
+    func parseNutritionLabel(ocrText: String) async throws -> ParsedNutritionLabelResponse {
+        struct Body: Encodable { let ocrText: String }
+        return try await post("/api/nutrition/label/parse", body: Body(ocrText: ocrText))
     }
 
     // MARK: - Community Food Reporting

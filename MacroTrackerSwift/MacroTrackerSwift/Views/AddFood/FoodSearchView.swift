@@ -15,11 +15,15 @@ struct FoodSearchView: View {
     private enum ActiveSheet: Identifiable {
         case foodDetail(IdentifiedFood)
         case createFood(CreateFoodMode)
+        case nutritionLabelConfirm(ParsedNutritionLabel)
+        case createFoodFromLabel(ParsedNutritionLabel)
 
         var id: String {
             switch self {
             case .foodDetail(let f): return "detail-\(f.id)"
             case .createFood(let m): return "create-\(m.id)"
+            case .nutritionLabelConfirm: return "label-confirm"
+            case .createFoodFromLabel: return "create-from-label"
             }
         }
     }
@@ -48,6 +52,13 @@ struct FoodSearchView: View {
     /// When non-nil, tapping a food row calls this directly (skipping FoodDetailSheet).
     /// Used by Kitchen Mode to add items as unconfirmed draft cards.
     var onSelectFoodDirect: ((AnyFood) -> Void)? = nil
+    /// When non-nil, the "Create [name]" no-results button calls this with the query string
+    /// and dismisses the view, instead of opening CreateFoodSheet. Used by Kitchen Mode to
+    /// create inline draft cards rather than opening a stacked modal.
+    var onCreateFoodDirect: ((String) -> Void)? = nil
+    /// Pre-fill the search field on appear. Used by Kitchen Mode to bridge from a voice
+    /// choice card (food not found) into a pre-populated search.
+    var initialQuery: String? = nil
 
     @Environment(MealsStore.self) private var mealsStore
 
@@ -98,6 +109,10 @@ struct FoodSearchView: View {
             }
             .onChange(of: vm.query) { _, _ in vm.onQueryChanged() }
             .task {
+                if let initial = initialQuery, !initial.isEmpty {
+                    vm.query = initial
+                    vm.onQueryChanged()
+                }
                 await vm.fetchFrequentAndRecent()
                 await vm.fetchMyFoods()
             }
@@ -131,6 +146,23 @@ struct FoodSearchView: View {
                         }
                     },
                     onDismiss: { activeSheet = nil })
+            case .nutritionLabelConfirm(let label):
+                NutritionLabelConfirmationSheet(
+                    parsedLabel: label,
+                    onConfirm: { confirmedLabel in
+                        activeSheet = .createFoodFromLabel(confirmedLabel)
+                    },
+                    onDismiss: { activeSheet = nil })
+            case .createFoodFromLabel(let label):
+                CreateFoodSheetWithLabel(
+                    label: label,
+                    onSaved: { _ in
+                        Task {
+                            await vm.fetchMyFoods()
+                            await vm.fetchFrequentAndRecent()
+                        }
+                    },
+                    onDismiss: { activeSheet = nil })
             }
         }
         .fullScreenCover(item: $activeCover) { cover in
@@ -141,7 +173,12 @@ struct FoodSearchView: View {
                         activeCover = nil
                         Task { await handleBarcodeResult(gtin) }
                     },
-                    onDismiss: { activeCover = nil })
+                    onDismiss: { activeCover = nil },
+                    onPhotoIdentified: { result in
+                        activeCover = nil
+                        guard let food = result.anyFood else { return }
+                        activeSheet = .foodDetail(IdentifiedFood(food: food))
+                    })
             case .mealCreation:
                 MealCreationView(initialItems: [])
                     .environment(mealsStore)
@@ -411,9 +448,14 @@ struct FoodSearchView: View {
                             .font(.appSubhead)
                             .foregroundStyle(Color.appTextSecondary)
                         Button {
-                            activeSheet = .createFood(.new(
-                                prefillName:    vm.query,
-                                prefillBarcode: nil))
+                            if let createDirect = onCreateFoodDirect {
+                                createDirect(vm.query)
+                                onDismiss()
+                            } else {
+                                activeSheet = .createFood(.new(
+                                    prefillName:    vm.query,
+                                    prefillBarcode: nil))
+                            }
                         } label: {
                             Label("Create \"\(vm.query)\"", systemImage: "plus")
                                 .font(.appSubhead)
@@ -536,9 +578,9 @@ struct FoodSearchView: View {
             let result = try await APIClient.shared.lookupBarcode(code: normalized)
             switch result {
             case .community(let food):
-                activeSheet = .foodDetail(IdentifiedFood(food: .community(food)))
+                handleFoodTap(.community(food))
             case .custom(let food):
-                activeSheet = .foodDetail(IdentifiedFood(food: .custom(food)))
+                handleFoodTap(.custom(food))
             case .notFound:
                 barcodeError  = normalized
                 showBarcodeError = true
@@ -546,6 +588,22 @@ struct FoodSearchView: View {
         } catch {
             barcodeError     = normalized
             showBarcodeError = true
+        }
+    }
+
+    // MARK: - Nutrition Label Scan
+
+    /// Scan a nutrition label from a captured photo: OCR on-device, then Gemini structuring.
+    private func scanNutritionLabel(image: CGImage) async {
+        do {
+            let ocrText = try await NutritionLabelScanner.recognizeText(from: image)
+            guard !ocrText.isEmpty else { return }
+            let response = try await APIClient.shared.parseNutritionLabel(ocrText: ocrText)
+            let parsed = NutritionLabelParser.normalize(response)
+            activeSheet = .nutritionLabelConfirm(parsed)
+        } catch {
+            // Fallback: open blank create food sheet
+            activeSheet = .createFood(.new(prefillName: nil, prefillBarcode: nil))
         }
     }
 

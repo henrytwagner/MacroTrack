@@ -1,6 +1,7 @@
 import { prisma } from "../db/client.js";
 import { parseTranscript } from "./gemini.js";
-import { searchFoods, getFoodByFdcId } from "./usda.js";
+import { searchFoods, getFoodByFdcId, searchFoodsEnhanced } from "./usda.js";
+import { lookupFoodPipeline } from "./foodSearchPipeline.js";
 import type {
   GeminiRequestContext,
   GeminiIntent,
@@ -48,10 +49,18 @@ function getProvisionalMealLabel(): MealLabel {
 // Custom food fuzzy matching
 // ---------------------------------------------------------------------------
 
-async function findCustomFood(
-  name: string,
-  userId: string,
-): Promise<{
+const CUSTOM_FOOD_SELECT = {
+  id: true,
+  name: true,
+  servingSize: true,
+  servingUnit: true,
+  calories: true,
+  proteinG: true,
+  carbsG: true,
+  fatG: true,
+} as const;
+
+type CustomFoodMatch = {
   id: string;
   name: string;
   servingSize: number;
@@ -60,35 +69,26 @@ async function findCustomFood(
   proteinG: number;
   carbsG: number;
   fatG: number;
-} | null> {
+};
+
+async function findCustomFood(
+  name: string,
+  userId: string,
+): Promise<CustomFoodMatch | null> {
   const normalized = name.toLowerCase().trim();
 
-  const customFoods = await prisma.customFood.findMany({
-    where: { userId },
-    select: {
-      id: true,
-      name: true,
-      servingSize: true,
-      servingUnit: true,
-      calories: true,
-      proteinG: true,
-      carbsG: true,
-      fatG: true,
-    },
+  // Exact match first (Prisma-side)
+  const exact = await prisma.customFood.findFirst({
+    where: { userId, name: { equals: normalized, mode: "insensitive" } },
+    select: CUSTOM_FOOD_SELECT,
   });
-
-  // Exact match first
-  const exact = customFoods.find(
-    (f) => f.name.toLowerCase() === normalized,
-  );
   if (exact) return exact;
 
-  // Contains match (fuzzy)
-  const contains = customFoods.find(
-    (f) =>
-      f.name.toLowerCase().includes(normalized) ||
-      normalized.includes(f.name.toLowerCase()),
-  );
+  // Contains match (Prisma-side)
+  const contains = await prisma.customFood.findFirst({
+    where: { userId, name: { contains: normalized, mode: "insensitive" } },
+    select: CUSTOM_FOOD_SELECT,
+  });
   return contains ?? null;
 }
 
@@ -558,120 +558,20 @@ export type KitchenLookupResult =
 export async function lookupFoodForKitchenMode(
   name: string,
   userId: string,
+  brand?: string,
 ): Promise<KitchenLookupResult> {
-  // Tier 1: user history
-  const history = await lookupUserHistory(name, userId);
-  if (history && history.logCount >= 1) {
-    if (history.source === "DATABASE" && history.usdaFdcId) {
-      const usdaResult = await getFoodByFdcId(history.usdaFdcId);
-      if (usdaResult) {
-        const servingSize = usdaResult.servingSize ?? 100;
-        return {
-          status: "found",
-          foodRef: `usda:${history.usdaFdcId}`,
-          name: usdaResult.description,
-          source: "DATABASE",
-          servingSize,
-          servingUnit: usdaResult.servingSizeUnit ?? "g",
-          caloriesPerServing: usdaResult.macros.calories,
-          proteinGPerServing: usdaResult.macros.proteinG,
-          carbsGPerServing: usdaResult.macros.carbsG,
-          fatGPerServing: usdaResult.macros.fatG,
-        };
-      }
-    }
-    if (history.source === "CUSTOM" && history.customFoodId) {
-      const custom = await prisma.customFood.findUnique({
-        where: { id: history.customFoodId, userId },
-        select: { id: true, name: true, servingSize: true, servingUnit: true, calories: true, proteinG: true, carbsG: true, fatG: true },
-      });
-      if (custom) {
-        return {
-          status: "found",
-          foodRef: `custom:${custom.id}`,
-          name: custom.name,
-          source: "CUSTOM",
-          servingSize: custom.servingSize,
-          servingUnit: custom.servingUnit,
-          caloriesPerServing: custom.calories,
-          proteinGPerServing: custom.proteinG,
-          carbsGPerServing: custom.carbsG,
-          fatGPerServing: custom.fatG,
-        };
-      }
-    }
-    if (history.source === "COMMUNITY" && history.communityFoodId) {
-      const community = await prisma.communityFood.findUnique({
-        where: { id: history.communityFoodId },
-        select: { id: true, name: true, brandName: true, defaultServingSize: true, defaultServingUnit: true, calories: true, proteinG: true, carbsG: true, fatG: true },
-      });
-      if (community) {
-        const displayName = community.brandName
-          ? `${community.brandName} — ${community.name}`
-          : community.name;
-        return {
-          status: "found",
-          foodRef: `community:${community.id}`,
-          name: displayName,
-          source: "COMMUNITY",
-          servingSize: community.defaultServingSize,
-          servingUnit: community.defaultServingUnit,
-          caloriesPerServing: community.calories,
-          proteinGPerServing: community.proteinG,
-          carbsGPerServing: community.carbsG,
-          fatGPerServing: community.fatG,
-        };
-      }
-    }
-  }
-
-  // Tier 2: custom foods
-  const custom = await findCustomFood(name, userId);
-  if (custom) {
-    return {
-      status: "found",
-      foodRef: `custom:${custom.id}`,
-      name: custom.name,
-      source: "CUSTOM",
-      servingSize: custom.servingSize,
-      servingUnit: custom.servingUnit,
-      caloriesPerServing: custom.calories,
-      proteinGPerServing: custom.proteinG,
-      carbsGPerServing: custom.carbsG,
-      fatGPerServing: custom.fatG,
-    };
-  }
-
-  // Tier 2b: community foods
-  const community = await findCommunityFood(name);
-  if (community) {
-    const displayName = community.brandName
-      ? `${community.brandName} — ${community.name}`
-      : community.name;
-    return {
-      status: "found",
-      foodRef: `community:${community.id}`,
-      name: displayName,
-      source: "COMMUNITY",
-      servingSize: community.defaultServingSize,
-      servingUnit: community.defaultServingUnit,
-      caloriesPerServing: community.calories,
-      proteinGPerServing: community.proteinG,
-      carbsGPerServing: community.carbsG,
-      fatGPerServing: community.fatG,
-    };
-  }
-
-  // USDA is not searched automatically — user must explicitly request it.
-  return { status: "not_found", name };
+  return lookupFoodPipeline(name, userId, brand);
 }
 
 /**
- * Explicit USDA search for Kitchen Mode. Only called when the user has
- * actively chosen to search USDA (via the food_choice card or voice).
+ * Explicit USDA search for Kitchen Mode. Called when the user wants to
+ * retry with different search terms after the pipeline returned not_found.
  */
 export async function searchUsdaForKitchenMode(name: string): Promise<KitchenLookupResult> {
-  const usdaResults = await searchFoods(name);
+  const usdaResults = await searchFoodsEnhanced(name, {
+    dataTypes: ["Foundation", "SR Legacy", "Survey (FNDDS)", "Branded"],
+    pageSize: 10,
+  });
   if (usdaResults.length === 0) {
     return { status: "not_found", name };
   }

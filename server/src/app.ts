@@ -7,6 +7,7 @@ import { foodRoutes } from "./routes/food.js";
 import { customFoodRoutes } from "./routes/customFood.js";
 import { communityFoodRoutes } from "./routes/communityFood.js";
 import { barcodeRoutes } from "./routes/barcode.js";
+import { nutritionLabelRoutes } from "./routes/nutritionLabel.js";
 import { profileRoutes } from "./routes/profile.js";
 import { userPreferencesRoutes } from "./routes/userPreferences.js";
 import { mealsRoutes } from "./routes/meals.js";
@@ -32,6 +33,7 @@ export async function buildApp() {
   await app.register(customFoodRoutes);
   await app.register(communityFoodRoutes);
   await app.register(barcodeRoutes);
+  await app.register(nutritionLabelRoutes);
   await app.register(profileRoutes);
   await app.register(userPreferencesRoutes);
   await app.register(mealsRoutes);

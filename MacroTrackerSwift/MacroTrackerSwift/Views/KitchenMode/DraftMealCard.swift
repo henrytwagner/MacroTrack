@@ -44,6 +44,8 @@ struct DraftMealCard: View {
     var onScaleConfirm: ((Double, String) -> Void)? = nil
     var onScaleSkip: (() -> Void)? = nil
     var onReweigh: (() -> Void)? = nil
+    var onSearchManually: ((String) -> Void)? = nil
+    var onSelectDisambiguateOption: ((DisambiguationOption) -> Void)? = nil
     var onTapToExpand: (() -> Void)? = nil
     var onZeroScale: (() -> Void)? = nil
     var onClearZero: (() -> Void)? = nil
@@ -191,6 +193,12 @@ struct DraftMealCard: View {
                 prevProtein = item.proteinG
                 prevCarbs = item.carbsG
                 prevFat = item.fatG
+                // Local items in .creating state skip the voice-driven creation UI
+                // and go straight to the inline manual form.
+                if item.isLocalItem && item.state == .creating {
+                    initNutritionFormFields()
+                    isManualNutritionMode = true
+                }
             }
             .onChange(of: isEditing) { wasEditing, nowEditing in
                 if nowEditing && !isManualNutritionMode {
@@ -858,12 +866,17 @@ struct DraftMealCard: View {
                 VStack(spacing: Spacing.sm) {
                     ForEach(Array(options.enumerated()), id: \.offset) { index, option in
                         Button {
-                            onSendTranscript?("\(index + 1)")
+                            if let directSelect = onSelectDisambiguateOption {
+                                directSelect(option)
+                            } else {
+                                onSendTranscript?("\(index + 1)")
+                            }
                         } label: {
-                            Text("\(index + 1). \(option.label)")
+                            Text(option.label)
                                 .font(.system(size: 14, weight: .semibold))
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.vertical, Spacing.sm)
                                 .padding(.horizontal, Spacing.md)
                         }
@@ -928,6 +941,19 @@ struct DraftMealCard: View {
                         .padding(.horizontal, Spacing.md)
                 }
                 .buttonStyle(GlassButtonStyle(color: Color.appTextSecondary))
+
+                if onSearchManually != nil {
+                    Button {
+                        onSearchManually?(item.name)
+                    } label: {
+                        Text("Search manually")
+                            .font(.system(size: 14))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Spacing.sm)
+                            .padding(.horizontal, Spacing.md)
+                    }
+                    .buttonStyle(GlassButtonStyle(color: Color.appTextSecondary))
+                }
             }
         }
     }

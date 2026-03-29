@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI, type GenerativeModel } from "@google/generative-ai";
 import { FOOD_PARSER_SYSTEM_PROMPT } from "../../../shared/prompts/system-prompt.js";
 import { FOOD_ESTIMATION_SYSTEM_PROMPT } from "../../../shared/prompts/estimation-prompt.js";
+import { NUTRITION_LABEL_SYSTEM_PROMPT } from "../../../shared/prompts/nutrition-label-prompt.js";
 import { buildGeminiUserMessage } from "../../../shared/prompts/build-request.js";
 import type {
   GeminiRequestContext,
@@ -16,6 +17,7 @@ import type {
   GeminiDisambiguateChoiceIntent,
   Macros,
   USDASearchResult,
+  ParsedNutritionLabelResponse,
 } from "../../../shared/types.js";
 
 const MODEL_NAME = "gemini-2.5-flash";
@@ -505,6 +507,60 @@ export async function parseTranscript(
 }
 
 // ---------------------------------------------------------------------------
+// Photo food identification (standalone REST flow)
+// ---------------------------------------------------------------------------
+
+/**
+ * Identifies the most prominent food in a photo and returns its name + estimated grams.
+ * Uses turn-based Gemini Flash Vision (not Live) — suitable for REST endpoint use.
+ * NEVER generates nutrition values — only identifies food name and estimates portion size.
+ */
+export async function identifyFoodFromPhoto(
+  base64JPEG: string,
+  depthContext?: string,
+): Promise<{ foodName: string; estimatedGrams: number } | null> {
+  if (isMockEnabled()) {
+    return { foodName: "chicken breast", estimatedGrams: 150 };
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === "your-gemini-api-key-here") {
+    throw new Error("GEMINI_API_KEY is not configured.");
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const visionModel = genAI.getGenerativeModel({
+    model: MODEL_NAME,
+    generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
+  });
+
+  const depthLine = depthContext ? `\nDepth context: ${depthContext}` : "";
+  const prompt = `You are a food portion estimator. Identify the single most prominent food item in this image and estimate its weight in grams.${depthLine}
+
+Rules:
+- Identify the most prominent / largest food item only.
+- Estimate grams based on visual size and depth context if provided.
+- NEVER estimate nutritional values (calories, protein, carbs, fat).
+- Return ONLY valid JSON with no markdown:
+{"foodName": "descriptive food name", "estimatedGrams": 0}
+- foodName should be a clean ingredient name suitable for a nutrition database search (e.g. "grilled chicken breast", "brown rice", "broccoli florets").
+- If no food is visible, return {"foodName": null, "estimatedGrams": 0}.`;
+
+  const result = await visionModel.generateContent([
+    prompt,
+    { inlineData: { data: base64JPEG, mimeType: "image/jpeg" } },
+  ]);
+
+  const parsed = JSON.parse(result.response.text()) as {
+    foodName: string | null;
+    estimatedGrams: number;
+  };
+
+  if (!parsed.foodName) return null;
+  return { foodName: parsed.foodName, estimatedGrams: parsed.estimatedGrams };
+}
+
+// ---------------------------------------------------------------------------
 // Food estimation (Phase 6 — bounded AI estimates)
 // ---------------------------------------------------------------------------
 
@@ -598,4 +654,48 @@ Pick from the candidates list only. Keep reasons short (< 15 words).`;
 
   const result = await suggestionModel.generateContent(prompt);
   return JSON.parse(result.response.text()) as Array<{ name: string; macros: Macros; reason: string }>;
+}
+
+// ---------------------------------------------------------------------------
+// Nutrition label parsing (OCR text → structured macros)
+// ---------------------------------------------------------------------------
+
+export async function parseNutritionLabel(
+  ocrText: string,
+): Promise<ParsedNutritionLabelResponse> {
+  if (isMockEnabled()) {
+    return {
+      name: "Mock Product",
+      brandName: "Mock Brand",
+      servingSize: 1,
+      servingUnit: "cup",
+      servingSizeAlt: 240,
+      servingSizeAltUnit: "mL",
+      calories: 150,
+      proteinG: 5,
+      carbsG: 20,
+      fatG: 6,
+      sodiumMg: 300,
+      cholesterolMg: 10,
+      fiberG: 3,
+      sugarG: 8,
+      saturatedFatG: 2,
+      transFatG: 0,
+    };
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === "your-gemini-api-key-here") {
+    throw new Error("GEMINI_API_KEY is not configured.");
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const labelModel = genAI.getGenerativeModel({
+    model: MODEL_NAME,
+    systemInstruction: NUTRITION_LABEL_SYSTEM_PROMPT,
+    generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
+  });
+
+  const result = await labelModel.generateContent(ocrText);
+  return JSON.parse(result.response.text()) as ParsedNutritionLabelResponse;
 }

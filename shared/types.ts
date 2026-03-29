@@ -227,6 +227,7 @@ export interface USDASearchResult {
   fdcId: number;
   description: string;
   brandName?: string;
+  dataType?: string;
   servingSize?: number;
   servingSizeUnit?: string;
   macros: Macros;
@@ -548,6 +549,14 @@ export interface WSBarcodeScanMessage {
   gtin: string;
 }
 
+export interface WSCameraCaptureMessage {
+  type: "camera_capture";
+  imageBase64: string;
+  depthContext?: string;
+  /** When false, Gemini should add all identified foods directly without asking for voice confirmation. */
+  voiceEnabled?: boolean;
+}
+
 export interface WSScaleConfirmMessage {
   type: 'scale_confirm';
   itemId: string;
@@ -585,6 +594,7 @@ export type WSClientMessage =
   | WSSaveMessage
   | WSCancelMessage
   | WSBarcodeScanMessage
+  | WSCameraCaptureMessage
   | WSScaleConfirmMessage
   | WSTouchEditItemMessage
   | WSTouchRemoveItemMessage
@@ -812,6 +822,39 @@ export type WSServerMessage =
   // Phase E (Gemini Live)
   | WSAudioDataMessage
   | WSServerTranscriptMessage;
+
+// --- Photo Identification (REST) ---
+
+/** Response from POST /api/food/identify-photo */
+export interface PhotoIdentificationResult {
+  /** "custom" | "community" | "usda" | null (no match) */
+  source: string | null;
+  food: CustomFood | CommunityFood | USDASearchResult | null;
+  estimatedGrams: number;
+  foodName: string;
+}
+
+// --- Nutrition Label Parsing (REST) ---
+
+/** Response from POST /api/nutrition/label/parse */
+export interface ParsedNutritionLabelResponse {
+  name: string | null;
+  brandName: string | null;
+  servingSize: number | null;
+  servingUnit: string | null;
+  servingSizeAlt: number | null;
+  servingSizeAltUnit: string | null;
+  calories: number | null;
+  proteinG: number | null;
+  carbsG: number | null;
+  fatG: number | null;
+  sodiumMg: number | null;
+  cholesterolMg: number | null;
+  fiberG: number | null;
+  sugarG: number | null;
+  saturatedFatG: number | null;
+  transFatG: number | null;
+}
 
 // --- Gemini Intent Types ---
 

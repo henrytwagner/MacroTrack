@@ -4,6 +4,8 @@ import { getDefaultUserId } from "../db/defaultUser.js";
 import { searchFoods } from "../services/usda.js";
 import { mapCommunityFood } from "./communityFood.js";
 import { recategorizeMealsForDay } from "../services/mealCategorizer.js";
+import { identifyFoodFromPhoto } from "../services/gemini.js";
+import { lookupFoodForKitchenMode } from "../services/foodParser.js";
 import type {
   FoodEntry,
   CreateFoodEntryRequest,
@@ -18,6 +20,8 @@ import type {
   CreateFoodUnitConversionRequest,
   UpdateFoodUnitConversionRequest,
   CascadeUnitConversionsRequest,
+  PhotoIdentificationResult,
+  USDASearchResult,
 } from "../../../shared/types.js";
 
 // ---------------------------------------------------------------------------
@@ -551,6 +555,134 @@ export async function foodRoutes(app: FastifyInstance) {
       );
 
       return reply.code(204).send();
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // POST /api/food/identify-photo — standalone camera food recognition (non-Kitchen Mode)
+  // Accepts a JPEG image (base64), identifies the most prominent food via Gemini,
+  // resolves nutrition via the existing lookup chain (custom → community → USDA),
+  // and returns the matched food + estimated grams for pre-filling FoodDetailSheet.
+  // ---------------------------------------------------------------------------
+
+  app.post<{ Body: { imageBase64: string; depthContext?: string } }>(
+    "/api/food/identify-photo",
+    async (request, reply) => {
+      const { imageBase64, depthContext } = request.body;
+
+      if (!imageBase64) {
+        return reply.code(400).send({ error: "imageBase64 is required" });
+      }
+
+      const userId = await getDefaultUserId();
+
+      // Step 1: Use Gemini vision to identify food + estimate grams
+      const identified = await identifyFoodFromPhoto(imageBase64, depthContext);
+
+      if (!identified) {
+        const result: PhotoIdentificationResult = {
+          source: null,
+          food: null,
+          estimatedGrams: 0,
+          foodName: "",
+        };
+        return reply.send(result);
+      }
+
+      // Step 2: Resolve the food name through the lookup chain
+      const lookup = await lookupFoodForKitchenMode(identified.foodName, userId);
+
+      if (lookup.status === "not_found") {
+        // Return food name + grams even if no match — client can fall back to manual search
+        const result: PhotoIdentificationResult = {
+          source: null,
+          food: null,
+          estimatedGrams: identified.estimatedGrams,
+          foodName: identified.foodName,
+        };
+        return reply.send(result);
+      }
+
+      // Step 3: Fetch the actual food record based on the foodRef
+      // lookup.status must be "found" here (not_found was handled above; "multiple" falls through to fallback)
+      if (lookup.status !== "found") {
+        const result: PhotoIdentificationResult = {
+          source: null,
+          food: null,
+          estimatedGrams: identified.estimatedGrams,
+          foodName: identified.foodName,
+        };
+        return reply.send(result);
+      }
+
+      const foodRef = lookup.foodRef; // "custom:UUID" | "usda:FDC_ID" | "community:UUID"
+      const [refType, refId] = foodRef.split(":");
+
+      if (refType === "custom") {
+        const food = await prisma.customFood.findUnique({ where: { id: refId } });
+        if (food) {
+          const result: PhotoIdentificationResult = {
+            source: "custom",
+            food: {
+              id: food.id,
+              name: food.name,
+              servingSize: food.servingSize,
+              servingUnit: food.servingUnit,
+              calories: food.calories,
+              proteinG: food.proteinG,
+              carbsG: food.carbsG,
+              fatG: food.fatG,
+              createdAt: food.createdAt.toISOString(),
+              updatedAt: food.updatedAt.toISOString(),
+            } as CustomFood,
+            estimatedGrams: identified.estimatedGrams,
+            foodName: food.name,
+          };
+          return reply.send(result);
+        }
+      } else if (refType === "community") {
+        const food = await prisma.communityFood.findUnique({ where: { id: refId } });
+        if (food) {
+          const result: PhotoIdentificationResult = {
+            source: "community",
+            food: mapCommunityFood(food),
+            estimatedGrams: identified.estimatedGrams,
+            foodName: food.name,
+          };
+          return reply.send(result);
+        }
+      } else if (refType === "usda") {
+        // For USDA foods, use the lookup result's pre-resolved macros (no extra API call)
+        const fdcId = Number(refId);
+        const usdaFood: USDASearchResult = {
+          fdcId,
+          description: lookup.name,
+          servingSize: lookup.servingSize,
+          servingSizeUnit: lookup.servingUnit,
+          macros: {
+            calories: lookup.caloriesPerServing,
+            proteinG: lookup.proteinGPerServing,
+            carbsG: lookup.carbsGPerServing,
+            fatG: lookup.fatGPerServing,
+          },
+        };
+        const result: PhotoIdentificationResult = {
+          source: "usda",
+          food: usdaFood,
+          estimatedGrams: identified.estimatedGrams,
+          foodName: lookup.name,
+        };
+        return reply.send(result);
+      }
+
+      // Fallback: lookup succeeded but fetch failed
+      const result: PhotoIdentificationResult = {
+        source: null,
+        food: null,
+        estimatedGrams: identified.estimatedGrams,
+        foodName: identified.foodName,
+      };
+      return reply.send(result);
     },
   );
 }

@@ -490,6 +490,60 @@ enum BarcodeLookupResult: Decodable, Sendable {
     }
 }
 
+// MARK: - Photo Identification Result (REST)
+
+/// Response from POST /api/food/identify-photo.
+/// Mirrors BarcodeLookupResult but adds USDA support and estimated grams.
+struct PhotoIdentificationResult: Decodable, Sendable {
+    let source: String?
+    let estimatedGrams: Double
+    let foodName: String
+
+    // Exactly one of these will be non-nil based on source
+    private let customFoodData: CustomFood?
+    private let communityFoodData: CommunityFood?
+    private let usdaFoodData: USDASearchResult?
+
+    var anyFood: AnyFood? {
+        switch source {
+        case "custom":    return customFoodData.map { .custom($0) }
+        case "community": return communityFoodData.map { .community($0) }
+        case "usda":      return usdaFoodData.map { .usda($0) }
+        default:          return nil
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case source, food, estimatedGrams, foodName
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        source          = try c.decodeIfPresent(String.self, forKey: .source)
+        estimatedGrams  = try c.decodeIfPresent(Double.self, forKey: .estimatedGrams) ?? 0
+        foodName        = try c.decodeIfPresent(String.self, forKey: .foodName) ?? ""
+
+        switch source {
+        case "custom":
+            customFoodData    = try c.decodeIfPresent(CustomFood.self, forKey: .food)
+            communityFoodData = nil
+            usdaFoodData      = nil
+        case "community":
+            customFoodData    = nil
+            communityFoodData = try c.decodeIfPresent(CommunityFood.self, forKey: .food)
+            usdaFoodData      = nil
+        case "usda":
+            customFoodData    = nil
+            communityFoodData = nil
+            usdaFoodData      = try c.decodeIfPresent(USDASearchResult.self, forKey: .food)
+        default:
+            customFoodData    = nil
+            communityFoodData = nil
+            usdaFoodData      = nil
+        }
+    }
+}
+
 // MARK: - Kitchen Mode Draft State
 
 enum DraftCardState: String, Codable, Sendable {
@@ -741,6 +795,7 @@ enum WSClientMessage: Encodable, Sendable {
     case save
     case cancel
     case barcodeScan(gtin: String)
+    case cameraCapture(imageBase64: String, depthContext: String?, voiceEnabled: Bool)
     case scaleConfirm(itemId: String, quantity: Double, unit: String)
     case touchEditItem(itemId: String, quantity: Double, unit: String)
     case touchRemoveItem(itemId: String)
@@ -751,6 +806,7 @@ enum WSClientMessage: Encodable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case type, text, data, sequence, gtin, itemId, quantity, unit
         case name, calories, proteinG, carbsG, fatG, servingSize, servingUnit
+        case imageBase64, depthContext, voiceEnabled
     }
 
     func encode(to encoder: Encoder) throws {
@@ -770,6 +826,13 @@ enum WSClientMessage: Encodable, Sendable {
         case .barcodeScan(let gtin):
             try c.encode("barcode_scan", forKey: .type)
             try c.encode(gtin, forKey: .gtin)
+        case .cameraCapture(let imageBase64, let depthContext, let voiceEnabled):
+            try c.encode("camera_capture", forKey: .type)
+            try c.encode(imageBase64, forKey: .imageBase64)
+            try c.encode(voiceEnabled, forKey: .voiceEnabled)
+            if let depth = depthContext {
+                try c.encode(depth, forKey: .depthContext)
+            }
         case .scaleConfirm(let itemId, let quantity, let unit):
             try c.encode("scale_confirm", forKey: .type)
             try c.encode(itemId, forKey: .itemId)

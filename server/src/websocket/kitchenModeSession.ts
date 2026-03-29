@@ -48,6 +48,7 @@ import type {
   WSDisambiguateMessage,
   WSAudioDataMessage,
   WSServerTranscriptMessage,
+  WSCameraCaptureMessage,
 } from "../../../shared/types.js";
 
 // ---------------------------------------------------------------------------
@@ -143,8 +144,9 @@ async function handleLookupFood(
 ): Promise<unknown> {
   const name = String(args.name ?? "");
   if (!name) return { error: "name is required" };
+  const brand = args.brand ? String(args.brand) : undefined;
 
-  const result = await lookupFoodForKitchenMode(name, session.userId);
+  const result = await lookupFoodForKitchenMode(name, session.userId, brand);
 
   if (result.status === "not_found") {
     const choiceId = `tmp-choice-${Date.now()}`;
@@ -162,48 +164,29 @@ async function handleLookupFood(
       status: "not_found",
       name,
       message:
-        "Food not found in this user's personal or community foods. A choice card is already shown to the user. Briefly tell the user it wasn't found, then ask whether they'd like to create a custom food (say 'create it') or search the USDA database (say 'try USDA', note that USDA data can be unreliable). Wait for their choice — do not proceed until they respond.",
+        "Food not found in any database (personal, community, or USDA). A choice card is already shown to the user. Briefly tell the user it wasn't found, then ask whether they'd like to create a custom food (say 'create it') or try searching with different terms (say 'search again'). Wait for their choice — do not proceed until they respond.",
     };
   }
 
   if (result.status === "multiple") {
-    // Emit a disambiguate card to the iOS client so the user has a visual alongside Gemini's voice
+    // USDA returned multiple close candidates — treat as not_found rather than auto-disambiguating.
+    // Disambiguation is reserved for when the user explicitly taps "Try USDA" (handleSearchUsda).
+    const choiceId = `tmp-choice-${Date.now()}`;
+    session.pendingChoiceId = choiceId;
+    session.pendingChoiceName = name;
+
     send(session.socket, {
-      type: "disambiguate",
-      itemId: `tmp-dis-${Date.now()}`,
+      type: "food_choice",
+      itemId: choiceId,
       foodName: name,
-      question: "Multiple matches found. Which one did you mean?",
-      options: result.options.map((o) => ({
-        label: `${o.name} — ${o.caloriesPerServing} cal / serving`,
-        usdaResult: {
-          fdcId: parseInt(o.foodRef.split(":")[1], 10),
-          description: o.name,
-          servingSize: o.servingSize,
-          servingSizeUnit: o.servingUnit,
-          macros: {
-            calories: o.caloriesPerServing,
-            proteinG: o.proteinGPerServing,
-            carbsG: o.carbsGPerServing,
-            fatG: o.fatGPerServing,
-          },
-        },
-      })),
-    } satisfies WSDisambiguateMessage);
+      question: "",
+    } satisfies WSFoodChoiceMessage);
 
     return {
-      status: "multiple_matches",
-      options: result.options.map((o) => ({
-        food_ref: o.foodRef,
-        name: o.name,
-        calories_per_serving: o.caloriesPerServing,
-        protein_g_per_serving: o.proteinGPerServing,
-        carbs_g_per_serving: o.carbsGPerServing,
-        fat_g_per_serving: o.fatGPerServing,
-        serving_size: o.servingSize,
-        serving_unit: o.servingUnit,
-      })),
+      status: "not_found",
+      name,
       message:
-        "Present these options to the user verbally. When they choose, call add_to_draft with the chosen food_ref.",
+        "Food not found with high confidence. A choice card is shown to the user. Briefly tell the user it wasn't found, then ask whether they'd like to create a custom food (say 'create it') or try USDA (say 'try USDA'). Wait for their choice — do not proceed until they respond.",
     };
   }
 
@@ -838,6 +821,33 @@ async function handleBarcodeScan(
 }
 
 // ---------------------------------------------------------------------------
+// Camera capture handler
+// ---------------------------------------------------------------------------
+
+function handleCameraCapture(
+  msg: WSCameraCaptureMessage,
+  session: KitchenSession,
+): void {
+  console.log("[KitchenMode] handleCameraCapture — sending image to Gemini Live");
+
+  // Send image + prompt as a single ordered turn so Gemini receives both together.
+  // Do NOT use sendRealtimeInput/media — that is for streaming video frames and
+  // has non-deterministic ordering, causing Gemini to respond before seeing the image.
+  const depthInfo = msg.depthContext ? ` Depth context: ${msg.depthContext}.` : "";
+  const voiceOn = msg.voiceEnabled !== false; // default true if omitted
+
+  const prompt = voiceOn
+    ? `[camera] User tapped to identify food in a photo.${depthInfo} ` +
+      `Examine the image and identify all visible food items. ` +
+      `List what you see and ask the user which items to add to their log.`
+    : `[camera] User tapped to identify food. Voice is disabled — no voice reply will come.${depthInfo} ` +
+      `Examine the image, identify all visible food items, and add them all to the draft immediately ` +
+      `using lookup_food then add_to_draft. Do not ask for confirmation.`;
+
+  session.gemini.sendImageWithPrompt(msg.imageBase64, prompt);
+}
+
+// ---------------------------------------------------------------------------
 // Fastify route registration
 // ---------------------------------------------------------------------------
 
@@ -978,6 +988,10 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
 
           case "barcode_scan":
             void handleBarcodeScan(msg.gtin, session);
+            break;
+
+          case "camera_capture":
+            handleCameraCapture(msg, session);
             break;
 
           case "scale_confirm":
