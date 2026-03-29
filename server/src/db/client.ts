@@ -17,15 +17,14 @@ function createClient(): { prisma: PrismaClient; pool: pg.Pool } {
   // Log masked URL for debugging connectivity
   try {
     const parsed = new URL(url);
-    console.log(`[DB] Connecting to ${parsed.hostname}:${parsed.port}${parsed.pathname} (ssl: ${!url.includes("railway.internal")})`);
+    console.log(`[DB] Connecting to ${parsed.hostname}:${parsed.port}${parsed.pathname} (ssl: false)`);
   } catch {
     console.log(`[DB] DATABASE_URL is not a valid URL: ${url.substring(0, 30)}...`);
   }
 
-  const useSSL = !url.includes("railway.internal");
   const pool = new pg.Pool({
     connectionString: url,
-    ssl: useSSL ? { rejectUnauthorized: false } : false,
+    ssl: false,
   });
 
   // Test the connection on startup
