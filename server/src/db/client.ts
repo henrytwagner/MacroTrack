@@ -13,10 +13,28 @@ function createClient(): { prisma: PrismaClient; pool: pg.Pool } {
   if (!url) {
     throw new Error("DATABASE_URL is not set");
   }
+
+  // Log masked URL for debugging connectivity
+  try {
+    const parsed = new URL(url);
+    console.log(`[DB] Connecting to ${parsed.hostname}:${parsed.port}${parsed.pathname} (ssl: ${!url.includes("railway.internal")})`);
+  } catch {
+    console.log(`[DB] DATABASE_URL is not a valid URL: ${url.substring(0, 30)}...`);
+  }
+
+  const useSSL = !url.includes("railway.internal");
   const pool = new pg.Pool({
     connectionString: url,
-    ssl: url.includes("railway.internal") ? false : { rejectUnauthorized: false },
+    ssl: useSSL ? { rejectUnauthorized: false } : false,
   });
+
+  // Test the connection on startup
+  pool.query("SELECT 1").then(() => {
+    console.log("[DB] Connection test successful");
+  }).catch((err: Error) => {
+    console.error(`[DB] Connection test FAILED: ${err.message}`);
+  });
+
   const adapter = new PrismaPg(pool);
   return { prisma: new PrismaClient({ adapter }), pool };
 }
