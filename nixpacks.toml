@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs-22_x", "openssl"]
+nixPkgs = ["nodejs", "openssl"]
 
 [phases.install]
 cmds = ["cd server && npm ci"]
