@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "prisma generate --schema=src/db/prisma/schema.prisma && tsc",
-    "start": "bash scripts/migrate-and-start.sh",
+    "start": "node dist/server/src/server.js",
     "db:generate": "prisma generate --schema=src/db/prisma/schema.prisma",
     "db:migrate": "prisma migrate dev --schema=src/db/prisma/schema.prisma",
     "db:migrate:deploy": "prisma migrate deploy --schema=src/db/prisma/schema.prisma",
