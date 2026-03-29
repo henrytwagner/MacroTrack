@@ -13,7 +13,10 @@ function createClient(): { prisma: PrismaClient; pool: pg.Pool } {
   if (!url) {
     throw new Error("DATABASE_URL is not set");
   }
-  const pool = new pg.Pool({ connectionString: url });
+  const pool = new pg.Pool({
+    connectionString: url,
+    ssl: url.includes("railway.internal") ? false : { rejectUnauthorized: false },
+  });
   const adapter = new PrismaPg(pool);
   return { prisma: new PrismaClient({ adapter }), pool };
 }
