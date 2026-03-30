@@ -38,6 +38,8 @@ model User {
   savedMeals            SavedMeal[]
   refreshTokens         RefreshToken[]
   passwordResets        PasswordReset[]
+  searchLogs            SearchLog[]
+  weightEntries         WeightEntry[]
 }
 
 model RefreshToken {
@@ -306,6 +308,37 @@ model USDAFoodMetrics {
   updatedAt  DateTime  @updatedAt
 
   @@index([usesCount(sort: Desc)])
+}
+
+model SearchLog {
+  id              String      @id @default(uuid())
+  userId          String
+  query           String
+  normalizedQuery String
+  selectedFoodRef String?
+  selectedName    String?
+  source          FoodSource?
+  resultStatus    String
+  createdAt       DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([query])
+}
+
+model WeightEntry {
+  id        String   @id @default(uuid())
+  userId    String
+  date      DateTime @db.Date
+  weightKg  Float
+  note      String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, date(sort: Desc)])
 }
 
 enum MealLabel {

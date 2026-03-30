@@ -257,4 +257,62 @@ export async function mealsRoutes(app: FastifyInstance): Promise<void> {
 
     return created.map(mapLoggedEntry);
   });
+
+  // GET /api/meals/frequent
+  app.get("/api/meals/frequent", async (request, reply) => {
+    const userId = request.userId;
+
+    const groups = await prisma.foodEntry.groupBy({
+      by: ["savedMealId"],
+      where: { userId, savedMealId: { not: null } },
+      _count: { savedMealId: true },
+      orderBy: { _count: { savedMealId: "desc" } },
+      take: 5,
+    });
+
+    if (groups.length === 0) {
+      return reply.send([]);
+    }
+
+    const mealIds = groups
+      .map((g) => g.savedMealId)
+      .filter((id): id is string => id !== null);
+
+    const meals = await prisma.savedMeal.findMany({
+      where: { id: { in: mealIds }, userId },
+      include: { items: true },
+    });
+
+    const result = [];
+    for (const g of groups) {
+      const meal = meals.find((m) => m.id === g.savedMealId);
+      if (!meal) continue;
+
+      const lastEntry = await prisma.foodEntry.findFirst({
+        where: { userId, savedMealId: g.savedMealId },
+        orderBy: { createdAt: "desc" },
+        select: { date: true },
+      });
+
+      const totalMacros = {
+        calories: meal.items.reduce((s, i) => s + i.calories, 0),
+        proteinG: meal.items.reduce((s, i) => s + i.proteinG, 0),
+        carbsG: meal.items.reduce((s, i) => s + i.carbsG, 0),
+        fatG: meal.items.reduce((s, i) => s + i.fatG, 0),
+      };
+
+      result.push({
+        savedMealId: meal.id,
+        name: meal.name,
+        totalMacros,
+        itemCount: meal.items.length,
+        logCount: g._count.savedMealId,
+        lastLoggedDate: lastEntry
+          ? lastEntry.date.toISOString().split("T")[0]
+          : "",
+      });
+    }
+
+    return reply.send(result);
+  });
 }

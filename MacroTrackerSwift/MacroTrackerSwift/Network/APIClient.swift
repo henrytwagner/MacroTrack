@@ -363,6 +363,56 @@ struct ApiError: Error, LocalizedError, Sendable {
         return try await post("/api/meals/\(savedMealId)/log", body: req)
     }
 
+    // MARK: - Summary & Stats
+
+    func getSummary(from: String, to: String) async throws -> DateRangeSummaryResponse {
+        return try await get("/api/food/entries/summary?from=\(from.urlEncoded)&to=\(to.urlEncoded)")
+    }
+
+    func getTopFoods(from: String, to: String) async throws -> [FoodFrequencyItem] {
+        return try await get("/api/stats/top-foods?from=\(from.urlEncoded)&to=\(to.urlEncoded)")
+    }
+
+    // MARK: - Weight Tracking
+
+    func getWeightEntries(from: String, to: String) async throws -> WeightTrendResponse {
+        return try await get("/api/weight?from=\(from.urlEncoded)&to=\(to.urlEncoded)")
+    }
+
+    func logWeight(_ data: CreateWeightEntryRequest) async throws -> WeightEntry {
+        return try await post("/api/weight", body: data)
+    }
+
+    func deleteWeight(id: String) async throws {
+        try await delete("/api/weight/\(id)")
+    }
+
+    // MARK: - Frequent Meals
+
+    func getFrequentMeals() async throws -> [FrequentMeal] {
+        return try await get("/api/meals/frequent")
+    }
+
+    // MARK: - Export
+
+    func exportEntries(from: String, to: String) async throws -> Data {
+        let urlStr = Config.baseURL + "/api/food/entries/export?from=\(from)&to=\(to)&format=csv"
+        guard let url = URL(string: urlStr) else {
+            throw ApiError(statusCode: 0, message: "Invalid URL")
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        if let token = KeychainService.load(key: "accessToken") {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await URLSession.shared.data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            throw ApiError(statusCode: status, message: "Export failed")
+        }
+        return data
+    }
+
     // MARK: - Nutrition Label Parsing
 
     func parseNutritionLabel(ocrText: String) async throws -> ParsedNutritionLabelResponse {

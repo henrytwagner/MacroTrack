@@ -6,8 +6,9 @@ import Observation
 final class MealsStore {
     static let shared = MealsStore()
 
-    var meals:     [SavedMeal] = []
-    var isLoading: Bool = false
+    var meals:          [SavedMeal] = []
+    var frequentMeals:  [FrequentMeal] = []
+    var isLoading:      Bool = false
 
     private init() {}
 
@@ -86,6 +87,16 @@ final class MealsStore {
                  scaleFactor: Double) async throws -> [FoodEntry] {
         let req = LogMealRequest(date: date, mealLabel: mealLabel, scaleFactor: scaleFactor)
         return try await APIClient.shared.logMeal(savedMealId: savedMealId, req: req)
+    }
+
+    // MARK: - Frequent Meals
+
+    func fetchFrequentMeals() async {
+        do {
+            frequentMeals = try await APIClient.shared.getFrequentMeals()
+        } catch {
+            // Non-critical
+        }
     }
 
     // MARK: - Helpers

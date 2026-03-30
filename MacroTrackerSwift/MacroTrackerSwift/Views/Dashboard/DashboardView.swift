@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 // MARK: - DashboardView
 
@@ -7,43 +8,82 @@ struct DashboardView: View {
     @Environment(GoalStore.self)     private var goalStore
     @Environment(DateStore.self)     private var dateStore
     @Environment(TabRouter.self)     private var tabRouter
+    @Environment(MealsStore.self)    private var mealsStore
+    @Environment(WeightStore.self)   private var weightStore
+    @Environment(StatsStore.self)    private var statsStore
+    @Environment(InsightsStore.self) private var insightsStore
+    @Environment(CalendarStore.self) private var calendarStore
+    @Environment(ProfileStore.self)  private var profileStore
 
     @State private var refreshing:      Bool = false
     @State private var lastAddedEntry:  FoodEntry? = nil
     @State private var showAddFood:     Bool = false
-    @State private var showEditDashStub: Bool = false
+    @State private var showLogWeight:   Bool = false
+    @State private var showExport:      Bool = false
+    @State private var showLogMeal:     SavedMeal? = nil
 
     private var today: String { todayString() }
 
     // MARK: Body
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            ScrollView {
-                VStack(spacing: Spacing.xl) {
-                    greetingSection
-                    progressCard
-                    if !logStore.frequentFoods.isEmpty {
-                        quickAddSection
-                    }
-                    todayLogSection
-                    editDashLink
-                }
-                .padding(.horizontal, Spacing.lg)
-                .padding(.top, Spacing.sm)
-                .padding(.bottom, 100)
-            }
-            .refreshable {
-                await performRefresh()
-            }
-            .background(Color.appBackground)
+        NavigationStack {
+            ZStack(alignment: .bottom) {
+                ScrollView {
+                    VStack(spacing: Spacing.xl) {
+                        // Insight banner
+                        if let insight = insightsStore.activeInsights.first {
+                            InsightBannerView(insight: insight) {
+                                insightsStore.dismiss(insight.id)
+                            }
+                        }
 
-            // Undo snackbar overlay
-            UndoSnackbar(
-                message:   lastAddedEntry.map { "Added \($0.name)." } ?? "",
-                visible:   lastAddedEntry != nil,
-                onUndo:    handleUndo,
-                onDismiss: { lastAddedEntry = nil })
+                        greetingSection
+                        progressCard
+
+                        if !logStore.frequentFoods.isEmpty {
+                            quickAddSection
+                        }
+
+                        // Quick Log Meals
+                        if !mealsStore.frequentMeals.isEmpty {
+                            quickLogMealsSection
+                        }
+
+                        // Weight card
+                        weightCard
+
+                        // Stats summary
+                        statsSummaryCard
+
+                        todayLogSection
+                    }
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.top, Spacing.sm)
+                    .padding(.bottom, 100)
+                }
+                .refreshable {
+                    await performRefresh()
+                }
+                .background(Color.appBackground)
+
+                // Undo snackbar overlay
+                UndoSnackbar(
+                    message:   lastAddedEntry.map { "Added \($0.name)." } ?? "",
+                    visible:   lastAddedEntry != nil,
+                    onUndo:    handleUndo,
+                    onDismiss: { lastAddedEntry = nil })
+            }
+            .navigationTitle("")
+            .navigationBarHidden(true)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { showExport = true } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .foregroundStyle(Color.appTint)
+                    }
+                }
+            }
         }
         .task {
             await fetchAll()
@@ -54,8 +94,13 @@ struct DashboardView: View {
                 .environment(goalStore)
                 .environment(dateStore)
         }
-        .sheet(isPresented: $showEditDashStub) {
-            stubSheet("Edit Dashboard — coming soon")
+        .sheet(isPresented: $showLogWeight) {
+            LogWeightSheet()
+                .environment(weightStore)
+                .environment(profileStore)
+        }
+        .sheet(isPresented: $showExport) {
+            ExportView()
         }
     }
 
@@ -137,6 +182,177 @@ struct DashboardView: View {
             .background(Color.appSurface)
             .clipShape(RoundedRectangle(cornerRadius: BorderRadius.lg))
         }
+    }
+
+    // MARK: Quick Log Meals
+
+    private var quickLogMealsSection: some View {
+        VStack(spacing: Spacing.md) {
+            HStack {
+                Text("Quick Log Meals")
+                    .font(.appHeadline)
+                    .tracking(Typography.Tracking.headline)
+                    .foregroundStyle(Color.appText)
+                Spacer()
+            }
+            .padding(.horizontal, Spacing.xs)
+
+            VStack(spacing: 0) {
+                ForEach(Array(mealsStore.frequentMeals.prefix(3).enumerated()), id: \.element.id) { i, meal in
+                    if i > 0 {
+                        Divider().padding(.leading, Spacing.lg)
+                    }
+                    QuickLogMealRow(
+                        meal: meal,
+                        onPressName: {
+                            // Find the saved meal to show LogMealSheet
+                            if let saved = mealsStore.meal(for: meal.savedMealId) {
+                                showLogMeal = saved
+                            }
+                        },
+                        onQuickLog: handleQuickLogMeal)
+                }
+            }
+            .background(Color.appSurface)
+            .clipShape(RoundedRectangle(cornerRadius: BorderRadius.lg))
+        }
+    }
+
+    // MARK: Weight Card
+
+    private var weightCard: some View {
+        NavigationLink(destination: WeightTrackingView()
+            .environment(weightStore)
+            .environment(profileStore)) {
+            HStack {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Weight")
+                        .font(.appHeadline)
+                        .foregroundStyle(Color.appText)
+
+                    if let weight = weightStore.latestWeight {
+                        let isMetric = profileStore.profile?.preferredUnits != .imperial
+                        let display = isMetric ? weight : weight * 2.20462
+                        let unit = isMetric ? "kg" : "lbs"
+                        Text("\(display, specifier: "%.1f") \(unit)")
+                            .font(.appTitle3)
+                            .foregroundStyle(Color.appText)
+                            .monospacedDigit()
+                    } else {
+                        Text("No data")
+                            .font(.appSubhead)
+                            .foregroundStyle(Color.appTextTertiary)
+                    }
+
+                    if let rate = weightStore.weeklyRateKg {
+                        let isMetric = profileStore.profile?.preferredUnits != .imperial
+                        let display = isMetric ? rate : rate * 2.20462
+                        let unit = isMetric ? "kg" : "lbs"
+                        HStack(spacing: 4) {
+                            Image(systemName: rate > 0 ? "arrow.up.right" : rate < 0 ? "arrow.down.right" : "arrow.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(rate > 0 ? Color.appWarning : Color.appSuccess)
+                            Text("\(abs(display), specifier: "%.1f") \(unit)/wk")
+                                .font(.appCaption1)
+                                .foregroundStyle(Color.appTextSecondary)
+                                .monospacedDigit()
+                        }
+                    }
+                }
+
+                Spacer()
+
+                // Mini sparkline
+                if weightStore.entries.count >= 2 {
+                    Chart(weightStore.entries) { entry in
+                        LineMark(
+                            x: .value("Date", entry.date),
+                            y: .value("Weight", entry.weightKg)
+                        )
+                        .foregroundStyle(Color.appTint.opacity(0.6))
+                        .interpolationMethod(.catmullRom)
+                    }
+                    .chartXAxis(.hidden)
+                    .chartYAxis(.hidden)
+                    .frame(width: 80, height: 40)
+                }
+
+                Button {
+                    showLogWeight = true
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(Color.appTint)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(Spacing.xl)
+            .background(Color.appSurface)
+            .clipShape(RoundedRectangle(cornerRadius: BorderRadius.lg))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Stats Summary Card
+
+    private var statsSummaryCard: some View {
+        NavigationLink(destination: StatsView()
+            .environment(statsStore)) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                HStack {
+                    Text("This Week")
+                        .font(.appHeadline)
+                        .foregroundStyle(Color.appText)
+                    Spacer()
+                    Text("View Stats")
+                        .font(.appSubhead)
+                        .foregroundStyle(Color.appTint)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.appTint)
+                }
+
+                HStack(spacing: Spacing.xl) {
+                    VStack(spacing: Spacing.xs) {
+                        Text("\(Int(statsStore.avgCalories))")
+                            .font(.appTitle3)
+                            .fontWeight(.bold)
+                            .foregroundStyle(Color.caloriesAccent)
+                            .monospacedDigit()
+                        Text("avg cal")
+                            .font(.appCaption1)
+                            .foregroundStyle(Color.appTextSecondary)
+                    }
+
+                    VStack(spacing: Spacing.xs) {
+                        Text("\(Int(statsStore.consistencyScore))%")
+                            .font(.appTitle3)
+                            .fontWeight(.bold)
+                            .foregroundStyle(Color.appTint)
+                            .monospacedDigit()
+                        Text("logged")
+                            .font(.appCaption1)
+                            .foregroundStyle(Color.appTextSecondary)
+                    }
+
+                    VStack(spacing: Spacing.xs) {
+                        Text("\(Int(statsStore.goalHitRate))%")
+                            .font(.appTitle3)
+                            .fontWeight(.bold)
+                            .foregroundStyle(Color.appSuccess)
+                            .monospacedDigit()
+                        Text("goals met")
+                            .font(.appCaption1)
+                            .foregroundStyle(Color.appTextSecondary)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .padding(Spacing.xl)
+            .background(Color.appSurface)
+            .clipShape(RoundedRectangle(cornerRadius: BorderRadius.lg))
+        }
+        .buttonStyle(.plain)
     }
 
     private var todayLogSection: some View {
@@ -284,43 +500,26 @@ struct DashboardView: View {
         .padding(.vertical, Spacing.md)
     }
 
-    private var editDashLink: some View {
-        Button("Edit dashboard") { showEditDashStub = true }
-            .font(.appSubhead)
-            .foregroundStyle(Color.appTint)
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity)
-    }
-
-    // MARK: Stub sheet
-
-    @ViewBuilder
-    private func stubSheet(_ label: String) -> some View {
-        NavigationStack {
-            Text(label)
-                .font(.appBody)
-                .foregroundStyle(Color.appTextSecondary)
-                .navigationTitle(label)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { showEditDashStub = false }
-                    }
-                }
-        }
-    }
-
     // MARK: Data fetching
 
     private func fetchAll() async {
-        async let entries: Void  = logStore.fetch(date: today)
-        async let goals: Void    = goalStore.fetch(date: today)
-        async let frequent: Void = logStore.fetchFrequentFoods()
-        _ = await (entries, goals, frequent)
+        async let entries: Void   = logStore.fetch(date: today)
+        async let goals: Void     = goalStore.fetch(date: today)
+        async let frequent: Void  = logStore.fetchFrequentFoods()
+        async let meals: Void     = mealsStore.fetchFrequentMeals()
+        async let stats: Void     = statsStore.fetch(range: .week)
+        async let weight: Void    = weightStore.fetch(from: dateString(daysAgo: 90), to: today)
+        async let calendar: Void  = calendarStore.fetchMonth(Date())
+        _ = await (entries, goals, frequent, meals, stats, weight, calendar)
+
+        // Compute insights from fetched summary data
+        let allSummaries = Array(calendarStore.summaries.values)
+        insightsStore.computeInsights(summaries: allSummaries)
     }
 
     private func performRefresh() async {
         refreshing = true
+        calendarStore.invalidate()
         await fetchAll()
         refreshing = false
     }
@@ -346,7 +545,23 @@ struct DashboardView: View {
             lastAddedEntry = entry
             await logStore.fetchFrequentFoods()
         } catch {
-            // silent failure — undo won't appear
+            // silent failure
+        }
+    }
+
+    private func handleQuickLogMeal(_ meal: FrequentMeal) async {
+        do {
+            let entries = try await mealsStore.logMeal(
+                savedMealId: meal.savedMealId,
+                date: today,
+                mealLabel: currentMealLabel(),
+                scaleFactor: 1.0)
+            if let first = entries.first {
+                lastAddedEntry = first
+            }
+            await logStore.fetch(date: today)
+        } catch {
+            // silent failure
         }
     }
 
@@ -388,6 +603,15 @@ struct DashboardView: View {
             ? String(Int(v))
             : String(format: "%.1f", v)
     }
+
+    private func dateString(daysAgo: Int) -> String {
+        let cal = Calendar.current
+        let date = cal.date(byAdding: .day, value: -daysAgo, to: Date())!
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f.string(from: date)
+    }
 }
 
 // MARK: - Preview
@@ -398,4 +622,10 @@ struct DashboardView: View {
         .environment(GoalStore.shared)
         .environment(DateStore.shared)
         .environment(TabRouter.shared)
+        .environment(MealsStore.shared)
+        .environment(WeightStore.shared)
+        .environment(StatsStore.shared)
+        .environment(InsightsStore.shared)
+        .environment(CalendarStore.shared)
+        .environment(ProfileStore.shared)
 }

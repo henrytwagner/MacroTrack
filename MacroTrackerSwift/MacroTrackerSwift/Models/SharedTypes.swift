@@ -305,6 +305,89 @@ struct RecentFood: Codable, Sendable {
     var loggedAt:        String
 }
 
+// MARK: - Summary & Stats
+
+struct DailySummaryItem: Codable, Sendable, Identifiable {
+    var id: String { date }
+    var date:           String
+    var totalCalories:  Double
+    var totalProteinG:  Double
+    var totalCarbsG:    Double
+    var totalFatG:      Double
+    var entryCount:     Int
+    var goalCalories:   Double?
+    var goalProteinG:   Double?
+    var goalCarbsG:     Double?
+    var goalFatG:       Double?
+}
+
+struct DateRangeSummaryResponse: Codable, Sendable {
+    var summaries: [DailySummaryItem]
+}
+
+// MARK: - Weight Tracking
+
+struct WeightEntry: Codable, Identifiable, Sendable {
+    var id:        String
+    var date:      String
+    var weightKg:  Double
+    var note:      String?
+    var createdAt: String
+}
+
+struct CreateWeightEntryRequest: Codable, Sendable {
+    var date:     String
+    var weightKg: Double
+    var note:     String?
+}
+
+struct WeightMovingAvgPoint: Codable, Sendable {
+    var date:  String
+    var value: Double
+}
+
+struct WeightTrendResponse: Codable, Sendable {
+    var entries:            [WeightEntry]
+    var movingAverage7Day:  [WeightMovingAvgPoint]
+    var weeklyRateKg:       Double?
+}
+
+// MARK: - Food Frequency & Meal Stats
+
+struct FoodFrequencyItem: Codable, Sendable, Identifiable {
+    var id: String { name + source.rawValue }
+    var name:           String
+    var source:         FoodSource
+    var totalLogCount:  Int
+    var avgCalories:    Double
+    var lastLoggedDate: String
+}
+
+struct FrequentMeal: Codable, Sendable, Identifiable {
+    var id: String { savedMealId }
+    var savedMealId:    String
+    var name:           String
+    var totalMacros:    Macros
+    var itemCount:      Int
+    var logCount:       Int
+    var lastLoggedDate: String
+}
+
+// MARK: - Insights
+
+enum InsightType: String, Sendable {
+    case streak, warning, pattern, milestone
+}
+
+struct NutrientInsight: Identifiable, Sendable {
+    let id:          String
+    let type:        InsightType
+    let priority:    Int  // 0=low, 1=medium, 2=high
+    let title:       String
+    let message:     String
+    let iconName:    String
+}
+
 // MARK: - API Request / Response Types
 
 struct CreateFoodEntryRequest: Codable, Sendable {
@@ -799,6 +882,7 @@ enum WSClientMessage: Encodable, Sendable {
     case scaleConfirm(itemId: String, quantity: Double, unit: String)
     case touchEditItem(itemId: String, quantity: Double, unit: String)
     case touchRemoveItem(itemId: String)
+    case touchDismissChoice(itemId: String)
     case touchCompleteCreation(itemId: String, name: String, calories: Double,
                                proteinG: Double, carbsG: Double, fatG: Double,
                                servingSize: Double, servingUnit: String)
@@ -845,6 +929,9 @@ enum WSClientMessage: Encodable, Sendable {
             try c.encode(unit, forKey: .unit)
         case .touchRemoveItem(let itemId):
             try c.encode("touch_remove_item", forKey: .type)
+            try c.encode(itemId, forKey: .itemId)
+        case .touchDismissChoice(let itemId):
+            try c.encode("touch_dismiss_choice", forKey: .type)
             try c.encode(itemId, forKey: .itemId)
         case .touchCompleteCreation(let itemId, let name, let calories,
                                      let proteinG, let carbsG, let fatG,

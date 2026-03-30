@@ -685,4 +685,117 @@ export async function foodRoutes(app: FastifyInstance) {
       return reply.send(result);
     },
   );
+
+  // GET /api/food/entries/summary?from=YYYY-MM-DD&to=YYYY-MM-DD
+  app.get<{ Querystring: { from: string; to: string } }>(
+    "/api/food/entries/summary",
+    async (request, reply) => {
+      const userId = request.userId;
+      const { from, to } = request.query;
+
+      if (!from || !to) {
+        return reply
+          .code(400)
+          .send({ error: "from and to query parameters are required" });
+      }
+
+      const groups = await prisma.foodEntry.groupBy({
+        by: ["date"],
+        where: {
+          userId,
+          date: { gte: new Date(from), lte: new Date(to) },
+        },
+        _sum: {
+          calories: true,
+          proteinG: true,
+          carbsG: true,
+          fatG: true,
+        },
+        _count: { id: true },
+      });
+
+      // Resolve goals for unique dates via GoalTimeline
+      const goalTimeline = await prisma.goalTimeline.findMany({
+        where: {
+          userId,
+          effectiveDate: { lte: new Date(to) },
+        },
+        orderBy: [{ effectiveDate: "desc" }, { createdAt: "desc" }],
+      });
+
+      function getGoalForDate(date: Date) {
+        for (const g of goalTimeline) {
+          if (g.effectiveDate <= date) {
+            return {
+              calories: g.calories,
+              proteinG: g.proteinG,
+              carbsG: g.carbsG,
+              fatG: g.fatG,
+            };
+          }
+        }
+        return null;
+      }
+
+      const summaries = groups.map((g) => {
+        const dateStr = g.date.toISOString().split("T")[0];
+        const goal = getGoalForDate(g.date);
+        return {
+          date: dateStr,
+          totalCalories: g._sum.calories ?? 0,
+          totalProteinG: g._sum.proteinG ?? 0,
+          totalCarbsG: g._sum.carbsG ?? 0,
+          totalFatG: g._sum.fatG ?? 0,
+          entryCount: g._count.id,
+          goalCalories: goal?.calories ?? undefined,
+          goalProteinG: goal?.proteinG ?? undefined,
+          goalCarbsG: goal?.carbsG ?? undefined,
+          goalFatG: goal?.fatG ?? undefined,
+        };
+      });
+
+      return reply.send({ summaries });
+    },
+  );
+
+  // GET /api/food/entries/export?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv
+  app.get<{ Querystring: { from: string; to: string; format?: string } }>(
+    "/api/food/entries/export",
+    async (request, reply) => {
+      const userId = request.userId;
+      const { from, to } = request.query;
+
+      if (!from || !to) {
+        return reply
+          .code(400)
+          .send({ error: "from and to query parameters are required" });
+      }
+
+      const entries = await prisma.foodEntry.findMany({
+        where: {
+          userId,
+          date: { gte: new Date(from), lte: new Date(to) },
+        },
+        orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+      });
+
+      const header =
+        "Date,Meal,Food Name,Quantity,Unit,Calories,Protein (g),Carbs (g),Fat (g),Source";
+      const rows = entries.map((e) => {
+        const dateStr = e.date.toISOString().split("T")[0];
+        const escapedName = `"${e.name.replace(/"/g, '""')}"`;
+        return `${dateStr},${e.mealLabel},${escapedName},${e.quantity},${e.unit},${e.calories},${e.proteinG},${e.carbsG},${e.fatG},${e.source}`;
+      });
+
+      const csv = [header, ...rows].join("\n");
+
+      reply
+        .header("Content-Type", "text/csv")
+        .header(
+          "Content-Disposition",
+          `attachment; filename="macrotrack-${from}-to-${to}.csv"`,
+        )
+        .send(csv);
+    },
+  );
 }

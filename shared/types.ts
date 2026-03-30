@@ -398,6 +398,71 @@ export interface DailySummary {
   entriesByMeal: Record<MealLabel, FoodEntry[]>;
 }
 
+// --- Summary & Stats ---
+
+export interface DailySummaryItem {
+  date: string;
+  totalCalories: number;
+  totalProteinG: number;
+  totalCarbsG: number;
+  totalFatG: number;
+  entryCount: number;
+  goalCalories?: number;
+  goalProteinG?: number;
+  goalCarbsG?: number;
+  goalFatG?: number;
+}
+
+export interface DateRangeSummaryResponse {
+  summaries: DailySummaryItem[];
+}
+
+// --- Weight Tracking ---
+
+export interface WeightEntry {
+  id: string;
+  date: string;
+  weightKg: number;
+  note?: string;
+  createdAt: string;
+}
+
+export interface CreateWeightEntryRequest {
+  date: string;
+  weightKg: number;
+  note?: string;
+}
+
+export interface WeightMovingAvgPoint {
+  date: string;
+  value: number;
+}
+
+export interface WeightTrendResponse {
+  entries: WeightEntry[];
+  movingAverage7Day: WeightMovingAvgPoint[];
+  weeklyRateKg: number | null;
+}
+
+// --- Food Frequency & Meal Stats ---
+
+export interface FoodFrequencyItem {
+  name: string;
+  source: FoodSource;
+  totalLogCount: number;
+  avgCalories: number;
+  lastLoggedDate: string;
+}
+
+export interface FrequentMeal {
+  savedMealId: string;
+  name: string;
+  totalMacros: Macros;
+  itemCount: number;
+  logCount: number;
+  lastLoggedDate: string;
+}
+
 // --- Kitchen Mode Draft State ---
 
 /**
@@ -588,6 +653,11 @@ export interface WSTouchCompleteCreationMessage {
   servingUnit: string;
 }
 
+export interface WSTouchDismissChoiceMessage {
+  type: "touch_dismiss_choice";
+  itemId: string;
+}
+
 export type WSClientMessage =
   | WSTranscriptMessage
   | WSAudioChunkMessage
@@ -598,7 +668,8 @@ export type WSClientMessage =
   | WSScaleConfirmMessage
   | WSTouchEditItemMessage
   | WSTouchRemoveItemMessage
-  | WSTouchCompleteCreationMessage;
+  | WSTouchCompleteCreationMessage
+  | WSTouchDismissChoiceMessage;
 
 // Server → Client
 
