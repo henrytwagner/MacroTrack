@@ -1,5 +1,5 @@
+import AuthenticationServices
 import SwiftUI
-// import AuthenticationServices — re-enable with Sign In with Apple
 
 struct SignInView: View {
     @Environment(AuthStore.self) private var authStore
@@ -94,29 +94,27 @@ struct SignInView: View {
                 }
                 .padding(.horizontal, Spacing.xl)
 
-                // MARK: - Sign In with Apple (disabled — Individual dev account limitation)
-                // Re-enable when upgraded to Organization account
-                // HStack {
-                //     Rectangle().frame(height: 1).foregroundStyle(Color.secondary.opacity(0.3))
-                //     Text("or").font(.caption).foregroundStyle(.secondary)
-                //     Rectangle().frame(height: 1).foregroundStyle(Color.secondary.opacity(0.3))
-                // }
-                // .padding(.horizontal, Spacing.xl)
-                //
-                // SignInWithAppleButton(.signIn) { request in
-                //     request.requestedScopes = [.fullName, .email]
-                // } onCompletion: { result in
-                //     switch result {
-                //     case .success(let authorization):
-                //         Task { await authStore.signInWithApple(authorization) }
-                //     case .failure(let error):
-                //         authStore.error = error.localizedDescription
-                //     }
-                // }
-                // .signInWithAppleButtonStyle(.white)
-                // .frame(height: 50)
-                // .cornerRadius(BorderRadius.md)
-                // .padding(.horizontal, Spacing.xl)
+                HStack {
+                    Rectangle().frame(height: 1).foregroundStyle(Color.secondary.opacity(0.3))
+                    Text("or").font(.caption).foregroundStyle(.secondary)
+                    Rectangle().frame(height: 1).foregroundStyle(Color.secondary.opacity(0.3))
+                }
+                .padding(.horizontal, Spacing.xl)
+
+                SignInWithAppleButton(.signIn) { request in
+                    request.requestedScopes = [.fullName, .email]
+                } onCompletion: { result in
+                    switch result {
+                    case .success(let authorization):
+                        Task { await authStore.signInWithApple(authorization) }
+                    case .failure(let error):
+                        authStore.error = error.localizedDescription
+                    }
+                }
+                .signInWithAppleButtonStyle(.white)
+                .frame(height: 50)
+                .cornerRadius(BorderRadius.md)
+                .padding(.horizontal, Spacing.xl)
 
                 // Status
                 if authStore.isLoading {

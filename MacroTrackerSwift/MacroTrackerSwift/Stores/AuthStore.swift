@@ -1,5 +1,5 @@
+import AuthenticationServices
 import Foundation
-// import AuthenticationServices — re-enable with Sign In with Apple
 
 // MARK: - Auth Response Types
 
@@ -46,14 +46,15 @@ final class AuthStore {
             return
         }
 
-        // Sign In with Apple credential revocation check disabled (Individual account limitation)
-        // Re-enable when upgraded to Organization account:
-        // if let appleUserId = KeychainService.load(key: "appleUserId") {
-        //     let state = try? await ASAuthorizationAppleIDProvider().credentialState(forUserID: appleUserId)
-        //     if state == .revoked || state == .notFound {
-        //         KeychainService.deleteAll(); isAuthenticated = false; return
-        //     }
-        // }
+        if let appleUserId = KeychainService.load(key: "appleUserId") {
+            let state = try? await ASAuthorizationAppleIDProvider().credentialState(forUserID: appleUserId)
+            if state == .revoked || state == .notFound {
+                KeychainService.deleteAll()
+                clearPersistedUser()
+                isAuthenticated = false
+                return
+            }
+        }
 
         // Restore persisted user info
         restoreUser()
@@ -62,9 +63,45 @@ final class AuthStore {
         isAuthenticated = true
     }
 
-    // MARK: - Sign In with Apple (disabled — Individual account limitation)
-    // Re-enable when upgraded to Organization account
-    // func signInWithApple(_ authorization: ASAuthorization) async { ... }
+    // MARK: - Sign In with Apple
+
+    func signInWithApple(_ authorization: ASAuthorization) async {
+        guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+              let tokenData = credential.identityToken,
+              let identityToken = String(data: tokenData, encoding: .utf8) else {
+            self.error = "Failed to get Apple ID credential"
+            return
+        }
+
+        isLoading = true
+        error = nil
+
+        var fullName: [String: String]?
+        if let givenName = credential.fullName?.givenName {
+            fullName = ["givenName": givenName]
+            if let familyName = credential.fullName?.familyName {
+                fullName?["familyName"] = familyName
+            }
+        }
+
+        do {
+            let response = try await APIClient.shared.signInWithApple(
+                identityToken: identityToken, fullName: fullName
+            )
+            KeychainService.save(key: "accessToken", value: response.accessToken)
+            KeychainService.save(key: "refreshToken", value: response.refreshToken)
+            KeychainService.save(key: "appleUserId", value: credential.user)
+            currentUser = response.user
+            persistUser(response.user)
+            isAuthenticated = true
+        } catch let err as ApiError {
+            self.error = err.message
+        } catch {
+            self.error = error.localizedDescription
+        }
+
+        isLoading = false
+    }
 
     // MARK: - Email / Password
 
