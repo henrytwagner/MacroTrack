@@ -11,11 +11,22 @@ const PUBLIC_ROUTES = [
   "/api/auth/reset-password",
 ];
 
+const WS_ROUTES = [
+  "/ws/kitchen-mode",
+  "/ws/voice-session",
+];
+
 export async function authenticate(
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<void> {
-  if (PUBLIC_ROUTES.includes(request.url.split("?")[0])) {
+  const path = request.url.split("?")[0];
+  if (PUBLIC_ROUTES.includes(path)) {
+    return;
+  }
+
+  // WebSocket routes handle auth inline via query param token
+  if (WS_ROUTES.includes(path)) {
     return;
   }
 
