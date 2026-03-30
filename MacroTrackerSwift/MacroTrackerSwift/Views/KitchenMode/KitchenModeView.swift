@@ -11,6 +11,8 @@ struct KitchenModeView: View {
     @Environment(DateStore.self) private var dateStore
     @Environment(DraftStore.self) private var draftStore
 
+    @Environment(\.scenePhase) private var scenePhase
+
     @State private var vm = KitchenModeViewModel()
     @State private var showCancelAlert = false
     @State private var showSaveAlert = false
@@ -24,6 +26,7 @@ struct KitchenModeView: View {
     @State private var showCameraProcessingDebug: Bool = false
     @State private var cameraProcessingStartTime: Date? = nil
 
+    var resumeSessionId: String? = nil
     let onDismiss: () -> Void
 
     // MARK: - Body
@@ -42,6 +45,7 @@ struct KitchenModeView: View {
         }
         .background(Color.appBackground.ignoresSafeArea())
         .task {
+            vm.resumeSessionId = resumeSessionId
             await vm.startSession()
         }
         .onDisappear {
@@ -49,11 +53,14 @@ struct KitchenModeView: View {
         }
         .onChange(of: vm.sessionState) { _, newState in
             switch newState {
-            case .saving, .cancelled:
+            case .saving, .cancelled, .paused:
                 onDismiss()
             default:
                 break
             }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            vm.handleScenePhaseChange(newPhase)
         }
         .onChange(of: vm.barcodeModeActive) { _, active in
             // Re-show the camera overlay whenever camera mode is turned on
@@ -160,6 +167,7 @@ struct KitchenModeView: View {
                     if vm.textDisplayMode != .off {
                         VStack {
                             Spacer()
+                                .allowsHitTesting(false)
                             captionOrEditRow
                                 .padding(.horizontal, Spacing.lg)
                                 .padding(.bottom, Spacing.sm)
@@ -263,10 +271,11 @@ struct KitchenModeView: View {
                     .transition(.opacity)
             }
 
-            // Processing indicator — floats center of camera feed while identifying food
+            // Processing indicator — floats near bottom of camera feed (same position as barcode card)
             if vm.isCameraProcessing && cameraControlsVisible {
                 cameraProcessingIndicator
-                    .frame(height: feedHeight)
+                    .padding(.horizontal, Spacing.lg)
+                    .offset(y: feedHeight - 64)
                     .allowsHitTesting(true)
             }
 
@@ -357,28 +366,24 @@ struct KitchenModeView: View {
     // MARK: - Camera Processing Indicator
 
     private var cameraProcessingIndicator: some View {
-        VStack {
-            Spacer()
-            Button {
-                showCameraProcessingDebug = true
-            } label: {
-                HStack(spacing: Spacing.sm) {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .tint(.white)
-                        .scaleEffect(0.85)
-                    Text("Identifying food…")
-                        .font(.appSubhead)
-                        .foregroundStyle(.white)
-                }
-                .padding(.horizontal, Spacing.lg)
-                .padding(.vertical, Spacing.sm)
-                .background(Color.black.opacity(0.6))
-                .clipShape(Capsule())
+        Button {
+            showCameraProcessingDebug = true
+        } label: {
+            HStack(spacing: Spacing.sm) {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .tint(.white)
+                    .scaleEffect(0.85)
+                Text("Identifying food…")
+                    .font(.appSubhead)
+                    .foregroundStyle(.white)
             }
-            .buttonStyle(.plain)
-            Spacer()
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.sm)
+            .background(Color.black.opacity(0.6))
+            .clipShape(Capsule())
         }
+        .buttonStyle(.plain)
         .alert("Camera Processing", isPresented: $showCameraProcessingDebug) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -439,6 +444,9 @@ struct KitchenModeView: View {
             },
             onReweigh: {
                 vm.reweighItem(itemId: item.id)
+            },
+            onChoiceCreate: { name in
+                vm.choiceCreateFood(itemId: item.id, name: name)
             },
             onSearchManually: { name in
                 vm.pendingSearchName = name
@@ -884,16 +892,8 @@ struct KitchenModeView: View {
 
     private func handleSave() {
         guard case .active = vm.sessionState else { return }
-        let incompleteItems = vm.items.filter { $0.state != .normal }
-        let unconfirmedItems = vm.items.filter { $0.state == .normal && !$0.quantityConfirmed }
-
-        if !unconfirmedItems.isEmpty {
-            showUnconfirmedAlert = true
-        } else if !incompleteItems.isEmpty {
-            showSaveAlert = true
-        } else {
-            vm.save()
-        }
+        // "Save" now means "save for now" (pause) — session remains resumable
+        vm.pause()
     }
 
     private func handleCancel() {

@@ -1,4 +1,4 @@
-import { prisma } from "../db/client.js";
+import { prisma, pool } from "../db/client.js";
 import { parseTranscript } from "./gemini.js";
 import { searchFoods, getFoodByFdcId, searchFoodsEnhanced } from "./usda.js";
 import { lookupFoodPipeline } from "./foodSearchPipeline.js";
@@ -49,17 +49,6 @@ function getProvisionalMealLabel(): MealLabel {
 // Custom food fuzzy matching
 // ---------------------------------------------------------------------------
 
-const CUSTOM_FOOD_SELECT = {
-  id: true,
-  name: true,
-  servingSize: true,
-  servingUnit: true,
-  calories: true,
-  proteinG: true,
-  carbsG: true,
-  fatG: true,
-} as const;
-
 type CustomFoodMatch = {
   id: string;
   name: string;
@@ -77,19 +66,18 @@ async function findCustomFood(
 ): Promise<CustomFoodMatch | null> {
   const normalized = name.toLowerCase().trim();
 
-  // Exact match first (Prisma-side)
-  const exact = await prisma.customFood.findFirst({
-    where: { userId, name: { equals: normalized, mode: "insensitive" } },
-    select: CUSTOM_FOOD_SELECT,
-  });
-  if (exact) return exact;
-
-  // Contains match (Prisma-side)
-  const contains = await prisma.customFood.findFirst({
-    where: { userId, name: { contains: normalized, mode: "insensitive" } },
-    select: CUSTOM_FOOD_SELECT,
-  });
-  return contains ?? null;
+  // Trigram fuzzy search — handles typos and word reordering
+  const { rows } = await pool.query<CustomFoodMatch>(
+    `SELECT id, name, "servingSize", "servingUnit",
+       calories, "proteinG", "carbsG", "fatG"
+     FROM "CustomFood"
+     WHERE "userId" = $2
+       AND (name % $1 OR word_similarity($1, name) > 0.25)
+     ORDER BY GREATEST(similarity(name, $1), word_similarity($1, name)) DESC
+     LIMIT 1`,
+    [normalized, userId],
+  );
+  return rows[0] ?? null;
 }
 
 // ---------------------------------------------------------------------------

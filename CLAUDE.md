@@ -16,7 +16,14 @@ MacroTrack is a voice-first macronutrient tracking app. Users can log food via v
 - Integrating BLE scale input as a quantity source alongside voice
 - Long-term: evolving toward a camera-assisted, scale-integrated, AR-overlay logging experience (see `BUILD_PLAN.md`)
 
-Full product specification lives in `SPEC.md`. Consult it for detailed requirements. Long-term vision and phased build strategy lives in `BUILD_PLAN.md`.
+Full product specification lives in `SPEC.md`. Consult it for detailed requirements. Long-term vision and phased build strategy for the input pipeline (scale, camera, voice, AR) lives in `BUILD_PLAN.md`. Long-term feature directions for social, data quality, and intelligence layers live in `FEATURES_ROADMAP.md`.
+
+**Long-term feature directions** (see `FEATURES_ROADMAP.md` for full details):
+- **Passive Kitchen Mode**: Evolving Kitchen Mode from voice-first to observation-first — auto-add items by combining scale readings + camera identification, with voice as a correction channel. Does not require the YOLO/AR pipeline.
+- **User Reputation**: Single global reputation score per user governing community food trustworthiness. Upvotes, reports, and contribution quality determine score.
+- **Recipe Sharing & Meal Prep**: Personal meal portioning (`totalServings` on SavedMeal) + a separate community recipe system with discovery, ratings, and forking. Recipes are distinct from community foods.
+- **Day Validation & AI Insights**: Users validate days as accurate. Rule-based insights detect metabolic adaptation, over-restriction, and macro imbalances. Long-term, LLM analysis of validated data corpus for deeper pattern recognition and goal adjustment suggestions.
+- **Pantry & Macro-Aware Suggestions**: Virtual pantry inventory of foods at home. App recommends snacks and meals that fill remaining macro gaps using available pantry items. Connects to community recipes (filter by pantry availability) and Fridge Scan Mode (auto-populate pantry from camera).
 
 ## Commands
 

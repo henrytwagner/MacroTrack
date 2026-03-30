@@ -9,6 +9,7 @@ enum KitchenModeSessionState: Equatable {
     case connecting
     case active
     case saving
+    case paused
     case cancelled
     case error(String)
 }
@@ -124,6 +125,9 @@ final class KitchenModeViewModel {
 
     /// True once the session has ended (save/cancel/disconnect) — prevents double-close.
     private var sessionEnded = false
+
+    /// If set before startSession(), the VM will resume an existing paused session.
+    var resumeSessionId: String? = nil
 
     // MARK: - Computed
 
@@ -522,7 +526,7 @@ final class KitchenModeViewModel {
         }
 
         // Connect WebSocket (always — needed for session management and touch actions)
-        ws.connect(date: dateStore.selectedDate)
+        ws.connect(date: dateStore.selectedDate, sessionId: resumeSessionId)
 
         // Start voice if enabled
         if voiceEnabled {
@@ -638,6 +642,31 @@ final class KitchenModeViewModel {
                 scale.disconnect()
                 draft.reset()
                 sessionState = .saving
+            }
+        }
+    }
+
+    /// Pause the session — saves confirmed items, preserves drafts, dismisses.
+    func pause() {
+        guard !sessionEnded else { return }
+        sessionEnded = true
+        capture.stop()
+        camera.stop()
+        barcodeModeActive = false
+
+        // Send local items with the pause message so server saves them with voiceSessionId
+        let localItems = draft.items.filter { $0.isLocalItem }
+        ws.send(.pause(localItems: localItems))
+
+        // Fallback: if session_paused never arrives, clean up after 2s
+        Task {
+            try? await Task.sleep(for: .milliseconds(2000))
+            if sessionState != .paused {
+                stopAudio()
+                ws.disconnect()
+                UIApplication.shared.isIdleTimerDisabled = false
+                draft.reset()
+                sessionState = .paused
             }
         }
     }
@@ -766,9 +795,15 @@ final class KitchenModeViewModel {
 
     /// User swiped to delete an item via touch UI.
     func touchRemoveItem(itemId: String) {
-        // Local items don't exist on server — just remove from draft
-        if let idx = draft.items.firstIndex(where: { $0.id == itemId }), draft.items[idx].isLocalItem {
+        guard let idx = draft.items.firstIndex(where: { $0.id == itemId }) else { return }
+        let item = draft.items[idx]
+        // Local items and choice cards don't exist in session.items on the server —
+        // remove from draft immediately and just notify server to clear pending state.
+        if item.isLocalItem || item.state == .choice {
             draft.items.remove(at: idx)
+            if item.state == .choice {
+                ws.send(.touchDismissChoice(itemId: itemId))
+            }
             return
         }
         ws.send(.touchRemoveItem(itemId: itemId))
@@ -842,6 +877,16 @@ final class KitchenModeViewModel {
                 openInlineEdit(itemId: itemId)
             }
         }
+    }
+
+    /// User tapped "Create new food" on a choice card. Removes the card and opens an inline
+    /// creation form — no Gemini transcript needed.
+    func choiceCreateFood(itemId: String, name: String) {
+        if let idx = draft.items.firstIndex(where: { $0.id == itemId }) {
+            draft.items.remove(at: idx)
+        }
+        ws.send(.touchRemoveItem(itemId: itemId))
+        createLocalDraftItem(name: name)
     }
 
     /// User tapped a USDA disambiguation option directly (touch path, no Gemini transcript needed).
@@ -1173,6 +1218,33 @@ final class KitchenModeViewModel {
         playback.stopEngine()
     }
 
+    // MARK: - App Lifecycle
+
+    /// Handle background/foreground transitions to keep the connection healthy.
+    func handleScenePhaseChange(_ phase: ScenePhase) {
+        guard !sessionEnded else { return }
+        switch phase {
+        case .background:
+            // Pause audio to release the audio session — iOS will suspend it anyway
+            if audioActive {
+                stopAudio()
+            }
+        case .active:
+            // Reconnect WS if it dropped while backgrounded
+            if case .active = sessionState, !ws.isConnected {
+                ws.connect(date: dateStore.selectedDate)
+            }
+            // Restart audio if it was active before backgrounding
+            if voiceEnabled && !audioActive && sessionState == .active {
+                Task {
+                    _ = await startAudio()
+                }
+            }
+        default:
+            break
+        }
+    }
+
     // MARK: - Server Message Handling
 
     private func handleServerMessage(_ msg: WSServerMessage) {
@@ -1272,6 +1344,18 @@ final class KitchenModeViewModel {
             UIApplication.shared.isIdleTimerDisabled = false
             draft.reset()
             sessionState = .cancelled
+
+        case .sessionPaused:
+            sessionEnded = true
+            stopAudio()
+            ws.disconnect()
+            UIApplication.shared.isIdleTimerDisabled = false
+            Task {
+                await dailyLog.fetch(date: dateStore.selectedDate)
+                await SessionStore.shared.fetch(date: dateStore.selectedDate)
+            }
+            draft.reset()
+            sessionState = .paused
 
         case .error(let message):
             // Don't end session on server error — just log it

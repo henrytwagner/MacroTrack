@@ -246,7 +246,7 @@ struct FoodSearchView: View {
                 .padding(.horizontal, Spacing.md)
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity)
-                .glassEffect(.regular.interactive(), in: Capsule())
+                .glassOrMaterial(in: Capsule())
 
                 addButton
             }
@@ -272,7 +272,7 @@ struct FoodSearchView: View {
                 .foregroundStyle(Color.appTint)
                 .frame(width: Chrome.backButtonSize, height: Chrome.backButtonSize)
                 .contentShape(Circle())
-                .glassEffect(.regular.interactive(), in: Circle())
+                .glassOrMaterial(in: Circle())
         }
         .buttonStyle(.plain)
     }
@@ -288,14 +288,14 @@ struct FoodSearchView: View {
                     .foregroundStyle(Color.appTint)
                     .padding(.horizontal, Spacing.md)
                     .padding(.vertical, 10)
-                    .glassEffect(.regular.interactive(), in: Capsule())
+                    .glassOrMaterial(in: Capsule())
             } else {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Color.appTint)
                     .frame(width: Chrome.backButtonSize, height: Chrome.backButtonSize)
                     .contentShape(Circle())
-                    .glassEffect(.regular.interactive(), in: Circle())
+                    .glassOrMaterial(in: Circle())
             }
         }
         .buttonStyle(.plain)

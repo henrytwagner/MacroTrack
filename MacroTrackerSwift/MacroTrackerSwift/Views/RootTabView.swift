@@ -23,14 +23,6 @@ struct RootTabView: View {
                     Label("Profile", systemImage: "person.circle.fill")
                 }
                 .tag(2)
-
-            #if DEBUG
-            KitchenModeDebugView()
-                .tabItem {
-                    Label("Debug", systemImage: "waveform.badge.mic")
-                }
-                .tag(99)
-            #endif
         }
         .tint(Color.appTint)
     }

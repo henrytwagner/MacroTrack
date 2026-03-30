@@ -18,6 +18,8 @@ final class ProfileStore {
         do {
             profile   = try await APIClient.shared.getProfile()
             isLoading = false
+        } catch is CancellationError {
+            // ignore
         } catch {
             isLoading = false
             self.error = error.localizedDescription

@@ -18,32 +18,26 @@ function createClient(): { prisma: PrismaClient; pool: pg.Pool } {
     throw new Error("DATABASE_URL is not set");
   }
 
-  // Log masked URL for debugging connectivity
+  let host = "unknown";
   try {
     const parsed = new URL(url);
-    const host = parsed.hostname;
+    host = parsed.hostname;
     const port = parsed.port;
-    const usesSsl = !host.endsWith(".railway.internal");
-    console.log(`[DB] Connecting to ${host}:${port}${parsed.pathname} (ssl: ${usesSsl})`);
+    console.log(`[DB] Connecting to ${host}:${port}${parsed.pathname}`);
 
-    // DNS lookup diagnostic
-    import("dns").then(dns => {
-      dns.lookup(host, (err, address) => {
-        if (err) console.error(`[DB] DNS lookup FAILED for ${host}: ${err.message}`);
-        else console.log(`[DB] DNS resolved ${host} → ${address}`);
-      });
+    dns.lookup(host, (err, address) => {
+      if (err) console.error(`[DB] DNS lookup FAILED for ${host}: ${err.message}`);
+      else console.log(`[DB] DNS resolved ${host} → ${address}`);
     });
   } catch {
-    console.log(`[DB] DATABASE_URL is not a valid URL: ${url.substring(0, 30)}...`);
+    console.log(`[DB] DATABASE_URL is not a valid URL`);
   }
 
-  // Railway private networking (*.railway.internal) is raw TCP — no TLS.
-  // Public proxies (*.proxy.rlwy.net) require SSL.
-  const parsed2 = new URL(url);
-  const isPrivateNetwork = parsed2.hostname.endsWith(".railway.internal");
-  const sslConfig = isPrivateNetwork ? false : { rejectUnauthorized: false };
-
-  console.log(`[DB] SSL: ${isPrivateNetwork ? "disabled (private network)" : "enabled"}`);
+  // Only enable SSL for Railway public proxies (*.proxy.rlwy.net).
+  // Local dev and private networking don't use SSL.
+  const needsSsl = host.endsWith(".proxy.rlwy.net");
+  const sslConfig = needsSsl ? { rejectUnauthorized: false } : false;
+  console.log(`[DB] SSL: ${needsSsl ? "enabled (public proxy)" : "disabled"}`);
 
   const pool = new pg.Pool({
     connectionString: url,

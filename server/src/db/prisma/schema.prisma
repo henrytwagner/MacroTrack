@@ -168,15 +168,19 @@ model SavedMealItem {
 }
 
 model VoiceSession {
-  id          String        @id @default(uuid())
-  userId      String
-  startedAt   DateTime      @default(now())
-  endedAt     DateTime?
-  status      SessionStatus @default(active)
-  user        User          @relation(fields: [userId], references: [id])
-  foodEntries FoodEntry[]
+  id             String        @id @default(uuid())
+  userId         String
+  date           DateTime?     @db.Date
+  startedAt      DateTime      @default(now())
+  endedAt        DateTime?
+  status         SessionStatus @default(active)
+  draftItems     Json?
+  savedSnapshot  Json?
+  user           User          @relation(fields: [userId], references: [id])
+  foodEntries    FoodEntry[]
 
   @@index([userId])
+  @@index([userId, date])
 }
 
 /// Per-food unit definitions that map friendly units (slice, cup, piece)
@@ -370,6 +374,7 @@ enum BarcodeType {
 
 enum SessionStatus {
   active
+  paused
   completed
   cancelled
 }

@@ -1907,6 +1907,23 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
         });
       }
 
+      // -----------------------------------------------------------------------
+      // Heartbeat — keeps Railway proxy alive
+      // -----------------------------------------------------------------------
+      let pongReceived = true;
+      const pingInterval = setInterval(() => {
+        if (socket.readyState !== socket.OPEN) { clearInterval(pingInterval); return; }
+        if (!pongReceived) {
+          console.warn("[voiceSession] pong not received — closing dead connection");
+          clearInterval(pingInterval);
+          socket.close();
+          return;
+        }
+        pongReceived = false;
+        socket.ping();
+      }, 20_000);
+      socket.on("pong", () => { pongReceived = true; });
+
       socket.on("message", async (rawData: Buffer | string) => {
         let msg: WSClientMessage;
         try {
@@ -1975,6 +1992,7 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
       });
 
       socket.on("close", async () => {
+        clearInterval(pingInterval);
         console.log(`[voiceSession] Disconnected — completed: ${session.completed}`);
         if (cloudStt) {
           cloudStt.close();

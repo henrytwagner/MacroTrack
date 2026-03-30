@@ -2,80 +2,64 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Required bundle keys (formerly auto-generated) -->
-    <key>CFBundleIdentifier</key>
-    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-    <key>CFBundleName</key>
-    <string>$(PRODUCT_NAME)</string>
-    <key>CFBundleDisplayName</key>
-    <string>$(PRODUCT_NAME)</string>
-    <key>CFBundleExecutable</key>
-    <string>$(EXECUTABLE_NAME)</string>
-    <key>CFBundlePackageType</key>
-    <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
-    <key>CFBundleShortVersionString</key>
-    <string>$(MARKETING_VERSION)</string>
-    <key>CFBundleVersion</key>
-    <string>$(CURRENT_PROJECT_VERSION)</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-
-    <!-- API configuration — values substituted from xcconfig at build time -->
-    <key>API_HOST</key>
-    <string>$(API_HOST)</string>
-    <key>API_SCHEME</key>
-    <string>$(API_SCHEME)</string>
-
-    <!-- Scene lifecycle for SwiftUI @main / WindowGroup -->
-    <key>UIApplicationSceneManifest</key>
-    <dict>
-        <key>UIApplicationIsSceneEnabled</key>
-        <true/>
-        <key>UISceneConfigurations</key>
-        <dict/>
-    </dict>
-
-    <key>UIApplicationSupportsIndirectInputEvents</key>
-    <true/>
-
-    <!-- Empty launch screen (SwiftUI manages its own) -->
-    <key>UILaunchScreen</key>
-    <dict/>
-
-    <!-- Allow HTTP for local development server (physical device) -->
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <key>NSAllowsLocalNetworking</key>
-        <true/>
-    </dict>
-
-    <!-- Camera permission for barcode scanner (DataScannerViewController / VisionKit) -->
-    <key>NSCameraUsageDescription</key>
-    <string>MacroTrack uses the camera to scan food barcodes.</string>
-
-    <!-- Microphone permission for Kitchen Mode voice logging -->
-    <key>NSMicrophoneUsageDescription</key>
-    <string>MacroTrack uses the microphone to log food by voice in Kitchen Mode.</string>
-
-    <!-- Bluetooth permission for BLE kitchen scale -->
-    <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>MacroTrack connects to your Bluetooth kitchen scale for precise food weighing.</string>
-
-    <key>UIStatusBarStyle</key>
-    <string>UIStatusBarStyleDefault</string>
-
-    <key>UISupportedInterfaceOrientations</key>
-    <array>
-        <string>UIInterfaceOrientationPortrait</string>
-        <string>UIInterfaceOrientationLandscapeLeft</string>
-        <string>UIInterfaceOrientationLandscapeRight</string>
-    </array>
-    <key>UISupportedInterfaceOrientations~ipad</key>
-    <array>
-        <string>UIInterfaceOrientationPortrait</string>
-        <string>UIInterfaceOrientationPortraitUpsideDown</string>
-        <string>UIInterfaceOrientationLandscapeLeft</string>
-        <string>UIInterfaceOrientationLandscapeRight</string>
-    </array>
+	<key>API_HOST</key>
+	<string>$(API_HOST)</string>
+	<key>API_SCHEME</key>
+	<string>$(API_SCHEME)</string>
+	<key>CFBundleDisplayName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>MacroTrack connects to your Bluetooth kitchen scale for precise food weighing.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>MacroTrack uses the camera to scan food barcodes.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>MacroTrack uses the microphone to log food by voice in Kitchen Mode.</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationIsSceneEnabled</key>
+		<true/>
+		<key>UISceneConfigurations</key>
+		<dict/>
+	</dict>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UIStatusBarStyle</key>
+	<string>UIStatusBarStyleDefault</string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
 </dict>
 </plist>

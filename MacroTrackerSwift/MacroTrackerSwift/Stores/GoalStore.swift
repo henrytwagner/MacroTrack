@@ -23,6 +23,8 @@ final class GoalStore {
             goalsByDate[date] = res.goals
             metaByDate[date]  = res
             isLoading = false
+        } catch is CancellationError {
+            // SwiftUI .refreshable can cancel in-flight requests — not an error
         } catch {
             isLoading = false
             self.error = error.localizedDescription

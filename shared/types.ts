@@ -9,7 +9,7 @@ export type FoodSource = "DATABASE" | "CUSTOM" | "COMMUNITY" | "AI_ESTIMATE";
 
 export type MealLabel = "breakfast" | "lunch" | "dinner" | "snack";
 
-export type SessionStatus = "active" | "completed" | "cancelled";
+export type SessionStatus = "active" | "paused" | "completed" | "cancelled";
 
 export type NutritionUnit =
   | "g"
@@ -658,11 +658,17 @@ export interface WSTouchDismissChoiceMessage {
   itemId: string;
 }
 
+export interface WSPauseMessage {
+  type: "pause";
+  localItems?: DraftItem[];
+}
+
 export type WSClientMessage =
   | WSTranscriptMessage
   | WSAudioChunkMessage
   | WSSaveMessage
   | WSCancelMessage
+  | WSPauseMessage
   | WSBarcodeScanMessage
   | WSCameraCaptureMessage
   | WSScaleConfirmMessage
@@ -762,6 +768,17 @@ export interface WSSessionSavedMessage {
 
 export interface WSSessionCancelledMessage {
   type: "session_cancelled";
+}
+
+export interface WSSessionPausedMessage {
+  type: "session_paused";
+  entriesCount: number;
+  draftItemsCount: number;
+}
+
+export interface WSSessionResumedMessage {
+  type: "session_resumed";
+  items: DraftItem[];
 }
 
 export interface WSDraftReplacedMessage {
@@ -879,6 +896,8 @@ export type WSServerMessage =
   | WSErrorMessage
   | WSSessionSavedMessage
   | WSSessionCancelledMessage
+  | WSSessionPausedMessage
+  | WSSessionResumedMessage
   | WSDraftReplacedMessage
   | WSOperationCancelledMessage
   | WSDisambiguateMessage
@@ -893,6 +912,22 @@ export type WSServerMessage =
   // Phase E (Gemini Live)
   | WSAudioDataMessage
   | WSServerTranscriptMessage;
+
+// --- Voice Session Summary (REST) ---
+
+export interface VoiceSessionSummary {
+  id: string;
+  date: string;
+  status: SessionStatus;
+  startedAt: string;
+  confirmedItems: FoodEntry[];
+  draftItems: DraftItem[];
+  totalCalories: number;
+  totalProteinG: number;
+  totalCarbsG: number;
+  totalFatG: number;
+  itemCount: number;
+}
 
 // --- Photo Identification (REST) ---
 

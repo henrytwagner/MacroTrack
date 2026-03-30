@@ -420,6 +420,20 @@ struct ApiError: Error, LocalizedError, Sendable {
         return try await post("/api/nutrition/label/parse", body: Body(ocrText: ocrText))
     }
 
+    // MARK: - Voice Sessions
+
+    func getSessions(date: String) async throws -> [VoiceSessionSummary] {
+        return try await get("/api/sessions?date=\(date)")
+    }
+
+    func getSession(id: String) async throws -> VoiceSessionSummary {
+        return try await get("/api/sessions/\(id)")
+    }
+
+    func deleteSession(id: String) async throws {
+        try await delete("/api/sessions/\(id)")
+    }
+
     // MARK: - Community Food Reporting
 
     func reportCommunityFood(id: String, reason: String, details: String? = nil) async throws {

@@ -44,6 +44,8 @@ final class DailyLogStore {
             let fetched = try await APIClient.shared.getEntries(date: date)
             entries   = fetched.sorted { $0.createdAt < $1.createdAt }
             isLoading = false
+        } catch is CancellationError {
+            // SwiftUI .refreshable can cancel in-flight requests — not an error
         } catch {
             isLoading = false
             self.error = error.localizedDescription

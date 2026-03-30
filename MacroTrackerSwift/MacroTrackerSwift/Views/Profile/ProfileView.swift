@@ -74,10 +74,8 @@ struct ProfileView: View {
     @State private var showGoalsStub:         Bool = false
     @State private var showHealthProfile:     Bool = false
     @State private var showFoodsStub:         Bool = false
-    @State private var showBarcodeStub:       Bool = false
-    @State private var showScaleStub:         Bool = false
-    @State private var showCommunityFoodsStub: Bool = false
-    @State private var showDeleteConfirmation: Bool = false
+    @State private var showCommunityFoods:    Bool = false
+    @State private var showAccount:           Bool = false
 
     private let appearanceModes: [(label: String, icon: String, value: String)] = [
         ("System", "iphone",       "system"),
@@ -93,8 +91,6 @@ struct ProfileView: View {
                 profileSection
                 nutritionSection
                 appearanceSection
-                developmentSection
-                accountSection
                 aboutSection
             }
             .padding(.horizontal, Spacing.lg)
@@ -118,10 +114,15 @@ struct ProfileView: View {
             }
             .environment(ProfileStore.shared)
         }
-        .sheet(isPresented: $showFoodsStub)          { ManageCustomFoodsView() }
-        .sheet(isPresented: $showBarcodeStub)        { stubSheet("Barcode Demo") }
-        .sheet(isPresented: $showScaleStub)          { stubSheet("Scale Demo") }
-        .sheet(isPresented: $showCommunityFoodsStub) { ManageCommunityFoodsView() }
+        .sheet(isPresented: $showFoodsStub)       { ManageCustomFoodsView() }
+        .sheet(isPresented: $showCommunityFoods) { ManageCommunityFoodsView() }
+        .sheet(isPresented: $showAccount) {
+            NavigationStack {
+                AccountView()
+            }
+            .environment(AuthStore.shared)
+            .environment(ProfileStore.shared)
+        }
     }
 
     // MARK: Sections
@@ -137,31 +138,40 @@ struct ProfileView: View {
     }
 
     private var profileCard: some View {
-        HStack(spacing: Spacing.lg) {
-            ZStack {
-                Circle()
-                    .fill(Color.appTint.opacity(0.22))
-                    .frame(width: 64, height: 64)
-                Image(systemName: "person.fill")
-                    .font(.system(size: 28))
-                    .foregroundStyle(Color.appTint)
-            }
+        Button {
+            showAccount = true
+        } label: {
+            HStack(spacing: Spacing.lg) {
+                ZStack {
+                    Circle()
+                        .fill(Color.appTint.opacity(0.22))
+                        .frame(width: 64, height: 64)
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(Color.appTint)
+                }
 
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("My Profile")
-                    .font(.appTitle3)
-                    .tracking(Typography.Tracking.title3)
-                    .foregroundStyle(Color.appText)
-                Text("Health details and goals live in dedicated screens.")
-                    .font(.appFootnote)
-                    .tracking(Typography.Tracking.footnote)
-                    .foregroundStyle(Color.appTextSecondary)
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text(authStore.currentUser?.name ?? "My Profile")
+                        .font(.appTitle3)
+                        .tracking(Typography.Tracking.title3)
+                        .foregroundStyle(Color.appText)
+                    Text("Account & profile info")
+                        .font(.appFootnote)
+                        .tracking(Typography.Tracking.footnote)
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.forward")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.appTextTertiary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Spacing.xl)
+            .background(Color.appSurface)
+            .clipShape(RoundedRectangle(cornerRadius: BorderRadius.lg))
         }
-        .padding(Spacing.xl)
-        .background(Color.appSurface)
-        .clipShape(RoundedRectangle(cornerRadius: BorderRadius.lg))
+        .buttonStyle(.plain)
     }
 
     private var profileSection: some View {
@@ -186,14 +196,9 @@ struct ProfileView: View {
                     showFoodsStub = true
                 }
                 RowSeparator()
-                SettingsRow(icon: "barcode", label: "Barcode demo",
-                            subtitle: "Scan or enter barcode to look up product") {
-                    showBarcodeStub = true
-                }
-                RowSeparator()
-                SettingsRow(icon: "scalemass", label: "Scale demo",
-                            subtitle: "Connect to Etekcity ESN00 smart scale") {
-                    showScaleStub = true
+                SettingsRow(icon: "globe", label: "Community Foods",
+                            subtitle: "Browse and manage shared foods") {
+                    showCommunityFoods = true
                 }
             }
         }
@@ -269,40 +274,6 @@ struct ProfileView: View {
                 .padding(.horizontal, Spacing.lg)
                 .padding(.vertical, Spacing.md)
             }
-        }
-    }
-
-    private var developmentSection: some View {
-        sectionGroup(label: "DEVELOPMENT") {
-            SettingsRow(icon: "globe", label: "Community Foods",
-                        subtitle: "Edit and delete community foods") {
-                showCommunityFoodsStub = true
-            }
-        }
-    }
-
-    private var accountSection: some View {
-        sectionGroup(label: "ACCOUNT") {
-            VStack(spacing: 0) {
-                SettingsRow(icon: "rectangle.portrait.and.arrow.right",
-                            label: "Sign Out") {
-                    authStore.signOut()
-                }
-                RowSeparator()
-                SettingsRow(icon: "trash", label: "Delete Account",
-                            subtitle: "Permanently remove all your data") {
-                    showDeleteConfirmation = true
-                }
-            }
-        }
-        .alert("Delete Account?",
-               isPresented: $showDeleteConfirmation) {
-            Button("Delete", role: .destructive) {
-                Task { await authStore.deleteAccount() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This will permanently delete your account and all associated data. This action cannot be undone.")
         }
     }
 
@@ -384,28 +355,6 @@ struct ProfileView: View {
         .buttonStyle(.plain)
     }
 
-    @ViewBuilder
-    private func stubSheet(_ title: String) -> some View {
-        NavigationStack {
-            Text("Coming in Phase C/D")
-                .font(.appBody)
-                .foregroundStyle(Color.appTextSecondary)
-                .navigationTitle(title)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") {
-                            showGoalsStub          = false
-                            showHealthProfile      = false
-                            showFoodsStub          = false
-                            showBarcodeStub        = false
-                            showScaleStub          = false
-                            showCommunityFoodsStub = false
-                        }
-                    }
-                }
-        }
-    }
 }
 
 // MARK: - Preview

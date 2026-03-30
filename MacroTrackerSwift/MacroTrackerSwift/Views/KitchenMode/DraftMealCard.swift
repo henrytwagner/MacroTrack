@@ -44,6 +44,7 @@ struct DraftMealCard: View {
     var onScaleConfirm: ((Double, String) -> Void)? = nil
     var onScaleSkip: (() -> Void)? = nil
     var onReweigh: (() -> Void)? = nil
+    var onChoiceCreate: ((String) -> Void)? = nil
     var onSearchManually: ((String) -> Void)? = nil
     var onSelectDisambiguateOption: ((DisambiguationOption) -> Void)? = nil
     var onTapToExpand: (() -> Void)? = nil
@@ -910,7 +911,7 @@ struct DraftMealCard: View {
 
             VStack(spacing: Spacing.sm) {
                 Button {
-                    onSendTranscript?("create it")
+                    onChoiceCreate?(item.name)
                 } label: {
                     Text("Create new food")
                         .font(.system(size: 14, weight: .semibold))
@@ -921,9 +922,9 @@ struct DraftMealCard: View {
                 .buttonStyle(GlassButtonStyle(color: Color.appTint))
 
                 Button {
-                    onSendTranscript?("try USDA")
+                    onSearchManually?(item.name)
                 } label: {
-                    Text("Try USDA (less reliable)")
+                    Text("Search manually")
                         .font(.system(size: 14))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, Spacing.sm)
@@ -932,7 +933,7 @@ struct DraftMealCard: View {
                 .buttonStyle(GlassButtonStyle(color: Color.appTextSecondary))
 
                 Button {
-                    onSendTranscript?("never mind")
+                    onRemove?()
                 } label: {
                     Text("Never mind")
                         .font(.system(size: 14))
@@ -941,19 +942,6 @@ struct DraftMealCard: View {
                         .padding(.horizontal, Spacing.md)
                 }
                 .buttonStyle(GlassButtonStyle(color: Color.appTextSecondary))
-
-                if onSearchManually != nil {
-                    Button {
-                        onSearchManually?(item.name)
-                    } label: {
-                        Text("Search manually")
-                            .font(.system(size: 14))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, Spacing.sm)
-                            .padding(.horizontal, Spacing.md)
-                    }
-                    .buttonStyle(GlassButtonStyle(color: Color.appTextSecondary))
-                }
             }
         }
     }

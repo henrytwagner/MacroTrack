@@ -13,11 +13,13 @@ struct LogView: View {
     @Environment(DateStore.self)     private var dateStore
     @Environment(DailyLogStore.self) private var dailyLogStore
     @Environment(GoalStore.self)     private var goalStore
+    @Environment(SessionStore.self)  private var sessionStore
 
     @State private var deletedEntry:         FoodEntry? = nil
     @State private var editingEntry:         FoodEntry? = nil
     @State private var showAddFood:          Bool       = false
     @State private var showKitchenMode:      Bool       = false
+    @State private var resumeSessionId:      String?    = nil
     @State private var scrollY:              CGFloat    = 0
     @State private var showMacroPill:        Bool       = false
     @State private var macroPreviewExpanded: Bool       = false
@@ -103,7 +105,10 @@ struct LogView: View {
                 .environment(MealsStore.shared)
         }
         .fullScreenCover(isPresented: $showKitchenMode) {
-            KitchenModeView(onDismiss: { showKitchenMode = false })
+            KitchenModeView(resumeSessionId: resumeSessionId, onDismiss: {
+                showKitchenMode = false
+                resumeSessionId = nil
+            })
                 .environment(dailyLogStore)
                 .environment(goalStore)
                 .environment(dateStore)
@@ -118,6 +123,7 @@ struct LogView: View {
         .task(id: dateStore.selectedDate) {
             await dailyLogStore.fetch(date: dateStore.selectedDate)
             await goalStore.fetch(date: dateStore.selectedDate)
+            await sessionStore.fetch(date: dateStore.selectedDate)
         }
         .onChange(of: dateStore.selectedDate) { _, _ in
             isSelectionMode = false
@@ -170,8 +176,18 @@ struct LogView: View {
                     .padding(.top, Spacing.xxxl)
 
                 } else {
+                    // Entry IDs that belong to paused sessions — exclude from meal groups
+                    let sessionEntryIds: Set<String> = {
+                        var ids = Set<String>()
+                        for s in sessionStore.pausedSessions {
+                            for item in s.confirmedItems { ids.insert(item.id) }
+                        }
+                        return ids
+                    }()
+
                     ForEach(mealOrder, id: \.self) { meal in
-                        let entries = dailyLogStore.entriesByMeal[meal] ?? []
+                        let entries = (dailyLogStore.entriesByMeal[meal] ?? [])
+                            .filter { !sessionEntryIds.contains($0.id) }
                         MealGroup(
                             meal:            meal,
                             entries:         entries,
@@ -183,14 +199,30 @@ struct LogView: View {
                         )
                         .padding(.horizontal, Spacing.lg)
                     }
+
+                    // Paused Kitchen Mode sessions
+                    ForEach(sessionStore.pausedSessions) { session in
+                        SessionGroupCard(
+                            session: session,
+                            onResume: {
+                                resumeSessionId = session.id
+                                showKitchenMode = true
+                            },
+                            onDelete: {
+                                Task {
+                                    await sessionStore.deleteSession(id: session.id, date: dateStore.selectedDate)
+                                    await dailyLogStore.fetch(date: dateStore.selectedDate)
+                                }
+                            }
+                        )
+                        .padding(.horizontal, Spacing.lg)
+                    }
                 }
 
                 Spacer(minLength: 120)
             }
         }
-        .onScrollGeometryChange(for: CGFloat.self) { geometry in
-            geometry.contentOffset.y
-        } action: { _, y in
+        .onScrollOffsetChange { y in
             scrollY = y
             let shouldShow = y > 56 && currentGoals != nil
             if shouldShow != showMacroPill {
@@ -303,9 +335,10 @@ struct LogView: View {
             }
             .buttonStyle(LogScaleButtonStyle())
 
-            // Primary FAB: tint circle with white fork.knife
+            // Primary FAB: tint circle with white fork.knife (always new session)
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                resumeSessionId = nil
                 showKitchenMode = true
             } label: {
                 Image(systemName: "fork.knife")
@@ -486,6 +519,22 @@ private struct LogScaleButtonStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.8), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Scroll Offset Helper
+
+private extension View {
+    /// Tracks scroll content offset Y. Uses `onScrollGeometryChange` on iOS 18+; no-op on iOS 17.
+    @ViewBuilder
+    func onScrollOffsetChange(action: @escaping (CGFloat) -> Void) -> some View {
+        if #available(iOS 18, *) {
+            self.onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
+                action(y)
+            }
+        } else {
+            self
+        }
     }
 }
 

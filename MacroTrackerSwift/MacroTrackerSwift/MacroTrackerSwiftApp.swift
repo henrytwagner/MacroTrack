@@ -23,6 +23,7 @@ struct MacroTrackerSwiftApp: App {
     private let calendarStore    = CalendarStore.shared
     private let statsStore       = StatsStore.shared
     private let insightsStore    = InsightsStore.shared
+    private let sessionStore     = SessionStore.shared
 
     var body: some Scene {
         WindowGroup {
@@ -41,6 +42,7 @@ struct MacroTrackerSwiftApp: App {
                 .environment(calendarStore)
                 .environment(statsStore)
                 .environment(insightsStore)
+                .environment(sessionStore)
                 .preferredColorScheme(appearanceStore.colorScheme)
         }
     }

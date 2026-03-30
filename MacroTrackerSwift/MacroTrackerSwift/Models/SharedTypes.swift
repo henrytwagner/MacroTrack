@@ -18,7 +18,7 @@ enum MealLabel: String, Codable, Sendable, CaseIterable {
 }
 
 enum SessionStatus: String, Codable, Sendable {
-    case active, completed, cancelled
+    case active, paused, completed, cancelled
 }
 
 enum NutritionUnit: String, Codable, Sendable {
@@ -196,6 +196,22 @@ struct FoodEntry: Codable, Identifiable, Sendable {
     var savedMealId:     String?
     var mealInstanceId:  String?
     var createdAt:       String
+}
+
+// MARK: - Voice Session Summary
+
+struct VoiceSessionSummary: Codable, Identifiable, Sendable {
+    var id:              String
+    var date:            String
+    var status:          SessionStatus
+    var startedAt:       String
+    var confirmedItems:  [FoodEntry]
+    var draftItems:      [DraftItem]
+    var totalCalories:   Double
+    var totalProteinG:   Double
+    var totalCarbsG:     Double
+    var totalFatG:       Double
+    var itemCount:       Int
 }
 
 // MARK: - Saved Meals
@@ -877,6 +893,7 @@ enum WSClientMessage: Encodable, Sendable {
     case audioChunk(data: String, sequence: Int)
     case save
     case cancel
+    case pause(localItems: [DraftItem])
     case barcodeScan(gtin: String)
     case cameraCapture(imageBase64: String, depthContext: String?, voiceEnabled: Bool)
     case scaleConfirm(itemId: String, quantity: Double, unit: String)
@@ -890,7 +907,7 @@ enum WSClientMessage: Encodable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case type, text, data, sequence, gtin, itemId, quantity, unit
         case name, calories, proteinG, carbsG, fatG, servingSize, servingUnit
-        case imageBase64, depthContext, voiceEnabled
+        case imageBase64, depthContext, voiceEnabled, localItems
     }
 
     func encode(to encoder: Encoder) throws {
@@ -907,6 +924,11 @@ enum WSClientMessage: Encodable, Sendable {
             try c.encode("save", forKey: .type)
         case .cancel:
             try c.encode("cancel", forKey: .type)
+        case .pause(let localItems):
+            try c.encode("pause", forKey: .type)
+            if !localItems.isEmpty {
+                try c.encode(localItems, forKey: .localItems)
+            }
         case .barcodeScan(let gtin):
             try c.encode("barcode_scan", forKey: .type)
             try c.encode(gtin, forKey: .gtin)
@@ -972,6 +994,8 @@ enum WSServerMessage: Decodable, Sendable {
     case error(message: String)
     case sessionSaved(entriesCount: Int)
     case sessionCancelled
+    case sessionPaused(entriesCount: Int, draftItemsCount: Int)
+    case sessionResumed(items: [DraftItem])
     case draftReplaced(draft: [DraftItem], message: String)
     case operationCancelled(itemId: String, message: String)
     case disambiguate(itemId: String, foodName: String, question: String,
@@ -1015,6 +1039,7 @@ enum WSServerMessage: Decodable, Sendable {
         case dateLabel, mealLabel, entries, totals, addedToDraft
         case summary, suggestions, canAddAnyway, entriesCount
         case text, data, mimeType, isFinal
+        case draftItemsCount
     }
 
     init(from decoder: Decoder) throws {
@@ -1091,6 +1116,14 @@ enum WSServerMessage: Decodable, Sendable {
 
         case "session_cancelled":
             self = .sessionCancelled
+
+        case "session_paused":
+            self = .sessionPaused(
+                entriesCount:    try c.decode(Int.self, forKey: .entriesCount),
+                draftItemsCount: try c.decode(Int.self, forKey: .draftItemsCount))
+
+        case "session_resumed":
+            self = .sessionResumed(items: try c.decode([DraftItem].self, forKey: .items))
 
         case "draft_replaced":
             self = .draftReplaced(

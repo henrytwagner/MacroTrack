@@ -122,3 +122,17 @@ public enum BorderRadius {
     public static let xl:   CGFloat = 20
     public static let full: CGFloat = 9999
 }
+
+// MARK: - Glass Effect
+
+extension View {
+    /// Applies glassEffect on iOS 26+; falls back to regularMaterial on earlier versions.
+    @ViewBuilder
+    func glassOrMaterial<S: Shape>(in shape: S) -> some View {
+        if #available(iOS 26, *) {
+            self.glassEffect(.regular.interactive(), in: shape)
+        } else {
+            self.background(.regularMaterial, in: shape)
+        }
+    }
+}

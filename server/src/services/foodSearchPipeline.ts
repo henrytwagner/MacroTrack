@@ -1,4 +1,4 @@
-import { prisma } from "../db/client.js";
+import { prisma, pool } from "../db/client.js";
 import { searchFoodsEnhanced } from "./usda.js";
 import type { FoodSource, USDASearchResult } from "../../../shared/types.js";
 import type { KitchenLookupResult } from "./foodParser.js";
@@ -21,6 +21,7 @@ interface ScoredCandidate {
   source: FoodSource;
   tier: 1 | 2 | 3 | 4;
   score: number;
+  trigramScore: number;
   servingSize: number;
   servingUnit: string;
   macros: { calories: number; proteinG: number; carbsG: number; fatG: number };
@@ -147,109 +148,106 @@ function singularize(word: string): string {
 // Tier Search Functions
 // ---------------------------------------------------------------------------
 
+interface HistoryRow {
+  name: string;
+  quantity: number;
+  unit: string;
+  source: string;
+  usdaFdcId: number | null;
+  customFoodId: string | null;
+  communityFoodId: string | null;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  sim: number;
+  log_count: string; // bigint from COUNT comes as string
+}
+
 async function searchUserHistory(
   query: NormalizedQuery,
   userId: string,
 ): Promise<ScoredCandidate[]> {
-  const entries = await prisma.foodEntry.findMany({
-    where: {
-      userId,
-      OR: [
-        { name: { contains: query.canonical, mode: "insensitive" } },
-      ],
-    },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-    select: {
-      name: true,
-      quantity: true,
-      unit: true,
-      source: true,
-      usdaFdcId: true,
-      customFoodId: true,
-      communityFoodId: true,
-      calories: true,
-      proteinG: true,
-      carbsG: true,
-      fatG: true,
-    },
-  });
+  const { rows } = await pool.query<HistoryRow>(
+    `SELECT DISTINCT ON (food_key)
+       name, quantity, unit, source,
+       "usdaFdcId", "customFoodId", "communityFoodId",
+       calories, "proteinG", "carbsG", "fatG",
+       GREATEST(similarity(name, $1), word_similarity($1, name)) AS sim,
+       COUNT(*) OVER (
+         PARTITION BY COALESCE("usdaFdcId"::text, "customFoodId", "communityFoodId")
+       ) AS log_count,
+       COALESCE("usdaFdcId"::text, "customFoodId", "communityFoodId") AS food_key
+     FROM "FoodEntry"
+     WHERE "userId" = $2
+       AND (name % $1 OR word_similarity($1, name) > 0.25)
+       AND ("usdaFdcId" IS NOT NULL OR "customFoodId" IS NOT NULL OR "communityFoodId" IS NOT NULL)
+     ORDER BY food_key, sim DESC
+     LIMIT 10`,
+    [query.canonical, userId],
+  );
 
-  if (entries.length === 0) return [];
-
-  // Group by food identity key
-  const groups = new Map<string, typeof entries>();
-  for (const entry of entries) {
-    const key = entry.usdaFdcId
-      ? `usda:${entry.usdaFdcId}`
-      : entry.customFoodId
-        ? `custom:${entry.customFoodId}`
-        : entry.communityFoodId
-          ? `community:${entry.communityFoodId}`
-          : `name:${entry.name.toLowerCase()}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(entry);
-  }
-
-  const candidates: ScoredCandidate[] = [];
-  for (const [key, group] of groups) {
-    const mostRecent = group[0];
-    const foodRef = key.startsWith("name:")
-      ? key // No stable ref for name-only entries
-      : key;
-
-    // Skip name-only refs — they can't be resolved to a food_ref for add_to_draft
-    if (key.startsWith("name:")) continue;
-
-    candidates.push({
+  return rows.map((r) => {
+    const foodRef = r.usdaFdcId
+      ? `usda:${r.usdaFdcId}`
+      : r.customFoodId
+        ? `custom:${r.customFoodId}`
+        : `community:${r.communityFoodId}`;
+    return {
       foodRef,
-      name: mostRecent.name,
-      source: mostRecent.source as FoodSource,
-      tier: 1,
-      score: 0, // Computed later by rankAndSelect
-      servingSize: mostRecent.quantity,
-      servingUnit: mostRecent.unit,
+      name: r.name,
+      source: r.source as FoodSource,
+      tier: 1 as const,
+      score: 0,
+      trigramScore: parseFloat(String(r.sim)) || 0,
+      servingSize: r.quantity,
+      servingUnit: r.unit,
       macros: {
-        calories: mostRecent.calories,
-        proteinG: mostRecent.proteinG,
-        carbsG: mostRecent.carbsG,
-        fatG: mostRecent.fatG,
+        calories: r.calories,
+        proteinG: r.proteinG,
+        carbsG: r.carbsG,
+        fatG: r.fatG,
       },
-      logCount: group.length,
-    });
-  }
+      logCount: parseInt(r.log_count, 10),
+    };
+  });
+}
 
-  return candidates;
+interface CustomFoodRow {
+  id: string;
+  name: string;
+  servingSize: number;
+  servingUnit: string;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  sim: number;
 }
 
 async function searchCustomFoods(
   query: NormalizedQuery,
   userId: string,
 ): Promise<ScoredCandidate[]> {
-  const results = await prisma.customFood.findMany({
-    where: {
-      userId,
-      name: { contains: query.canonical, mode: "insensitive" },
-    },
-    select: {
-      id: true,
-      name: true,
-      servingSize: true,
-      servingUnit: true,
-      calories: true,
-      proteinG: true,
-      carbsG: true,
-      fatG: true,
-    },
-    take: 5,
-  });
+  const { rows } = await pool.query<CustomFoodRow>(
+    `SELECT id, name, "servingSize", "servingUnit",
+       calories, "proteinG", "carbsG", "fatG",
+       GREATEST(similarity(name, $1), word_similarity($1, name)) AS sim
+     FROM "CustomFood"
+     WHERE "userId" = $2
+       AND (name % $1 OR word_similarity($1, name) > 0.25)
+     ORDER BY sim DESC
+     LIMIT 5`,
+    [query.canonical, userId],
+  );
 
-  return results.map((r) => ({
+  return rows.map((r) => ({
     foodRef: `custom:${r.id}`,
     name: r.name,
     source: "CUSTOM" as FoodSource,
     tier: 2 as const,
     score: 0,
+    trigramScore: parseFloat(String(r.sim)) || 0,
     servingSize: r.servingSize,
     servingUnit: r.servingUnit,
     macros: {
@@ -261,39 +259,51 @@ async function searchCustomFoods(
   }));
 }
 
+interface CommunityFoodRow {
+  id: string;
+  name: string;
+  brandName: string | null;
+  defaultServingSize: number;
+  defaultServingUnit: string;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  usesCount: number;
+  sim: number;
+}
+
 async function searchCommunityFoods(
   query: NormalizedQuery,
 ): Promise<ScoredCandidate[]> {
-  const results = await prisma.communityFood.findMany({
-    where: {
-      status: "ACTIVE",
-      OR: [
-        { name: { contains: query.canonical, mode: "insensitive" } },
-        { brandName: { contains: query.canonical, mode: "insensitive" } },
-      ],
-    },
-    orderBy: [{ trustScore: "desc" }, { usesCount: "desc" }],
-    take: 5,
-    select: {
-      id: true,
-      name: true,
-      brandName: true,
-      defaultServingSize: true,
-      defaultServingUnit: true,
-      calories: true,
-      proteinG: true,
-      carbsG: true,
-      fatG: true,
-      usesCount: true,
-    },
-  });
+  const { rows } = await pool.query<CommunityFoodRow>(
+    `SELECT id, name, "brandName", "defaultServingSize", "defaultServingUnit",
+       calories, "proteinG", "carbsG", "fatG", "usesCount",
+       GREATEST(
+         similarity(name, $1), word_similarity($1, name),
+         COALESCE(similarity("brandName", $1), 0),
+         COALESCE(word_similarity($1, "brandName"), 0)
+       ) AS sim
+     FROM "CommunityFood"
+     WHERE status = 'ACTIVE'
+       AND (
+         name % $1
+         OR "brandName" % $1
+         OR word_similarity($1, name) > 0.25
+         OR word_similarity($1, "brandName") > 0.25
+       )
+     ORDER BY sim DESC, "trustScore" DESC
+     LIMIT 5`,
+    [query.canonical],
+  );
 
-  return results.map((r) => ({
+  return rows.map((r) => ({
     foodRef: `community:${r.id}`,
     name: r.brandName ? `${r.brandName} — ${r.name}` : r.name,
     source: "COMMUNITY" as FoodSource,
     tier: 3 as const,
     score: 0,
+    trigramScore: parseFloat(String(r.sim)) || 0,
     servingSize: r.defaultServingSize,
     servingUnit: r.defaultServingUnit,
     macros: {
@@ -315,7 +325,7 @@ async function searchUsdaWithFallback(
     pageSize: 5,
     timeoutMs: USDA_PREFERRED_TIMEOUT_MS,
   });
-  if (results.length > 0) return mapUsdaCandidates(results);
+  if (results.length > 0) return mapUsdaCandidates(results, query);
 
   // Attempt 2: all data types, standard timeout
   results = await searchFoodsEnhanced(query.canonical, {
@@ -323,7 +333,7 @@ async function searchUsdaWithFallback(
     pageSize: 10,
     timeoutMs: USDA_FALLBACK_TIMEOUT_MS,
   });
-  if (results.length > 0) return mapUsdaCandidates(results);
+  if (results.length > 0) return mapUsdaCandidates(results, query);
 
   // Attempt 3: re-append cooking method if it was stripped
   if (query.cookingMethod) {
@@ -333,19 +343,20 @@ async function searchUsdaWithFallback(
       pageSize: 10,
       timeoutMs: USDA_FALLBACK_TIMEOUT_MS,
     });
-    if (results.length > 0) return mapUsdaCandidates(results);
+    if (results.length > 0) return mapUsdaCandidates(results, query);
   }
 
   return [];
 }
 
-function mapUsdaCandidates(results: USDASearchResult[]): ScoredCandidate[] {
+function mapUsdaCandidates(results: USDASearchResult[], query: NormalizedQuery): ScoredCandidate[] {
   return results.map((r) => ({
     foodRef: `usda:${r.fdcId}`,
     name: r.description,
     source: "DATABASE" as FoodSource,
     tier: 4 as const,
     score: 0,
+    trigramScore: jaccardSimilarity(query.tokens, tokenize(r.description)),
     servingSize: r.servingSize ?? 100,
     servingUnit: r.servingSizeUnit ?? "g",
     macros: {
@@ -378,13 +389,12 @@ function jaccardSimilarity(a: string[], b: string[]): number {
   return union === 0 ? 0 : intersection / union;
 }
 
-function computeScore(candidate: ScoredCandidate, query: NormalizedQuery): number {
+function computeScore(candidate: ScoredCandidate, _query: NormalizedQuery): number {
   // Tier preference
   const tierScore = TIER_SCORES[candidate.tier] ?? 0.5;
 
-  // Name similarity (Jaccard index of tokens)
-  const candidateTokens = tokenize(candidate.name);
-  const nameScore = jaccardSimilarity(query.tokens, candidateTokens);
+  // Name similarity — trigram score from DB for local tiers, Jaccard for USDA
+  const nameScore = candidate.trigramScore;
 
   // Data quality
   let qualityScore = 0;
@@ -517,5 +527,36 @@ export async function lookupFoodPipeline(
     ...usdaResults,
   ];
 
-  return rankAndSelect(allCandidates, query);
+  const result = rankAndSelect(allCandidates, query);
+
+  // Log search query and result (fire-and-forget for training data)
+  logSearch(userId, query, result).catch(() => {});
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Search Logging (training data collection)
+// ---------------------------------------------------------------------------
+
+async function logSearch(
+  userId: string,
+  query: NormalizedQuery,
+  result: KitchenLookupResult,
+): Promise<void> {
+  const selectedFoodRef = result.status === "found" ? result.foodRef : null;
+  const selectedName = result.status === "found" ? result.name : null;
+  const source = result.status === "found" ? result.source : null;
+
+  await prisma.searchLog.create({
+    data: {
+      userId,
+      query: query.original,
+      normalizedQuery: query.canonical,
+      selectedFoodRef,
+      selectedName,
+      source,
+      resultStatus: result.status,
+    },
+  });
 }

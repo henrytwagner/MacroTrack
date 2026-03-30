@@ -1,5 +1,5 @@
 import Foundation
-import AuthenticationServices
+// import AuthenticationServices — re-enable with Sign In with Apple
 
 // MARK: - Auth Response Types
 
@@ -46,70 +46,25 @@ final class AuthStore {
             return
         }
 
-        // If signed in via Apple, verify the credential hasn't been revoked
-        if let appleUserId = KeychainService.load(key: "appleUserId") {
-            do {
-                let state = try await ASAuthorizationAppleIDProvider()
-                    .credentialState(forUserID: appleUserId)
+        // Sign In with Apple credential revocation check disabled (Individual account limitation)
+        // Re-enable when upgraded to Organization account:
+        // if let appleUserId = KeychainService.load(key: "appleUserId") {
+        //     let state = try? await ASAuthorizationAppleIDProvider().credentialState(forUserID: appleUserId)
+        //     if state == .revoked || state == .notFound {
+        //         KeychainService.deleteAll(); isAuthenticated = false; return
+        //     }
+        // }
 
-                switch state {
-                case .revoked, .notFound:
-                    KeychainService.deleteAll()
-                    isAuthenticated = false
-                    return
-                default:
-                    break
-                }
-            } catch {
-                // Network error checking credential state — assume still valid
-            }
-        }
+        // Restore persisted user info
+        restoreUser()
 
         // Token exists (and Apple credential is still valid if applicable)
         isAuthenticated = true
     }
 
-    // MARK: - Sign In with Apple
-
-    func signInWithApple(_ authorization: ASAuthorization) async {
-        guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
-              let tokenData = credential.identityToken,
-              let identityToken = String(data: tokenData, encoding: .utf8) else {
-            self.error = "Failed to get Apple identity token"
-            return
-        }
-
-        // Persist Apple user ID immediately (Apple only provides name/email on first auth)
-        KeychainService.save(key: "appleUserId", value: credential.user)
-
-        isLoading = true
-        error = nil
-
-        do {
-            let fullName: [String: String]? = {
-                guard let given = credential.fullName?.givenName else { return nil }
-                var name: [String: String] = ["givenName": given]
-                if let family = credential.fullName?.familyName {
-                    name["familyName"] = family
-                }
-                return name
-            }()
-
-            let response: AuthResponse = try await APIClient.shared.signInWithApple(
-                identityToken: identityToken,
-                fullName: fullName
-            )
-
-            KeychainService.save(key: "accessToken", value: response.accessToken)
-            KeychainService.save(key: "refreshToken", value: response.refreshToken)
-            currentUser = response.user
-            isAuthenticated = true
-        } catch {
-            self.error = error.localizedDescription
-        }
-
-        isLoading = false
-    }
+    // MARK: - Sign In with Apple (disabled — Individual account limitation)
+    // Re-enable when upgraded to Organization account
+    // func signInWithApple(_ authorization: ASAuthorization) async { ... }
 
     // MARK: - Email / Password
 
@@ -122,6 +77,7 @@ final class AuthStore {
             KeychainService.save(key: "accessToken", value: response.accessToken)
             KeychainService.save(key: "refreshToken", value: response.refreshToken)
             currentUser = response.user
+            persistUser(response.user)
             isAuthenticated = true
         } catch let err as ApiError {
             self.error = err.message
@@ -143,6 +99,7 @@ final class AuthStore {
             KeychainService.save(key: "accessToken", value: response.accessToken)
             KeychainService.save(key: "refreshToken", value: response.refreshToken)
             currentUser = response.user
+            persistUser(response.user)
             isAuthenticated = true
         } catch let err as ApiError {
             self.error = err.message
@@ -228,6 +185,7 @@ final class AuthStore {
 
     func signOut() {
         KeychainService.deleteAll()
+        clearPersistedUser()
         isAuthenticated = false
         currentUser = nil
         resetStores()
@@ -246,6 +204,7 @@ final class AuthStore {
             #endif
         }
         KeychainService.deleteAll()
+        clearPersistedUser()
         isAuthenticated = false
         currentUser = nil
         isLoading = false
@@ -256,5 +215,27 @@ final class AuthStore {
 
     private func resetStores() {
         DraftStore.shared.reset()
+    }
+
+    private func persistUser(_ user: AuthUser) {
+        UserDefaults.standard.set(user.id, forKey: "currentUser.id")
+        UserDefaults.standard.set(user.name, forKey: "currentUser.name")
+        UserDefaults.standard.set(user.email, forKey: "currentUser.email")
+    }
+
+    private func restoreUser() {
+        guard let id = UserDefaults.standard.string(forKey: "currentUser.id"),
+              let name = UserDefaults.standard.string(forKey: "currentUser.name") else { return }
+        currentUser = AuthUser(
+            id: id,
+            name: name,
+            email: UserDefaults.standard.string(forKey: "currentUser.email")
+        )
+    }
+
+    private func clearPersistedUser() {
+        UserDefaults.standard.removeObject(forKey: "currentUser.id")
+        UserDefaults.standard.removeObject(forKey: "currentUser.name")
+        UserDefaults.standard.removeObject(forKey: "currentUser.email")
     }
 }

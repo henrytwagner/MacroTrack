@@ -52,6 +52,20 @@ final class DraftStore {
         pendingScaleConfirmItemId = nil
     }
 
+    /// Initialize from a resumed session — converts FoodEntries back to editable DraftItems.
+    func initResumedSession(items resumedItems: [DraftItem], savedTotals: Macros) {
+        self.savedTotals = savedTotals
+        self.captionText = ""
+        self.pendingScaleConfirmItemId = nil
+        self.items = resumedItems.map { item in
+            var d = item
+            if d.state == .normal {
+                d.quantityConfirmed = true
+            }
+            return d
+        }
+    }
+
     // MARK: - Apply Server Message
 
     func applyServerMessage(_ msg: WSServerMessage) {
@@ -234,9 +248,12 @@ final class DraftStore {
         case .serverTranscript(let text, _):
             captionText = text
 
+        case .sessionResumed(let resumedItems):
+            initResumedSession(items: resumedItems, savedTotals: savedTotals)
+
         // Non-draft-mutating messages — ignored here
         case .openBarcodeScanner, .ask, .error,
-             .sessionSaved, .sessionCancelled:
+             .sessionSaved, .sessionCancelled, .sessionPaused:
             break
         }
     }
