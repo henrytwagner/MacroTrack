@@ -3,6 +3,6 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "npx prisma migrate resolve --applied 20260330001442_add_auth_fields --schema=src/db/prisma/schema.prisma; npx prisma migrate resolve --applied 20260330004112_add_password_reset --schema=src/db/prisma/schema.prisma; npx prisma migrate deploy --schema=src/db/prisma/schema.prisma; npm start"
+startCommand = "npx prisma migrate resolve --applied 20260330001442_add_auth_fields --schema=src/db/prisma/schema.prisma 2>/dev/null; npx prisma migrate deploy --schema=src/db/prisma/schema.prisma 2>&1; npm start"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
