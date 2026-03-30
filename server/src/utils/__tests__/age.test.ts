@@ -1,4 +1,4 @@
-import { calculateAgeFromDob, parseDateOfBirth } from "../age";
+import { calculateAgeFromDob, parseDateOfBirth } from "../age.js";
 
 describe("calculateAgeFromDob", () => {
   beforeAll(() => {

@@ -1,4 +1,4 @@
-import { normalizeToGTIN } from "../barcode";
+import { normalizeToGTIN } from "../barcode.js";
 
 describe("barcode route normalizeToGTIN", () => {
   it("returns 13-digit as-is when check digit valid", () => {
