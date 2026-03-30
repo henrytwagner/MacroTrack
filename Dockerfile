@@ -15,4 +15,4 @@ RUN npm run build
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx prisma migrate deploy --schema=src/db/prisma/schema.prisma && npm start"]
+CMD ["npm", "start"]
