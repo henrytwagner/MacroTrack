@@ -1,15 +1,3 @@
--- DropIndex
-DROP INDEX "idx_community_food_brand_trgm";
-
--- DropIndex
-DROP INDEX "idx_community_food_name_trgm";
-
--- DropIndex
-DROP INDEX "idx_custom_food_name_trgm";
-
--- DropIndex
-DROP INDEX "idx_food_entry_name_trgm";
-
 -- CreateTable
 CREATE TABLE "WeightEntry" (
     "id" TEXT NOT NULL,
