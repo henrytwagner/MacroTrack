@@ -13,7 +13,7 @@
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "@fastify/websocket";
 import { prisma } from "../db/client.js";
-import { getDefaultUserId } from "../db/defaultUser.js";
+import { verifyAccessToken } from "../services/jwt.js";
 import {
   lookupFoodForKitchenMode,
   searchUsdaForKitchenMode,
@@ -856,8 +856,20 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
     "/ws/kitchen-mode",
     { websocket: true },
     async (socket: WebSocket, request) => {
-      const userId = await getDefaultUserId();
-      const dateParam = (request.query as Record<string, string>).date;
+      const query = request.query as Record<string, string>;
+      const token = query.token;
+      if (!token) {
+        socket.close(4001, "Missing auth token");
+        return;
+      }
+      let userId: string;
+      try {
+        ({ userId } = await verifyAccessToken(token));
+      } catch {
+        socket.close(4001, "Invalid or expired token");
+        return;
+      }
+      const dateParam = query.date;
       const date =
         dateParam ??
         new Date().toISOString().slice(0, 10);

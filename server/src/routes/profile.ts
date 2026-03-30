@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Sex, UnitSystem, ActivityLevel } from "@prisma/client";
 import { prisma } from "../db/client.js";
-import { getDefaultUserId } from "../db/defaultUser.js";
+
 import { calculateAgeFromDob, parseDateOfBirth } from "../utils/age.js";
 import type { UserProfile } from "../../../shared/types.js";
 
@@ -32,8 +32,8 @@ function profileFromUser(user: {
 }
 
 export async function profileRoutes(app: FastifyInstance) {
-  app.get("/api/profile", async (_request, reply) => {
-    const userId = await getDefaultUserId();
+  app.get("/api/profile", async (request, reply) => {
+    const userId = request.userId;
     const user = await prisma.user.findUnique({ where: { id: userId } });
 
     if (!user) {
@@ -44,7 +44,7 @@ export async function profileRoutes(app: FastifyInstance) {
   });
 
   app.put<{ Body: Partial<UserProfile> }>("/api/profile", async (request, reply) => {
-    const userId = await getDefaultUserId();
+    const userId = request.userId;
     const body = request.body;
 
     const data: {

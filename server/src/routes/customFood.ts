@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client.js";
-import { getDefaultUserId } from "../db/defaultUser.js";
+
 import { mapCommunityFood } from "./communityFood.js";
 import type {
   CustomFood,
@@ -68,8 +68,8 @@ export function mapCustomFood(food: {
 
 export async function customFoodRoutes(app: FastifyInstance) {
   // GET /api/food/custom — list all custom foods
-  app.get("/api/food/custom", async (_request, reply) => {
-    const userId = await getDefaultUserId();
+  app.get("/api/food/custom", async (request, reply) => {
+    const userId = request.userId;
 
     const foods = await prisma.customFood.findMany({
       where: { userId },
@@ -83,7 +83,7 @@ export async function customFoodRoutes(app: FastifyInstance) {
   app.post<{ Body: CreateCustomFoodRequest }>(
     "/api/food/custom",
     async (request, reply) => {
-      const userId = await getDefaultUserId();
+      const userId = request.userId;
       const body = request.body;
 
       if (
@@ -192,7 +192,7 @@ export async function customFoodRoutes(app: FastifyInstance) {
     "/api/food/custom/:id/publish",
     async (request, reply) => {
       const { id } = request.params;
-      const userId = await getDefaultUserId();
+      const userId = request.userId;
       const body = request.body ?? {};
 
       const custom = await prisma.customFood.findUnique({ where: { id } });

@@ -2,6 +2,8 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
+import { authRoutes } from "./routes/auth.js";
+import { authenticate } from "./middleware/authenticate.js";
 import { goalsRoutes } from "./routes/goals.js";
 import { foodRoutes } from "./routes/food.js";
 import { customFoodRoutes } from "./routes/customFood.js";
@@ -17,6 +19,9 @@ import { kitchenModeSessionRoutes } from "./websocket/kitchenModeSession.js";
 export async function buildApp() {
   const app = Fastify({ logger: true });
 
+  // Decorate request with userId so TypeScript knows it exists
+  app.decorateRequest("userId", "");
+
   await app.register(cors, {
     origin: true,
   });
@@ -24,9 +29,14 @@ export async function buildApp() {
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
   await app.register(websocket);
 
+  // Public routes (no auth required)
   app.get("/health", async () => {
     return { status: "ok" };
   });
+  await app.register(authRoutes);
+
+  // Auth middleware — all routes registered after this require a Bearer token
+  app.addHook("preHandler", authenticate);
 
   await app.register(goalsRoutes);
   await app.register(foodRoutes);

@@ -8,6 +8,9 @@ datasource db {
 
 model User {
   id                   String          @id @default(uuid())
+  appleUserId          String?         @unique
+  email                String?         @unique
+  passwordHash         String?
   name                 String          @default("Default User")
   createdAt            DateTime        @default(now())
   // Profile fields
@@ -33,6 +36,33 @@ model User {
   foodReports           CommunityFoodReport[]  @relation("FoodReporter")
   suppressUsdaWarning   Boolean                @default(false)
   savedMeals            SavedMeal[]
+  refreshTokens         RefreshToken[]
+  passwordResets        PasswordReset[]
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  userId    String
+  code      String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([code])
 }
 
 model DailyGoal {

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client.js";
-import { getDefaultUserId } from "../db/defaultUser.js";
+
 import { searchFoods } from "../services/usda.js";
 import { mapCommunityFood } from "./communityFood.js";
 import { recategorizeMealsForDay } from "../services/mealCategorizer.js";
@@ -135,7 +135,7 @@ export async function foodRoutes(app: FastifyInstance) {
   app.get<{ Querystring: { date: string } }>(
     "/api/food/entries",
     async (request, reply) => {
-      const userId = await getDefaultUserId();
+      const userId = request.userId;
       const { date } = request.query;
 
       if (!date) {
@@ -154,8 +154,8 @@ export async function foodRoutes(app: FastifyInstance) {
   );
 
   // GET /api/food/entries/frequent — most frequently logged foods
-  app.get("/api/food/entries/frequent", async (_request, reply) => {
-    const userId = await getDefaultUserId();
+  app.get("/api/food/entries/frequent", async (request, reply) => {
+    const userId = request.userId;
 
     const groups = await prisma.foodEntry.groupBy({
       by: ["name", "source", "usdaFdcId", "customFoodId", "communityFoodId"],
@@ -197,8 +197,8 @@ export async function foodRoutes(app: FastifyInstance) {
   });
 
   // GET /api/food/entries/recent — recently logged foods (deduplicated)
-  app.get("/api/food/entries/recent", async (_request, reply) => {
-    const userId = await getDefaultUserId();
+  app.get("/api/food/entries/recent", async (request, reply) => {
+    const userId = request.userId;
 
     const recentEntries = await prisma.foodEntry.findMany({
       where: { userId },
@@ -241,7 +241,7 @@ export async function foodRoutes(app: FastifyInstance) {
   app.post<{ Body: CreateFoodEntryRequest }>(
     "/api/food/entries",
     async (request, reply) => {
-      const userId = await getDefaultUserId();
+      const userId = request.userId;
       const body = request.body;
 
       if (!body.date || !body.name || body.source == null) {
@@ -343,7 +343,7 @@ export async function foodRoutes(app: FastifyInstance) {
   app.get<{ Querystring: { q: string } }>(
     "/api/food/search",
     async (request, reply) => {
-      const userId = await getDefaultUserId();
+      const userId = request.userId;
       const { q } = request.query;
 
       if (!q || q.trim().length < 2) {
@@ -399,7 +399,7 @@ export async function foodRoutes(app: FastifyInstance) {
   app.get<{
     Querystring: { customFoodId?: string; usdaFdcId?: string };
   }>("/api/food/units", async (request, reply) => {
-    const userId = await getDefaultUserId();
+    const userId = request.userId;
     const { customFoodId, usdaFdcId } = request.query;
 
     if (!customFoodId && !usdaFdcId) {
@@ -440,7 +440,7 @@ export async function foodRoutes(app: FastifyInstance) {
   app.post<{ Body: CreateFoodUnitConversionRequest }>(
     "/api/food/units",
     async (request, reply) => {
-      const userId = await getDefaultUserId();
+      const userId = request.userId;
       const body = request.body;
 
       if (!body.unitName || body.quantityInBaseServings == null) {
@@ -538,7 +538,7 @@ export async function foodRoutes(app: FastifyInstance) {
   app.patch<{ Body: CascadeUnitConversionsRequest }>(
     "/api/food/units/cascade",
     async (request, reply) => {
-      const userId = await getDefaultUserId();
+      const userId = request.userId;
       const { updates } = request.body;
 
       if (!Array.isArray(updates) || updates.length === 0) {
@@ -574,7 +574,7 @@ export async function foodRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: "imageBase64 is required" });
       }
 
-      const userId = await getDefaultUserId();
+      const userId = request.userId;
 
       // Step 1: Use Gemini vision to identify food + estimate grams
       const identified = await identifyFoodFromPhoto(imageBase64, depthContext);

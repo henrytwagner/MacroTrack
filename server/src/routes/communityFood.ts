@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client.js";
-import { getDefaultUserId } from "../db/defaultUser.js";
+
 import type { CommunityFood } from "../../../shared/types.js";
 
 const REPORT_THRESHOLD = 5;
@@ -160,7 +160,7 @@ export async function communityFoodRoutes(app: FastifyInstance) {
   app.post<{ Body: CreateCommunityFoodBody }>(
     "/api/food/community",
     async (request, reply) => {
-      const userId = await getDefaultUserId();
+      const userId = request.userId;
       const body = request.body;
 
       const validationError = validateMacros(body);
@@ -244,7 +244,7 @@ export async function communityFoodRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { id } = request.params;
       const body = request.body;
-      const userId = await getDefaultUserId();
+      const userId = request.userId;
 
       const existing = await prisma.communityFood.findUnique({ where: { id } });
       if (!existing) {
@@ -341,7 +341,7 @@ export async function communityFoodRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { id } = request.params;
       const { reason, details } = request.body;
-      const userId = await getDefaultUserId();
+      const userId = request.userId;
 
       if (!reason?.trim()) {
         return reply.code(400).send({ error: "reason is required" });

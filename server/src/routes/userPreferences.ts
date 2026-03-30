@@ -1,12 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client.js";
-import { getDefaultUserId } from "../db/defaultUser.js";
+
 import type { UserPreferences } from "../../../shared/types.js";
 
 export async function userPreferencesRoutes(app: FastifyInstance) {
   // GET /api/user/preferences
-  app.get("/api/user/preferences", async (_request, reply) => {
-    const userId = await getDefaultUserId();
+  app.get("/api/user/preferences", async (request, reply) => {
+    const userId = request.userId;
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { suppressUsdaWarning: true },
@@ -21,7 +21,7 @@ export async function userPreferencesRoutes(app: FastifyInstance) {
   app.patch<{ Body: Partial<UserPreferences> }>(
     "/api/user/preferences",
     async (request, reply) => {
-      const userId = await getDefaultUserId();
+      const userId = request.userId;
       const body = request.body;
 
       const updated = await prisma.user.update({

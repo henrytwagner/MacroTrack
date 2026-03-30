@@ -7,15 +7,27 @@
 
 import SwiftUI
 
-/// Thin root wrapper — renders the tab shell. All real UI lives in RootTabView.
+/// Root wrapper — gates on auth state. Shows sign-in or main app.
 struct ContentView: View {
+    @Environment(AuthStore.self) private var authStore
+
     var body: some View {
-        RootTabView()
+        Group {
+            if authStore.isAuthenticated {
+                RootTabView()
+            } else {
+                SignInView()
+            }
+        }
+        .task {
+            await authStore.bootstrap()
+        }
     }
 }
 
 #Preview {
     ContentView()
+        .environment(AuthStore.shared)
         .environment(AppearanceStore.shared)
         .environment(DateStore.shared)
         .environment(DailyLogStore.shared)

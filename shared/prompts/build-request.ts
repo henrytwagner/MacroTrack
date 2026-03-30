@@ -1,4 +1,4 @@
-import type { GeminiRequestContext } from "../types";
+import type { GeminiRequestContext } from "../types.js";
 
 /**
  * Builds the user message sent to Gemini for each voice session turn.

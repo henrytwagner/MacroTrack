@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "@fastify/websocket";
 import { prisma } from "../db/client.js";
-import { getDefaultUserId } from "../db/defaultUser.js";
+import { verifyAccessToken } from "../services/jwt.js";
 import { processTranscript, lookupItemInUsda, lookupFoodInfoOnly, shouldDisambiguate, handleScaleConfirm } from "../services/foodParser.js";
 import { parseTranscript, estimateFood, suggestFoodsFromCandidates } from "../services/gemini.js";
 import { searchFoods } from "../services/usda.js";
@@ -1814,8 +1814,19 @@ export async function voiceSessionRoutes(app: FastifyInstance) {
     "/ws/voice-session",
     { websocket: true },
     async (socket: WebSocket, request: FastifyRequest) => {
-      const userId = await getDefaultUserId();
       const query = request.query as Record<string, string>;
+      const token = query.token;
+      if (!token) {
+        socket.close(4001, "Missing auth token");
+        return;
+      }
+      let userId: string;
+      try {
+        ({ userId } = await verifyAccessToken(token));
+      } catch {
+        socket.close(4001, "Invalid or expired token");
+        return;
+      }
       const today = new Date().toISOString().split("T")[0];
       const date = query.date ?? today;
       const sttMode =

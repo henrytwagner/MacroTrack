@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { getDefaultUserId } from "../db/defaultUser.js";
+
 import {
   getGoalForDate,
   listGoalProfiles,
@@ -17,7 +17,7 @@ export async function goalsRoutes(app: FastifyInstance) {
   app.get<{
     Querystring: { date?: string };
   }>("/api/goals", async (request, reply) => {
-    const userId = await getDefaultUserId();
+    const userId = request.userId;
     const { date } = request.query;
 
     const targetDate = date ? new Date(date) : new Date();
@@ -52,8 +52,8 @@ export async function goalsRoutes(app: FastifyInstance) {
   });
 
   // List goal profiles for the current user
-  app.get("/api/goal-profiles", async (_request, reply) => {
-    const userId = await getDefaultUserId();
+  app.get("/api/goal-profiles", async (request, reply) => {
+    const userId = request.userId;
     const profiles = await listGoalProfiles(userId);
     const response: GoalProfilesResponse = { profiles };
     return reply.send(response);
@@ -63,7 +63,7 @@ export async function goalsRoutes(app: FastifyInstance) {
   app.post<{ Body: UpdateGoalsForDateRequest }>(
     "/api/goals/change",
     async (request, reply) => {
-      const userId = await getDefaultUserId();
+      const userId = request.userId;
       const {
         effectiveDate,
         macros,

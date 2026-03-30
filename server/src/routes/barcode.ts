@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client.js";
 import { mapCommunityFood } from "./communityFood.js";
 import { mapCustomFood } from "./customFood.js";
-import { getDefaultUserId } from "../db/defaultUser.js";
+
 import { lookupBarcode } from "../services/barcodeLookup.js";
 import sharp from "sharp";
 import {
@@ -218,7 +218,7 @@ export async function barcodeRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: "code query parameter is required" });
       }
 
-      const userId = await getDefaultUserId();
+      const userId = request.userId;
       const result = await lookupBarcode(code, userId);
 
       switch (result.source) {

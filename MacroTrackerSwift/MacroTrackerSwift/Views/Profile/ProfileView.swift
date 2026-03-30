@@ -66,6 +66,7 @@ private struct RowSeparator: View {
 // MARK: - ProfileView
 
 struct ProfileView: View {
+    @Environment(AuthStore.self)       private var authStore
     @Environment(ProfileStore.self)    private var profileStore
     @Environment(AppearanceStore.self) private var appearanceStore
 
@@ -76,6 +77,7 @@ struct ProfileView: View {
     @State private var showBarcodeStub:       Bool = false
     @State private var showScaleStub:         Bool = false
     @State private var showCommunityFoodsStub: Bool = false
+    @State private var showDeleteConfirmation: Bool = false
 
     private let appearanceModes: [(label: String, icon: String, value: String)] = [
         ("System", "iphone",       "system"),
@@ -92,6 +94,7 @@ struct ProfileView: View {
                 nutritionSection
                 appearanceSection
                 developmentSection
+                accountSection
                 aboutSection
             }
             .padding(.horizontal, Spacing.lg)
@@ -278,6 +281,31 @@ struct ProfileView: View {
         }
     }
 
+    private var accountSection: some View {
+        sectionGroup(label: "ACCOUNT") {
+            VStack(spacing: 0) {
+                SettingsRow(icon: "rectangle.portrait.and.arrow.right",
+                            label: "Sign Out") {
+                    authStore.signOut()
+                }
+                RowSeparator()
+                SettingsRow(icon: "trash", label: "Delete Account",
+                            subtitle: "Permanently remove all your data") {
+                    showDeleteConfirmation = true
+                }
+            }
+        }
+        .alert("Delete Account?",
+               isPresented: $showDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                Task { await authStore.deleteAccount() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently delete your account and all associated data. This action cannot be undone.")
+        }
+    }
+
     private var aboutSection: some View {
         sectionGroup(label: "ABOUT") {
             HStack {
@@ -384,6 +412,7 @@ struct ProfileView: View {
 
 #Preview {
     ProfileView()
+        .environment(AuthStore.shared)
         .environment(ProfileStore.shared)
         .environment(AppearanceStore.shared)
 }

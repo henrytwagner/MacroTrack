@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client.js";
-import { getDefaultUserId } from "../db/defaultUser.js";
+
 import { recategorizeMealsForDay } from "../services/mealCategorizer.js";
 import type {
   SavedMeal,
@@ -101,8 +101,8 @@ function mapLoggedEntry(entry: {
 
 export async function mealsRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/meals — list all saved meals for the default user
-  app.get("/api/meals", async () => {
-    const userId = await getDefaultUserId();
+  app.get("/api/meals", async (request) => {
+    const userId = request.userId;
     const meals = await prisma.savedMeal.findMany({
       where: { userId },
       include: { items: true },
@@ -113,7 +113,7 @@ export async function mealsRoutes(app: FastifyInstance): Promise<void> {
 
   // POST /api/meals — create a new saved meal
   app.post("/api/meals", async (req, reply) => {
-    const userId = await getDefaultUserId();
+    const userId = req.userId;
     const body = req.body as CreateSavedMealRequest;
 
     if (!body.name?.trim()) {
@@ -150,7 +150,7 @@ export async function mealsRoutes(app: FastifyInstance): Promise<void> {
 
   // PUT /api/meals/:id — update name and items
   app.put("/api/meals/:id", async (req, reply) => {
-    const userId = await getDefaultUserId();
+    const userId = req.userId;
     const { id } = req.params as { id: string };
     const body = req.body as CreateSavedMealRequest;
 
@@ -192,7 +192,7 @@ export async function mealsRoutes(app: FastifyInstance): Promise<void> {
 
   // DELETE /api/meals/:id — delete a saved meal
   app.delete("/api/meals/:id", async (req, reply) => {
-    const userId = await getDefaultUserId();
+    const userId = req.userId;
     const { id } = req.params as { id: string };
 
     const existing = await prisma.savedMeal.findFirst({ where: { id, userId } });
@@ -207,7 +207,7 @@ export async function mealsRoutes(app: FastifyInstance): Promise<void> {
 
   // POST /api/meals/:id/log — log a meal instance as food entries
   app.post("/api/meals/:id/log", async (req, reply) => {
-    const userId = await getDefaultUserId();
+    const userId = req.userId;
     const { id } = req.params as { id: string };
     const body = req.body as LogMealRequest;
 

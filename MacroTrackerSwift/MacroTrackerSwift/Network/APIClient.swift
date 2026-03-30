@@ -48,7 +48,9 @@ struct ApiError: Error, LocalizedError, Sendable {
     }
 
     private func perform<T: Decodable>(_ path: String, method: String,
-                                        jsonBody: Data?) async throws -> T {
+                                        jsonBody: Data?,
+                                        skipAuth: Bool = false,
+                                        isRetry: Bool = false) async throws -> T {
         let urlStr = Config.baseURL + path
         guard let url = URL(string: urlStr) else {
             throw ApiError(statusCode: 0, message: "Invalid URL: \(urlStr)")
@@ -61,6 +63,11 @@ struct ApiError: Error, LocalizedError, Sendable {
             req.httpBody = body
         }
 
+        // Attach Bearer token for authenticated requests
+        if !skipAuth, let token = KeychainService.load(key: "accessToken") {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
         #if DEBUG
         print("[API] \(method) \(urlStr)")
         #endif
@@ -71,6 +78,15 @@ struct ApiError: Error, LocalizedError, Sendable {
         #if DEBUG
         print("[API] \(method) \(path) → \(status)")
         #endif
+
+        // On 401, attempt token refresh and retry once
+        if status == 401 && !isRetry && !skipAuth {
+            let refreshed = await AuthStore.shared.refreshTokenIfNeeded()
+            if refreshed {
+                return try await perform(path, method: method, jsonBody: jsonBody,
+                                          skipAuth: skipAuth, isRetry: true)
+            }
+        }
 
         guard (200..<300).contains(status) else {
             let raw = String(data: data, encoding: .utf8) ?? ""
@@ -86,6 +102,60 @@ struct ApiError: Error, LocalizedError, Sendable {
             return EmptyResponse() as! T
         }
         return try decoder.decode(T.self, from: data)
+    }
+
+    // MARK: - Auth (skip auth header — these are public or use current token)
+
+    func signInWithApple(identityToken: String,
+                          fullName: [String: String]?) async throws -> AuthResponse {
+        struct Body: Encodable { let identityToken: String; let fullName: [String: String]? }
+        return try await perform("/api/auth/apple", method: "POST",
+                                  jsonBody: try encoder.encode(Body(identityToken: identityToken,
+                                                                     fullName: fullName)),
+                                  skipAuth: true)
+    }
+
+    func register(email: String, password: String, name: String?) async throws -> AuthResponse {
+        struct Body: Encodable { let email: String; let password: String; let name: String? }
+        return try await perform("/api/auth/register", method: "POST",
+                                  jsonBody: try encoder.encode(Body(email: email, password: password, name: name)),
+                                  skipAuth: true)
+    }
+
+    func login(email: String, password: String) async throws -> AuthResponse {
+        struct Body: Encodable { let email: String; let password: String }
+        return try await perform("/api/auth/login", method: "POST",
+                                  jsonBody: try encoder.encode(Body(email: email, password: password)),
+                                  skipAuth: true)
+    }
+
+    func forgotPassword(email: String) async throws {
+        struct Body: Encodable { let email: String }
+        let _: EmptyResponse = try await perform("/api/auth/forgot-password", method: "POST",
+                                                   jsonBody: try encoder.encode(Body(email: email)),
+                                                   skipAuth: true)
+    }
+
+    func resetPassword(email: String, code: String, newPassword: String) async throws {
+        struct Body: Encodable { let email: String; let code: String; let newPassword: String }
+        let _: EmptyResponse = try await perform("/api/auth/reset-password", method: "POST",
+                                                   jsonBody: try encoder.encode(Body(email: email, code: code, newPassword: newPassword)),
+                                                   skipAuth: true)
+    }
+
+    func refreshToken(_ token: String) async throws -> TokenPair {
+        struct Body: Encodable { let refreshToken: String }
+        return try await perform("/api/auth/refresh", method: "POST",
+                                  jsonBody: try encoder.encode(Body(refreshToken: token)),
+                                  skipAuth: true)
+    }
+
+    func logout() async throws {
+        let _: EmptyResponse = try await perform("/api/auth/logout", method: "POST", jsonBody: nil)
+    }
+
+    func deleteAccount() async throws {
+        let _: EmptyResponse = try await perform("/api/auth/account", method: "DELETE", jsonBody: nil)
     }
 
     // MARK: - Goals
@@ -254,6 +324,9 @@ struct ApiError: Error, LocalizedError, Sendable {
         req.httpMethod = "POST"
         req.setValue("multipart/form-data; boundary=\(boundary)",
                      forHTTPHeaderField: "Content-Type")
+        if let token = KeychainService.load(key: "accessToken") {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
 
         var body = Data()
         body += "--\(boundary)\r\n".utf8Data

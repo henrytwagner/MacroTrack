@@ -9,6 +9,7 @@ import SwiftUI
 
 @main
 struct MacroTrackerSwiftApp: App {
+    private let authStore        = AuthStore.shared
     private let appearanceStore  = AppearanceStore.shared
     private let dateStore        = DateStore.shared
     private let dailyLogStore    = DailyLogStore.shared
@@ -22,6 +23,7 @@ struct MacroTrackerSwiftApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(authStore)
                 .environment(appearanceStore)
                 .environment(dateStore)
                 .environment(dailyLogStore)

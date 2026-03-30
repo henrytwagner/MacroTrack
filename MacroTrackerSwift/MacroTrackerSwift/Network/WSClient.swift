@@ -32,7 +32,8 @@ final class WSClient: NSObject {
         let wsBase = Config.baseURL
             .replacingOccurrences(of: "http://", with: "ws://")
             .replacingOccurrences(of: "https://", with: "wss://")
-        guard let url = URL(string: "\(wsBase)/ws/kitchen-mode?date=\(date)") else {
+        let token = KeychainService.load(key: "accessToken") ?? ""
+        guard let url = URL(string: "\(wsBase)/ws/kitchen-mode?date=\(date)&token=\(token)") else {
             return
         }
 
