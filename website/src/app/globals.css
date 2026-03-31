@@ -1,28 +1,142 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0a0a0a;
-  --foreground: #ededed;
-  --accent: #22c55e;
-  --accent-hover: #16a34a;
-  --card-bg: #141414;
-  --card-border: #262626;
-  --muted: #a1a1aa;
+  --background: #050505;
+  --foreground: #f0f0f0;
+  --accent: #00FF7F;
+  --accent-dim: #00cc66;
+  --accent-glow: rgba(0, 255, 127, 0.15);
+  --accent-glow-strong: rgba(0, 255, 127, 0.3);
+  --card-bg: #0d0d0d;
+  --card-border: #1a1a1a;
+  --muted: #888888;
+  --surface: #111111;
+
+  /* Brand macro colors from the app */
+  --cal-red: #FF3B6E;
+  --protein-purple: #6C5CE7;
+  --carb-orange: #FF9F43;
+  --fat-cyan: #00D2D3;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-accent: var(--accent);
-  --color-accent-hover: var(--accent-hover);
+  --color-accent-dim: var(--accent-dim);
+  --color-accent-glow: var(--accent-glow);
+  --color-accent-glow-strong: var(--accent-glow-strong);
   --color-card-bg: var(--card-bg);
   --color-card-border: var(--card-border);
   --color-muted: var(--muted);
+  --color-surface: var(--surface);
+  --color-cal-red: var(--cal-red);
+  --color-protein-purple: var(--protein-purple);
+  --color-carb-orange: var(--carb-orange);
+  --color-fat-cyan: var(--fat-cyan);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+}
+
+/* Noise texture overlay */
+.noise-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Phone frame component */
+.phone-frame {
+  position: relative;
+  border-radius: 44px;
+  overflow: hidden;
+  background: #1a1a1a;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 25px 50px -12px rgba(0, 0, 0, 0.8),
+    0 0 80px rgba(0, 255, 127, 0.05);
+}
+
+.phone-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Glow effect for accent elements */
+.glow-green {
+  box-shadow: 0 0 30px rgba(0, 255, 127, 0.3), 0 0 60px rgba(0, 255, 127, 0.1);
+}
+
+/* Animated gradient border */
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.gradient-border {
+  background: linear-gradient(135deg, var(--cal-red), var(--protein-purple), var(--carb-orange), var(--fat-cyan));
+  background-size: 300% 300%;
+  animation: gradient-shift 6s ease infinite;
+}
+
+/* Scroll fade-in animation */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.8s ease-out forwards;
+}
+
+/* Waveform animation for Kitchen Mode section */
+@keyframes wave-pulse {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+
+.wave-bar {
+  animation: wave-pulse 1.2s ease-in-out infinite;
+}
+
+/* Subtle floating animation */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+/* Pulse glow */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
 }

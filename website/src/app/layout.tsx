@@ -13,22 +13,22 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Dialed: Meals & Macros",
+  title: "Dialed — Track less. Know more.",
   description:
-    "Track your macros effortlessly with voice-first logging, barcode scanning, and smart meal tracking. Dialed makes nutrition simple.",
+    "The smart nutrition tracker that fits your life. Voice-first logging, camera recognition, barcode scanning, and intelligent macro tracking. Available on iOS.",
   openGraph: {
-    title: "Dialed: Meals & Macros",
+    title: "Dialed — Track less. Know more.",
     description:
-      "Track your macros effortlessly with voice-first logging, barcode scanning, and smart meal tracking.",
+      "The smart nutrition tracker that fits your life. Voice-first logging, camera recognition, and intelligent macro tracking.",
     url: "https://dialedmealsandmacros.com",
     siteName: "Dialed",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Dialed: Meals & Macros",
+    title: "Dialed — Track less. Know more.",
     description:
-      "Track your macros effortlessly with voice-first logging, barcode scanning, and smart meal tracking.",
+      "The smart nutrition tracker that fits your life. Voice-first logging, camera recognition, and intelligent macro tracking.",
   },
 };
 
@@ -40,9 +40,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="bg-background text-foreground">{children}</body>
     </html>
   );
 }
