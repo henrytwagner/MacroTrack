@@ -13,7 +13,7 @@ export default function FinalCTA() {
           alt="Dialed"
           width={80}
           height={80}
-          className="mx-auto rounded-2xl mb-8 glow-rings"
+          className="mx-auto rounded-2xl mb-8 glow-rings rotate-90"
         />
 
         <h2 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight">

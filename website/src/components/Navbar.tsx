@@ -25,7 +25,7 @@ export default function Navbar() {
             alt="Dialed"
             width={36}
             height={36}
-            className="rounded-lg"
+            className="rounded-lg rotate-90"
           />
           <span className="font-semibold text-lg tracking-tight">dialed</span>
         </Link>

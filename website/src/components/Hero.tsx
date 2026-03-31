@@ -18,7 +18,7 @@ export default function Hero() {
             alt="Dialed"
             width={80}
             height={80}
-            className="rounded-2xl mb-8 glow-rings mx-auto lg:mx-0"
+            className="rounded-2xl mb-8 glow-rings mx-auto lg:mx-0 rotate-90"
           />
 
           <h1 className="text-5xl sm:text-6xl lg:text-7xl xl:text-8xl font-bold tracking-tight leading-[0.95]">

@@ -31,7 +31,7 @@ export default function Footer() {
                 alt="Dialed"
                 width={28}
                 height={28}
-                className="rounded-lg"
+                className="rounded-lg rotate-90"
               />
               <span className="font-semibold tracking-tight">dialed</span>
             </div>
