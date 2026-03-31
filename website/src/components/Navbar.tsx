@@ -1,15 +1,25 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
+import { usePathname } from "next/navigation";
+
+const navLinks = [
+  { href: "/features", label: "Features" },
+  { href: "/features/kitchen-mode", label: "Kitchen Mode" },
+  { href: "/roadmap", label: "Roadmap" },
+  { href: "/about", label: "About" },
+];
 
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-xl border-b border-card-border">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-        <a href="#" className="flex items-center gap-3">
+        <Link href="/" className="flex items-center gap-3">
           <Image
             src="/media/app-icon-dark.png"
             alt="Dialed"
@@ -18,30 +28,29 @@ export default function Navbar() {
             className="rounded-lg"
           />
           <span className="font-semibold text-lg tracking-tight">dialed</span>
-        </a>
+        </Link>
 
         <div className="hidden md:flex items-center gap-8 text-sm text-muted">
-          <a href="#features" className="hover:text-foreground transition-colors">
-            Features
-          </a>
-          <a href="#kitchen-mode" className="hover:text-foreground transition-colors">
-            Kitchen Mode
-          </a>
-          <a href="#how-it-works" className="hover:text-foreground transition-colors">
-            How It Works
-          </a>
-          <a href="#roadmap" className="hover:text-foreground transition-colors">
-            Roadmap
-          </a>
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={`hover:text-foreground transition-colors ${
+                pathname === link.href ? "text-foreground" : ""
+              }`}
+            >
+              {link.label}
+            </Link>
+          ))}
         </div>
 
         <div className="flex items-center gap-4">
-          <a
-            href="#"
+          <Link
+            href="/access"
             className="hidden sm:inline-flex bg-accent text-background font-semibold text-sm px-5 py-2.5 rounded-full hover:bg-accent-dim transition-colors"
           >
-            Download
-          </a>
+            Get Access
+          </Link>
 
           {/* Mobile hamburger */}
           <button
@@ -66,40 +75,25 @@ export default function Navbar() {
       {mobileOpen && (
         <div className="md:hidden border-t border-card-border bg-background/95 backdrop-blur-xl">
           <div className="px-6 py-6 flex flex-col gap-4">
-            <a
-              href="#features"
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setMobileOpen(false)}
+                className={`hover:text-foreground transition-colors text-base py-2 ${
+                  pathname === link.href ? "text-foreground" : "text-muted"
+                }`}
+              >
+                {link.label}
+              </Link>
+            ))}
+            <Link
+              href="/access"
               onClick={() => setMobileOpen(false)}
-              className="text-muted hover:text-foreground transition-colors text-base py-2"
-            >
-              Features
-            </a>
-            <a
-              href="#kitchen-mode"
-              onClick={() => setMobileOpen(false)}
-              className="text-muted hover:text-foreground transition-colors text-base py-2"
-            >
-              Kitchen Mode
-            </a>
-            <a
-              href="#how-it-works"
-              onClick={() => setMobileOpen(false)}
-              className="text-muted hover:text-foreground transition-colors text-base py-2"
-            >
-              How It Works
-            </a>
-            <a
-              href="#roadmap"
-              onClick={() => setMobileOpen(false)}
-              className="text-muted hover:text-foreground transition-colors text-base py-2"
-            >
-              Roadmap
-            </a>
-            <a
-              href="#"
               className="bg-accent text-background font-semibold text-sm px-5 py-3 rounded-full text-center mt-2 hover:bg-accent-dim transition-colors"
             >
-              Download
-            </a>
+              Get Access
+            </Link>
           </div>
         </div>
       )}
