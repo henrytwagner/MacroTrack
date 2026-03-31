@@ -76,6 +76,7 @@ struct ProfileView: View {
     @State private var showFoodsStub:         Bool = false
     @State private var showCommunityFoods:    Bool = false
     @State private var showAccount:           Bool = false
+    @State private var showScaleConnection:   Bool = false
 
     private let appearanceModes: [(label: String, icon: String, value: String)] = [
         ("System", "iphone",       "system"),
@@ -91,6 +92,7 @@ struct ProfileView: View {
                 profileSection
                 nutritionSection
                 appearanceSection
+                devicesSection
                 aboutSection
             }
             .padding(.horizontal, Spacing.lg)
@@ -122,6 +124,9 @@ struct ProfileView: View {
             }
             .environment(AuthStore.shared)
             .environment(ProfileStore.shared)
+        }
+        .sheet(isPresented: $showScaleConnection) {
+            ScaleConnectionSheet()
         }
     }
 
@@ -273,6 +278,20 @@ struct ProfileView: View {
                 }
                 .padding(.horizontal, Spacing.lg)
                 .padding(.vertical, Spacing.md)
+            }
+        }
+    }
+
+    private var devicesSection: some View {
+        sectionGroup(label: "DEVICES") {
+            SettingsRow(
+                icon: "scalemass",
+                label: "Kitchen Scale",
+                subtitle: ScaleManager.shared.connectionState == .connected
+                    ? "Connected"
+                    : "Not connected"
+            ) {
+                showScaleConnection = true
             }
         }
     }

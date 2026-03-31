@@ -1,2 +1,3 @@
 API_HOST = backend-production-f8937.up.railway.app
 API_SCHEME = https
+PRODUCT_BUNDLE_IDENTIFIER = com.henrywagner.dialed

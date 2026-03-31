@@ -1,5 +1,6 @@
 import SwiftUI
 @preconcurrency import AVFoundation
+import AudioToolbox
 import Observation
 
 // MARK: - Session State
@@ -82,15 +83,29 @@ final class KitchenModeViewModel {
     /// Last scanned barcode GTIN — shown as a debug overlay card, auto-dismissed.
     var debugBarcode: String? = nil
 
+    /// Last barcode GTIN that was successfully sent to the server.
+    /// Used to block accidental consecutive scans of the same barcode.
+    private var lastProcessedGTIN: String? = nil
+
+    /// Duplicate-scan toast message — auto-dismissed after 3 seconds.
+    var duplicateScanMessage: String? = nil
+
     /// Whether the food search sheet is presented.
     var showFoodSearch: Bool = false
 
-    /// Whether the Scale Connection sheet is presented.
+    /// Whether the Scale Settings (auto-progression) sheet is presented.
     var showScaleSettings: Bool = false
+
+    /// Whether the Scale Connection sheet is presented.
+    var showScaleConnection: Bool = false
 
     /// Pre-fill name for FoodSearchView when bridging from a voice choice card (food not found).
     /// Cleared whenever the search sheet is dismissed.
     var pendingSearchName: String? = nil
+
+    /// GTIN from a barcode scan that triggered a food_choice card.
+    /// Used to pre-fill barcode field when creating a food and to open search with empty query.
+    var pendingBarcodeGtin: String? = nil
 
     /// Whether there are unconfirmed items (blocks save).
     var hasUnconfirmedItems: Bool {
@@ -107,6 +122,56 @@ final class KitchenModeViewModel {
 
     @ObservationIgnored
     @AppStorage("kitchenCameraEnabled") var cameraEnabled: Bool = false
+
+    // MARK: - Auto-Progression Settings (persisted via UserDefaults)
+    // These use plain stored properties (not @AppStorage) so @Observable can track
+    // mutations and drive SwiftUI re-renders in ScaleSettingsSheet.
+
+    var autoProgressionEnabled: Bool = UserDefaults.standard.bool(forKey: "autoProgressionEnabled") {
+        didSet { UserDefaults.standard.set(autoProgressionEnabled, forKey: "autoProgressionEnabled") }
+    }
+
+    var autoProgressionAutoZero: Bool = {
+        UserDefaults.standard.object(forKey: "autoProgressionAutoZero") == nil
+            ? true : UserDefaults.standard.bool(forKey: "autoProgressionAutoZero")
+    }() {
+        didSet { UserDefaults.standard.set(autoProgressionAutoZero, forKey: "autoProgressionAutoZero") }
+    }
+
+    var autoProgressionSound: Bool = UserDefaults.standard.bool(forKey: "autoProgressionSound") {
+        didSet { UserDefaults.standard.set(autoProgressionSound, forKey: "autoProgressionSound") }
+    }
+
+    var autoProgressionVoiceChain: Bool = {
+        UserDefaults.standard.object(forKey: "autoProgressionVoiceChain") == nil
+            ? true : UserDefaults.standard.bool(forKey: "autoProgressionVoiceChain")
+    }() {
+        didSet { UserDefaults.standard.set(autoProgressionVoiceChain, forKey: "autoProgressionVoiceChain") }
+    }
+
+    var autoProgressionTimerEnabled: Bool = UserDefaults.standard.bool(forKey: "autoProgressionTimerEnabled") {
+        didSet { UserDefaults.standard.set(autoProgressionTimerEnabled, forKey: "autoProgressionTimerEnabled") }
+    }
+
+    var autoProgressionTimerSeconds: Double = {
+        let val = UserDefaults.standard.double(forKey: "autoProgressionTimerSeconds")
+        return val > 0 ? val : 3.0
+    }() {
+        didSet { UserDefaults.standard.set(autoProgressionTimerSeconds, forKey: "autoProgressionTimerSeconds") }
+    }
+
+    // MARK: - Auto-Progression Runtime State
+
+    /// The item ID currently showing a chain-confirm flash animation.
+    var autoConfirmedItemId: String? = nil
+
+    /// Timer task for stability-based auto-confirm.
+    private var autoConfirmTimerTask: Task<Void, Never>? = nil
+
+    /// The first item currently in scale weighing mode.
+    var currentWeighingItemId: String? {
+        draft.items.first(where: { $0.scaleWeighingActive })?.id
+    }
 
     /// Whether audio is currently active in this session (started by voice toggle).
     private(set) var audioActive = false
@@ -154,7 +219,9 @@ final class KitchenModeViewModel {
     func expandItem(_ id: String) {
         if expandedItemId != id {
             cancelSubtractiveMode()
-            if !keepZeroOffset { zeroOffset = nil }
+            // Preserve zero offset during auto-progression (chainConfirm sets it for the next item)
+            let preserveZero = autoProgressionEnabled && autoProgressionAutoZero
+            if !keepZeroOffset && !preserveZero { zeroOffset = nil }
         }
         expandedItemId = id
     }
@@ -369,6 +436,114 @@ final class KitchenModeViewModel {
         if !keepZeroOffset { zeroOffset = nil }
     }
 
+    // MARK: - Auto-Progression
+
+    /// Chain-confirm the current weighing item: confirm weight, auto-zero, fire feedback.
+    /// Called when a new item arrives (barcode/voice) or stability timer fires.
+    func chainConfirm(itemId: String) {
+        // Guard: item must still be actively weighing
+        guard let idx = draft.items.firstIndex(where: { $0.id == itemId }),
+              draft.items[idx].scaleWeighingActive else { return }
+        // Guard: must have a stable reading > 0
+        guard let reading = adjustedScaleReading, reading.stable, reading.value > 0 else { return }
+        // Guard: not in subtractive mode (that has its own explicit flow)
+        guard subtractiveItemId != itemId else { return }
+        // Guard: item must be in normal state (not creating/clarifying/etc.)
+        guard draft.items[idx].state == .normal else { return }
+
+        // Capture raw reading BEFORE confirm clears the zero offset
+        let rawValue = scaleReading?.value
+
+        // Temporarily prevent confirmScaleReading from clearing zero
+        let savedKeepZero = keepZeroOffset
+        keepZeroOffset = true
+        confirmScaleReading(for: itemId)
+        keepZeroOffset = savedKeepZero
+
+        // Auto-zero at the raw reading so next item measures from 0
+        if autoProgressionAutoZero, let raw = rawValue {
+            zeroOffset = raw
+        } else if !savedKeepZero {
+            zeroOffset = nil
+        }
+
+        // Visual feedback: mark item for flash animation
+        withAnimation(.easeOut(duration: 0.3)) {
+            autoConfirmedItemId = itemId
+        }
+
+        // Haptic
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+        // Sound
+        if autoProgressionSound {
+            AudioServicesPlaySystemSound(1057) // subtle tick sound
+        }
+
+        // Cancel any running stability timer
+        autoConfirmTimerTask?.cancel()
+        autoConfirmTimerTask = nil
+
+        // Clear flash after 2 seconds
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            if self.autoConfirmedItemId == itemId {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    self.autoConfirmedItemId = nil
+                }
+            }
+        }
+    }
+
+    /// Try to chain-confirm the current weighing item if auto-progression is enabled.
+    /// Returns true if a chain-confirm was performed.
+    @discardableResult
+    func tryChainConfirm() -> Bool {
+        guard autoProgressionEnabled, isScaleConnected else { return false }
+        guard let weighingId = currentWeighingItemId else { return false }
+        guard let reading = adjustedScaleReading, reading.stable, reading.value > 0 else { return false }
+        chainConfirm(itemId: weighingId)
+        return true
+    }
+
+    /// Restart the stability-based auto-confirm timer when scale reading updates.
+    /// Called from the view's .onChange of scale reading.
+    func updateAutoConfirmTimer() {
+        guard autoProgressionEnabled, autoProgressionTimerEnabled else {
+            autoConfirmTimerTask?.cancel()
+            autoConfirmTimerTask = nil
+            return
+        }
+        guard let weighingId = currentWeighingItemId else {
+            autoConfirmTimerTask?.cancel()
+            autoConfirmTimerTask = nil
+            return
+        }
+        guard let reading = adjustedScaleReading, reading.stable, reading.value > 0 else {
+            // Reading unstable or gone — cancel timer
+            autoConfirmTimerTask?.cancel()
+            autoConfirmTimerTask = nil
+            return
+        }
+
+        // If timer already running for this item, let it continue
+        if autoConfirmTimerTask != nil { return }
+
+        // Start countdown
+        let duration = autoProgressionTimerSeconds
+        autoConfirmTimerTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(duration))
+            guard !Task.isCancelled else { return }
+            // Re-check conditions before confirming
+            guard self.autoProgressionEnabled,
+                  self.autoProgressionTimerEnabled,
+                  self.currentWeighingItemId == weighingId,
+                  let r = self.adjustedScaleReading, r.stable, r.value > 0 else { return }
+            self.chainConfirm(itemId: weighingId)
+            self.autoConfirmTimerTask = nil
+        }
+    }
+
     /// Whether a food item has any weight-compatible unit available.
     func itemHasWeightUnit(_ item: DraftItem) -> Bool {
         if measurementSystem(for: item.unit) == .weight { return true }
@@ -431,6 +606,16 @@ final class KitchenModeViewModel {
     func connectScale() { scale.connect() }
     func disconnectScale() { scale.disconnect() }
     func cancelScaleScan() { scale.cancelScan() }
+
+    /// Long-press on scale icon: connection sheet when disconnected, settings when connected.
+    func scaleIconLongPressed() {
+        switch scale.connectionState {
+        case .connected:
+            showScaleSettings = true
+        case .idle, .error, .scanning, .connecting:
+            showScaleConnection = true
+        }
+    }
 
     /// Toggle scale connection from the bottom bar — persists preference.
     func toggleScale() {
@@ -600,6 +785,10 @@ final class KitchenModeViewModel {
     /// Save the session — local items via REST, server items via WS.
     func save() {
         guard !sessionEnded else { return }
+
+        // Auto-progression: confirm the last weighing item before saving
+        if autoProgressionEnabled { tryChainConfirm() }
+
         sessionEnded = true   // prevent cleanupOnDisappear from disconnecting early
         capture.stop()
         camera.stop()
@@ -649,6 +838,10 @@ final class KitchenModeViewModel {
     /// Pause the session — saves confirmed items, preserves drafts, dismisses.
     func pause() {
         guard !sessionEnded else { return }
+
+        // Auto-progression: confirm the last weighing item before pausing
+        if autoProgressionEnabled { tryChainConfirm() }
+
         sessionEnded = true
         capture.stop()
         camera.stop()
@@ -797,12 +990,15 @@ final class KitchenModeViewModel {
     func touchRemoveItem(itemId: String) {
         guard let idx = draft.items.firstIndex(where: { $0.id == itemId }) else { return }
         let item = draft.items[idx]
+        // Removal is intentional — clear barcode dedup so the user can re-scan.
+        lastProcessedGTIN = nil
         // Local items and choice cards don't exist in session.items on the server —
         // remove from draft immediately and just notify server to clear pending state.
         if item.isLocalItem || item.state == .choice {
             draft.items.remove(at: idx)
             if item.state == .choice {
                 ws.send(.touchDismissChoice(itemId: itemId))
+                pendingBarcodeGtin = nil
             }
             return
         }
@@ -886,7 +1082,12 @@ final class KitchenModeViewModel {
             draft.items.remove(at: idx)
         }
         ws.send(.touchRemoveItem(itemId: itemId))
-        createLocalDraftItem(name: name)
+        if let barcode = pendingBarcodeGtin {
+            createLocalDraftItem(name: "", barcode: barcode)
+            pendingBarcodeGtin = nil
+        } else {
+            createLocalDraftItem(name: name)
+        }
     }
 
     /// User tapped a USDA disambiguation option directly (touch path, no Gemini transcript needed).
@@ -942,7 +1143,8 @@ final class KitchenModeViewModel {
     /// Create a new local draft item in `.creating` state with the given name pre-filled.
     /// Used by the touch path when a user taps "Create [name]" after searching and finding
     /// no results — bypasses CreateFoodSheet, using the inline inlineNutritionForm instead.
-    func createLocalDraftItem(name: String) {
+    /// Pass `barcode` to pre-fill the barcode field (e.g., from a barcode scan).
+    func createLocalDraftItem(name: String, barcode: String? = nil) {
         let itemId = UUID().uuidString
         var item = DraftItem(
             id: itemId,
@@ -967,7 +1169,7 @@ final class KitchenModeViewModel {
             carbsG: nil,
             fatG: nil,
             brand: nil,
-            barcode: nil,
+            barcode: barcode,
             currentField: .servingSize
         )
         draft.items.append(item)
@@ -1177,6 +1379,24 @@ final class KitchenModeViewModel {
         let digits = gtin.filter(\.isNumber)
         guard !digits.isEmpty else { return }
 
+        // Block consecutive scans of the same barcode to prevent accidental misinput.
+        if digits == lastProcessedGTIN {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                duplicateScanMessage = "Already scanned"
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(3))
+                if self.duplicateScanMessage != nil {
+                    withAnimation { self.duplicateScanMessage = nil }
+                }
+            }
+            return
+        }
+
+        // Auto-progression: chain-confirm current weighing item before processing new barcode.
+        // This runs first so the zero is set before the new item arrives.
+        tryChainConfirm()
+
         // Debug: show scanned barcode briefly
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             debugBarcode = digits
@@ -1195,8 +1415,11 @@ final class KitchenModeViewModel {
         if isFillingBarcodeField {
             ws.send(.transcript(text: digits))
         } else {
+            pendingBarcodeGtin = digits
             ws.send(.barcodeScan(gtin: digits))
         }
+
+        lastProcessedGTIN = digits
     }
 
     // MARK: - Cleanup
@@ -1211,6 +1434,7 @@ final class KitchenModeViewModel {
         scale.disconnect()
         UIApplication.shared.isIdleTimerDisabled = false
         draft.reset()
+        lastProcessedGTIN = nil
     }
 
     private func stopAudio() {
@@ -1274,6 +1498,12 @@ final class KitchenModeViewModel {
         // Clear camera processing indicator when items arrive
         if case .itemsAdded = msg { isCameraProcessing = false }
 
+        // Auto-progression: voice chain-confirm when new items arrive via voice/server
+        if case .itemsAdded = msg,
+           autoProgressionEnabled, autoProgressionVoiceChain {
+            tryChainConfirm()
+        }
+
         // For newly added items, populate base macro data and activate scale weighing if applicable
         if case .itemsAdded(let incoming) = msg {
             for item in incoming {
@@ -1318,7 +1548,10 @@ final class KitchenModeViewModel {
             if let lastAdded = incoming.last {
                 expandItem(lastAdded.id)
             }
-        case .itemRemoved, .clarify, .createFoodPrompt, .disambiguate, .foodChoice:
+        case .itemRemoved:
+            lastProcessedGTIN = nil
+            autoFocusNewestItem()
+        case .clarify, .createFoodPrompt, .disambiguate, .foodChoice:
             autoFocusNewestItem()
         default:
             break

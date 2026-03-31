@@ -46,6 +46,10 @@ final class AuthStore {
             return
         }
 
+        // In release builds, verify Apple credential is still valid.
+        // Skipped in debug because credential state can return .notFound
+        // after Xcode reinstalls, wiping otherwise-valid tokens.
+        #if !DEBUG
         if let appleUserId = KeychainService.load(key: "appleUserId") {
             let state = try? await ASAuthorizationAppleIDProvider().credentialState(forUserID: appleUserId)
             if state == .revoked || state == .notFound {
@@ -55,6 +59,7 @@ final class AuthStore {
                 return
             }
         }
+        #endif
 
         // Restore persisted user info
         restoreUser()

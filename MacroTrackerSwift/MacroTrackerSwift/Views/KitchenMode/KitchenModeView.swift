@@ -23,6 +23,7 @@ struct KitchenModeView: View {
     @State private var pillPressing: Bool = false
     @State private var showJumpToTop: Bool = false
     @State private var cameraControlsVisible: Bool = true
+    @State private var cameraScrollOffset: CGFloat = 0
     @State private var showCameraProcessingDebug: Bool = false
     @State private var cameraProcessingStartTime: Date? = nil
 
@@ -73,6 +74,7 @@ struct KitchenModeView: View {
         }
         .onChange(of: vm.scaleReading?.display) { _, _ in
             vm.updateLastScaleReading()
+            vm.updateAutoConfirmTimer()
         }
         .alert("Cancel Session", isPresented: $showCancelAlert) {
             Button("Keep Going", role: .cancel) {}
@@ -138,6 +140,9 @@ struct KitchenModeView: View {
             .environment(MealsStore.shared)
         }
         .sheet(isPresented: $vm.showScaleSettings) {
+            ScaleSettingsSheet(vm: vm)
+        }
+        .sheet(isPresented: $vm.showScaleConnection) {
             ScaleConnectionSheet()
         }
     }
@@ -149,9 +154,9 @@ struct KitchenModeView: View {
             let feedHeight = geo.size.width * 3 / 4
 
             VStack(spacing: 0) {
-                // Top navigation bar — hidden while camera overlay is visible.
-                // Shown in normal mode, and also in camera mode once the sheet scrolls past the feed.
-                if !vm.barcodeModeActive || !cameraControlsVisible {
+                // Top navigation bar — shown in non-camera mode only.
+                // Camera mode uses an overlay bar that floats over the camera feed.
+                if !vm.barcodeModeActive {
                     topBar
                 }
 
@@ -161,6 +166,11 @@ struct KitchenModeView: View {
                         barcodeModeContent(feedHeight: feedHeight, screenHeight: geo.size.height)
                     } else {
                         normalModeContent
+                    }
+
+                    // Camera adaptive top bar — floats over camera, always visible in camera mode
+                    if vm.barcodeModeActive {
+                        cameraAdaptiveTopBar
                     }
 
                     // Floating caption / edit row
@@ -192,7 +202,7 @@ struct KitchenModeView: View {
 
     private func barcodeModeContent(feedHeight: CGFloat, screenHeight: CGFloat) -> some View {
         ZStack(alignment: .top) {
-            // Camera feed — behind everything
+            // Camera feed — fixed background (parallax: sheet scrolls over it)
             if vm.cameraPermissionGranted {
                 KitchenCameraPreview(session: KitchenCameraSession.shared.captureSession)
                     .frame(height: feedHeight)
@@ -202,21 +212,106 @@ struct KitchenModeView: View {
                     .frame(height: feedHeight)
             }
 
-            // Cards scroll below the camera feed as a sheet
+            // Scrollable content: camera controls area + sheet
             ScrollView {
                 VStack(spacing: 0) {
-                    // Transparent spacer: pushes sheet below camera.
-                    // CameraScrollTracker hooks into UIScrollView KVO for reliable
-                    // per-frame scroll offset — hides camera controls on any upward scroll.
-                    Color.clear
-                        .frame(height: feedHeight)
-                        .background(
-                            CameraScrollTracker { offsetY in
-                                cameraControlsVisible = offsetY < 1
-                            }
-                        )
+                    // Camera controls area — transparent so camera shows through.
+                    // Controls and tap gestures live here so they scroll away with the sheet.
+                    ZStack {
+                        Color.clear
 
-                    // Sheet header — rounded top corners, clears floating macro pill
+                        // Bottom-right: flash + flip buttons
+                        // Fade out progressively as they scroll toward the fixed top bar save button.
+                        // Flash (higher up) fades first, flip fades second.
+                        VStack {
+                            Spacer()
+                            HStack {
+                                Spacer()
+                                let fadeRange: CGFloat = 40
+                                // Flash sits above flip: fades earlier
+                                let flashThreshold = feedHeight - 148
+                                let flashOpacity = max(0, min(1, (flashThreshold - cameraScrollOffset) / fadeRange))
+                                // Flip sits lower: fades later
+                                let flipThreshold = feedHeight - 104
+                                let flipOpacity = max(0, min(1, (flipThreshold - cameraScrollOffset) / fadeRange))
+
+                                VStack(spacing: Spacing.sm) {
+                                    if vm.cameraFacing == .back && flashOpacity > 0 {
+                                        Button {
+                                            vm.toggleFlash()
+                                        } label: {
+                                            Image(systemName: vm.flashEnabled ? "bolt.fill" : "bolt.slash")
+                                                .font(.system(size: 16, weight: .semibold))
+                                                .foregroundStyle(.white)
+                                                .frame(width: 36, height: 36)
+                                                .background(Color.black.opacity(0.55))
+                                                .clipShape(Circle())
+                                        }
+                                        .opacity(flashOpacity)
+                                    }
+                                    if flipOpacity > 0 {
+                                        Button {
+                                            vm.flipCamera()
+                                        } label: {
+                                            Image(systemName: "arrow.triangle.2.circlepath.camera")
+                                                .font(.system(size: 16, weight: .semibold))
+                                                .foregroundStyle(.white)
+                                                .frame(width: 36, height: 36)
+                                                .background(Color.black.opacity(0.55))
+                                                .clipShape(Circle())
+                                        }
+                                        .opacity(flipOpacity)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.bottom, Spacing.md)
+
+                        // Processing indicator — near bottom of camera area
+                        if vm.isCameraProcessing {
+                            cameraProcessingIndicator
+                                .padding(.horizontal, Spacing.lg)
+                                .frame(maxHeight: .infinity, alignment: .bottom)
+                                .padding(.bottom, Spacing.md)
+                                .allowsHitTesting(true)
+                        }
+
+                        // Debug barcode card — near bottom of camera area
+                        if let gtin = vm.debugBarcode {
+                            debugBarcodeCard(gtin: gtin)
+                                .padding(.horizontal, Spacing.lg)
+                                .frame(maxHeight: .infinity, alignment: .bottom)
+                                .padding(.bottom, Spacing.md)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
+
+                        // Duplicate barcode toast
+                        if let message = vm.duplicateScanMessage {
+                            duplicateScanToast(message: message)
+                                .padding(.horizontal, Spacing.lg)
+                                .frame(maxHeight: .infinity, alignment: .bottom)
+                                .padding(.bottom, Spacing.md)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
+                    }
+                    .frame(height: feedHeight)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        vm.flipCamera()
+                    }
+                    .onTapGesture(count: 1) {
+                        vm.captureAndIdentifyFood()
+                        if vm.isCameraProcessing { cameraProcessingStartTime = Date() }
+                    }
+                    .background(
+                        CameraScrollTracker { offsetY in
+                            cameraControlsVisible = offsetY < 1
+                            cameraScrollOffset = max(0, offsetY)
+                        }
+                    )
+
+                    // Sheet header — rounded top corners
                     UnevenRoundedRectangle(topLeadingRadius: BorderRadius.xl,
                                            topTrailingRadius: BorderRadius.xl)
                         .fill(Color.appBackground)
@@ -248,119 +343,80 @@ struct KitchenModeView: View {
                     .padding(.horizontal, Spacing.lg)
                     .padding(.bottom, Spacing.lg)
                     .frame(minHeight: screenHeight, alignment: .top)
-                    .background(Color.appBackground)
+                    .background(
+                        // Extend opaque background upward behind the rounded header
+                        // to fill the corner gaps where camera would show through.
+                        Color.appBackground
+                            .padding(.top, -(24 + Spacing.sm))
+                    )
                 }
             }
             .scrollIndicators(.hidden)
-
-            // Nav overlay — only shown while the camera feed is visible (not scrolled past).
-            // When hidden, topBar takes over in the parent VStack.
-            if cameraControlsVisible {
-                cameraNavOverlay
-                    .padding(.horizontal, Spacing.lg)
-                    .padding(.vertical, Spacing.md)
-                    .frame(height: feedHeight, alignment: .top)
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
-                        vm.flipCamera()
-                    }
-                    .onTapGesture(count: 1) {
-                        vm.captureAndIdentifyFood()
-                        if vm.isCameraProcessing { cameraProcessingStartTime = Date() }
-                    }
-                    .transition(.opacity)
-            }
-
-            // Processing indicator — floats near bottom of camera feed (same position as barcode card)
-            if vm.isCameraProcessing && cameraControlsVisible {
-                cameraProcessingIndicator
-                    .padding(.horizontal, Spacing.lg)
-                    .offset(y: feedHeight - 64)
-                    .allowsHitTesting(true)
-            }
-
-            // Debug barcode card — floats near bottom of camera feed
-            if let gtin = vm.debugBarcode {
-                debugBarcodeCard(gtin: gtin)
-                    .padding(.horizontal, Spacing.lg)
-                    .offset(y: feedHeight - 64)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
         }
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
-    // MARK: - Camera Nav Overlay
+    // MARK: - Camera Adaptive Top Bar
+    //
+    // Always-visible top bar for camera mode. Adapts styling based on whether the
+    // camera feed is visible (dark/frosted) or scrolled away (normal app scheme).
 
-    private var cameraNavOverlay: some View {
-        VStack {
-            // Top row: back / pill / save
-            HStack(alignment: .top) {
-                Button {
-                    handleCancel()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 36, height: 36)
+    private var cameraAdaptiveTopBar: some View {
+        HStack(alignment: .top) {
+            // Back / Cancel
+            Button {
+                handleCancel()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: cameraControlsVisible ? 18 : 20,
+                                  weight: cameraControlsVisible ? .semibold : .medium))
+                    .foregroundStyle(cameraControlsVisible ? .white : Color.appTextSecondary)
+                    .frame(width: cameraControlsVisible ? 36 : 44,
+                           height: cameraControlsVisible ? 36 : 44)
+                    .background(cameraControlsVisible ? Color.black.opacity(0.55) : .clear)
+                    .clipShape(Circle())
+            }
+
+            Spacer()
+
+            // Macro pill — adapts color scheme
+            VStack(spacing: 2) {
+                if cameraControlsVisible {
+                    inlineMacroPill
+                        .environment(\.colorScheme, .dark)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xs)
                         .background(Color.black.opacity(0.55))
-                        .clipShape(Circle())
-                }
-
-                Spacer()
-
-                inlineMacroPill
-                    .environment(\.colorScheme, .dark)
-                    .padding(.horizontal, Spacing.sm)
-                    .padding(.vertical, Spacing.xs)
-                    .background(Color.black.opacity(0.55))
-                    .clipShape(RoundedRectangle(cornerRadius: BorderRadius.lg))
-
-                Spacer()
-
-                Button {
-                    handleSave()
-                } label: {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 32, height: 32)
-                        .background(Color.appTint)
-                        .clipShape(Capsule())
+                        .clipShape(RoundedRectangle(cornerRadius: BorderRadius.lg))
+                } else {
+                    inlineMacroPill
+                    if let dateLabel = vm.dateLabel {
+                        Text(dateLabel)
+                            .font(.appFootnote)
+                            .tracking(Typography.Tracking.footnote)
+                            .foregroundStyle(Color.appWarning)
+                    }
                 }
             }
 
             Spacer()
 
-            // Bottom-right: flash + flip
-            HStack {
-                Spacer()
-                VStack(spacing: Spacing.sm) {
-                    if vm.cameraFacing == .back {
-                        Button {
-                            vm.toggleFlash()
-                        } label: {
-                            Image(systemName: vm.flashEnabled ? "bolt.fill" : "bolt.slash")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 36, height: 36)
-                                .background(Color.black.opacity(0.55))
-                                .clipShape(Circle())
-                        }
-                    }
-                    Button {
-                        vm.flipCamera()
-                    } label: {
-                        Image(systemName: "arrow.triangle.2.circlepath.camera")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
-                            .background(Color.black.opacity(0.55))
-                            .clipShape(Circle())
-                    }
-                }
+            // Save
+            Button {
+                handleSave()
+            } label: {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Color.appTint)
+                    .clipShape(Capsule())
             }
+            .frame(width: 44, height: 44)
         }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, cameraControlsVisible ? Spacing.md : Spacing.sm)
+        .animation(.easeInOut(duration: 0.2), value: cameraControlsVisible)
     }
 
     // MARK: - Camera Processing Indicator
@@ -406,6 +462,7 @@ struct KitchenModeView: View {
             scaleSkipped: vm.scaleSkippedIds.contains(item.id),
             isScaleConnected: vm.isScaleConnected,
             itemHasWeightUnit: vm.itemHasWeightUnit(item),
+            autoConfirmed: vm.autoConfirmedItemId == item.id,
             hasZeroOffset: vm.zeroOffset != nil,
             keepZeroOffset: vm.keepZeroOffset,
             isSubtractiveMode: vm.isInSubtractiveMode(item.id),
@@ -449,8 +506,11 @@ struct KitchenModeView: View {
                 vm.choiceCreateFood(itemId: item.id, name: name)
             },
             onSearchManually: { name in
-                vm.pendingSearchName = name
+                // For barcode-triggered choices, open search with empty query
+                let isBarcodeName = !name.isEmpty && name.allSatisfy(\.isNumber)
+                vm.pendingSearchName = isBarcodeName ? nil : name
                 vm.showFoodSearch = true
+                if isBarcodeName { vm.pendingBarcodeGtin = nil }
             },
             onSelectDisambiguateOption: { option in
                 vm.selectDisambiguateOption(itemId: item.id, option: option)
@@ -712,6 +772,24 @@ struct KitchenModeView: View {
         .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
     }
 
+    // MARK: - Duplicate Scan Toast
+
+    private func duplicateScanToast(message: String) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "xmark.circle")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(.white.opacity(0.7))
+
+            Text(message)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(Color.red.opacity(0.6))
+        .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
+    }
+
     // MARK: - Caption / Edit Row
 
     @ViewBuilder
@@ -823,12 +901,7 @@ struct KitchenModeView: View {
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
                 .onTapGesture { vm.toggleScale() }
-                .contextMenu {
-                    Button { vm.showScaleSettings = true } label: {
-                        Label("Scale Connection (Coming Soon)", systemImage: "antenna.radiowaves.left.and.right")
-                    }
-                    .disabled(true)
-                }
+                .onLongPressGesture { vm.scaleIconLongPressed() }
 
             // Add food (manual search)
             Button {
@@ -967,48 +1040,156 @@ private struct CameraScrollTracker: UIViewRepresentable {
     }
 }
 
-// MARK: - Scale Connection Sheet
+// MARK: - Scale Settings Sheet
 
 @MainActor
-private struct ScaleConnectionSheet: View {
+private struct ScaleSettingsSheet: View {
+    @Bindable var vm: KitchenModeViewModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: Spacing.xl) {
-            Spacer()
+        NavigationStack {
+            List {
+                // MARK: Auto-Progression
+                Section {
+                    Toggle("Auto-Progression", isOn: $vm.autoProgressionEnabled)
+                        .tint(Color.appTint)
+                } footer: {
+                    Text("Scanning a new barcode automatically confirms the current item's weight and zeros the scale.")
+                        .font(.appCaption1)
+                }
 
-            Image(systemName: "scalemass")
-                .font(.system(size: 48))
-                .foregroundStyle(Color.appTextSecondary)
+                if vm.autoProgressionEnabled {
+                    Section("Auto-Progression Settings") {
+                        Toggle("Auto-Zero After Confirm", isOn: $vm.autoProgressionAutoZero)
+                            .tint(Color.appTint)
 
-            VStack(spacing: Spacing.sm) {
-                Text("Scale Connection")
-                    .font(.appHeadline)
-                    .foregroundStyle(Color.appText)
+                        Toggle("Confirmation Sound", isOn: $vm.autoProgressionSound)
+                            .tint(Color.appTint)
 
-                Text("Bluetooth scale pairing is coming soon.")
-                    .font(.appBody)
-                    .foregroundStyle(Color.appTextSecondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, Spacing.xxl)
+                        Toggle("Voice Chain Confirm", isOn: $vm.autoProgressionVoiceChain)
+                            .tint(Color.appTint)
+                    }
+
+                    Section {
+                        Toggle("Auto-Confirm on Stable Weight", isOn: $vm.autoProgressionTimerEnabled)
+                            .tint(Color.appTint)
+
+                        if vm.autoProgressionTimerEnabled {
+                            VStack(alignment: .leading, spacing: Spacing.sm) {
+                                HStack {
+                                    Text("Delay")
+                                        .font(.appBody)
+                                        .foregroundStyle(Color.appText)
+                                    Spacer()
+                                    Text(String(format: "%.1fs", vm.autoProgressionTimerSeconds))
+                                        .font(.appBody)
+                                        .foregroundStyle(Color.appTextSecondary)
+                                        .monospacedDigit()
+                                }
+                                Slider(
+                                    value: $vm.autoProgressionTimerSeconds,
+                                    in: 1.5...5.0,
+                                    step: 0.5
+                                )
+                                .tint(Color.appTint)
+                                HStack {
+                                    Text("1.5s")
+                                        .font(.appCaption1)
+                                        .foregroundStyle(Color.appTextTertiary)
+                                    Spacer()
+                                    Text("5.0s")
+                                        .font(.appCaption1)
+                                        .foregroundStyle(Color.appTextTertiary)
+                                }
+                            }
+                        }
+                    } footer: {
+                        Text("Automatically confirm weight after the reading stays stable for the set duration.")
+                            .font(.appCaption1)
+                    }
+                }
+
+                // MARK: Scale Connection
+                Section("Scale") {
+                    HStack {
+                        Label {
+                            Text(scaleStatusText)
+                                .font(.appBody)
+                                .foregroundStyle(Color.appText)
+                        } icon: {
+                            Image(systemName: scaleStatusIcon)
+                                .foregroundStyle(scaleStatusColor)
+                        }
+                        Spacer()
+                        scaleActionButton
+                    }
+                }
             }
-
-            Spacer()
-
-            Button { dismiss() } label: {
-                Text("Done")
-                    .font(.appSubhead)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(Color.appTint)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Spacing.md)
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(Color.appBackground.ignoresSafeArea())
+            .navigationTitle("Scale Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                        .foregroundStyle(Color.appTint)
+                }
             }
-            .padding(.horizontal, Spacing.xl)
-            .padding(.bottom, Spacing.lg)
+            .animation(.easeInOut(duration: 0.25), value: vm.autoProgressionEnabled)
+            .animation(.easeInOut(duration: 0.25), value: vm.autoProgressionTimerEnabled)
         }
-        .background(Color.appBackground.ignoresSafeArea())
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+
+    // MARK: - Scale Status Helpers
+
+    private var scaleStatusText: String {
+        switch vm.scaleState {
+        case .idle: return "Not connected"
+        case .scanning: return "Scanning..."
+        case .connecting: return "Connecting..."
+        case .connected: return "Connected"
+        case .error(let msg): return msg
+        }
+    }
+
+    private var scaleStatusIcon: String {
+        switch vm.scaleState {
+        case .idle: return "antenna.radiowaves.left.and.right.slash"
+        case .scanning, .connecting: return "antenna.radiowaves.left.and.right"
+        case .connected: return "checkmark.circle.fill"
+        case .error: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var scaleStatusColor: Color {
+        switch vm.scaleState {
+        case .idle: return Color.appTextTertiary
+        case .scanning, .connecting: return Color.appTint
+        case .connected: return Color.appSuccess
+        case .error: return Color.appWarning
+        }
+    }
+
+    @ViewBuilder
+    private var scaleActionButton: some View {
+        switch vm.scaleState {
+        case .idle, .error:
+            Button("Connect") { vm.connectScale() }
+                .font(.appSubhead)
+                .foregroundStyle(Color.appTint)
+        case .scanning, .connecting:
+            Button("Cancel") { vm.cancelScaleScan() }
+                .font(.appSubhead)
+                .foregroundStyle(Color.appTextSecondary)
+        case .connected:
+            Button("Disconnect") { vm.disconnectScale() }
+                .font(.appSubhead)
+                .foregroundStyle(Color.appDestructive)
+        }
     }
 }
 

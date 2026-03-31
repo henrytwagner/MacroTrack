@@ -18,6 +18,8 @@ MacroTrack is a voice-first macronutrient tracking app. Users can log food via v
 
 Full product specification lives in `SPEC.md`. Consult it for detailed requirements. Long-term vision and phased build strategy for the input pipeline (scale, camera, voice, AR) lives in `BUILD_PLAN.md`. Long-term feature directions for social, data quality, and intelligence layers live in `FEATURES_ROADMAP.md`.
 
+**Private planning doc** lives at `.claude/projects/.../PLANNING.md` (not in the repo). Read it at the start of sessions to pick up current priorities, in-progress decisions, and next steps. Update it as work progresses — especially when finishing a task, making a design decision, or discovering something the next session needs to know. This is the cross-session scratchpad; keep it concise and current. It also has an "Ideas & Explorations" section for long-term thinking that goes beyond `FEATURES_ROADMAP.md`. When an idea grows enough to need real detail, spin it into its own file under `.claude/projects/.../ideas/<name>.md` and link it from the planning doc.
+
 **Long-term feature directions** (see `FEATURES_ROADMAP.md` for full details):
 - **Passive Kitchen Mode**: Evolving Kitchen Mode from voice-first to observation-first — auto-add items by combining scale readings + camera identification, with voice as a correction channel. Does not require the YOLO/AR pipeline.
 - **User Reputation**: Single global reputation score per user governing community food trustworthiness. Upvotes, reports, and contribution quality determine score.

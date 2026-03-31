@@ -52,10 +52,9 @@ final class KitchenCameraSession: @unchecked Sendable {
     /// Delegate retained for lifetime of session.
     @ObservationIgnored nonisolated(unsafe) private var delegateAdapter: CameraOutputDelegate?
 
-    /// Barcode symbologies for metadata output — all common product formats.
+    /// Barcode symbologies for metadata output — GTIN product barcodes only.
     @ObservationIgnored nonisolated private let barcodeTypes: [AVMetadataObject.ObjectType] = [
-        .ean8, .ean13, .upce, .code128, .code39, .code93,
-        .interleaved2of5, .itf14, .dataMatrix, .qr, .pdf417,
+        .ean8, .ean13, .upce,
     ]
 
     private init() {}

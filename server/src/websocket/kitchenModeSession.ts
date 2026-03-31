@@ -95,6 +95,8 @@ interface KitchenSession {
   /** Tracks a food_choice card awaiting user decision (create vs USDA) */
   pendingChoiceId: string | null;
   pendingChoiceName: string | null;
+  /** Tracks a barcode GTIN from a scan that triggered the choice card */
+  pendingBarcodeGtin: string | null;
   /** Tracks a food currently being created via report_nutrition_field calls */
   pendingCreationId: string | null;
   pendingCreationName: string | null;
@@ -336,6 +338,7 @@ async function handleSearchUsda(
     } satisfies WSItemRemovedMessage);
     session.pendingChoiceId = null;
     session.pendingChoiceName = null;
+    session.pendingBarcodeGtin = null;
   }
 
   const result = await searchUsdaForKitchenMode(name);
@@ -485,7 +488,10 @@ async function handleCreateCustomFood(
   session.pendingCreationName = null;
   session.pendingCreationValues = {};
 
-  // Create the custom food
+  // Create the custom food (attach barcode if this was triggered by a barcode scan)
+  const barcodeGtin = session.pendingBarcodeGtin;
+  session.pendingBarcodeGtin = null;
+
   const customFood = await prisma.customFood.create({
     data: {
       userId: session.userId,
@@ -496,6 +502,7 @@ async function handleCreateCustomFood(
       proteinG,
       carbsG,
       fatG,
+      ...(barcodeGtin ? { barcode: barcodeGtin } : {}),
     },
   });
 
@@ -1030,15 +1037,39 @@ async function handleBarcodeScan(
   gtin: string,
   session: KitchenSession,
 ): Promise<void> {
+  // If a choice card is already showing (re-scan), cancel it first
+  if (session.pendingChoiceId) {
+    send(session.socket, {
+      type: "item_removed",
+      itemId: session.pendingChoiceId,
+    } satisfies WSItemRemovedMessage);
+    session.pendingChoiceId = null;
+    session.pendingChoiceName = null;
+    session.pendingBarcodeGtin = null;
+  }
+
   const result = await lookupBarcode(gtin, session.userId);
 
   if (result.source === "not_found") {
+    const choiceId = `tmp-barcode-${Date.now()}`;
+    session.pendingChoiceId = choiceId;
+    session.pendingChoiceName = result.normalizedGtin;
+    session.pendingBarcodeGtin = result.normalizedGtin;
+
+    send(session.socket, {
+      type: "food_choice",
+      itemId: choiceId,
+      foodName: result.normalizedGtin,
+      question: "",
+    } satisfies WSFoodChoiceMessage);
+
     notifyGemini(session, {
       source: "barcode",
       action: "not_found",
       details:
         `GTIN ${result.normalizedGtin} — no matching food found. ` +
-        `Tell the user the scan didn't match anything and ask them to name the food so you can call lookup_food.`,
+        `A choice card is already shown to the user. Briefly tell the user the scan didn't match. ` +
+        `They can tap "Create new food" or "Search manually" on the card. Wait for their choice.`,
     });
     return;
   }
@@ -1244,6 +1275,7 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
         gemini: null as unknown as GeminiLiveService, // set below
         pendingChoiceId: null,
         pendingChoiceName: null,
+        pendingBarcodeGtin: null,
         pendingCreationId: null,
         pendingCreationName: null,
         pendingCreationValues: {},
@@ -1519,6 +1551,7 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
             if (session.pendingChoiceId === msg.itemId) {
               session.pendingChoiceId = null;
               session.pendingChoiceName = null;
+              session.pendingBarcodeGtin = null;
             }
             break;
           }
@@ -1532,6 +1565,10 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
                 session.pendingCreationValues = {};
               }
 
+              // Attach barcode if this creation was triggered by a barcode scan
+              const barcodeGtin = session.pendingBarcodeGtin;
+              session.pendingBarcodeGtin = null;
+
               const customFood = await prisma.customFood.create({
                 data: {
                   userId: session.userId,
@@ -1542,6 +1579,7 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
                   proteinG: msg.proteinG,
                   carbsG: msg.carbsG,
                   fatG: msg.fatG,
+                  ...(barcodeGtin ? { barcode: barcodeGtin } : {}),
                 },
               });
 

@@ -63,8 +63,8 @@ enum GTINNormalizer {
             }
         }
 
-        // Non-standard length (Code128, QR, etc.) — pass through raw digits
-        return digits
+        // Non-standard length — reject (not a valid GTIN)
+        return ""
     }
 
     /// Convenience overload for `AVCaptureMetadataOutput` barcode types.

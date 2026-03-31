@@ -71,11 +71,7 @@ final class ScaleManager {
     func connect() {
         guard connectionState == .idle || connectionState.isError else { return }
 
-        #if targetEnvironment(simulator)
-        let service = ScaleSimulator()
-        #else
         let service = BluetoothScaleService()
-        #endif
 
         activeService = service
         startReadingStream(from: service)

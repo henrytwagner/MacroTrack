@@ -25,6 +25,9 @@ struct DraftMealCard: View {
     var isScaleConnected: Bool = false
     var itemHasWeightUnit: Bool = false
 
+    // Auto-progression
+    var autoConfirmed: Bool = false
+
     // Zero offset
     var hasZeroOffset: Bool = false
     var keepZeroOffset: Bool = false
@@ -139,6 +142,10 @@ struct DraftMealCard: View {
 
     // MARK: - Body
 
+    // Auto-confirmed flash state
+    @State private var confirmFlashOpacity: Double = 0
+    @State private var confirmFlashScale: CGFloat = 1
+
     var body: some View {
         cardContent
             .glassCard(isHero: isHero)
@@ -146,6 +153,33 @@ struct DraftMealCard: View {
             .opacity(entryOpacity * pulseOpacity)
             .offset(y: entryOffset)
             .animation(.spring(response: 0.45, dampingFraction: 0.85), value: isHero)
+            .onChange(of: autoConfirmed) { _, confirmed in
+                if confirmed {
+                    withAnimation(.easeIn(duration: 0.2)) {
+                        confirmFlashOpacity = 1
+                    }
+                    // Scale bounce
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.5)) {
+                        confirmFlashScale = 1.15
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                            confirmFlashScale = 1.0
+                        }
+                    }
+                    // Fade out after holding (longer for compact cards)
+                    let holdDuration: Double = isCompact ? 3.0 : 1.5
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(holdDuration))
+                        withAnimation(.easeOut(duration: 0.5)) {
+                            confirmFlashOpacity = 0
+                        }
+                    }
+                } else {
+                    confirmFlashOpacity = 0
+                    confirmFlashScale = 1
+                }
+            }
             .onAppear {
                 withAnimation(.easeOut(duration: 0.28)) {
                     entryOpacity = 1
@@ -309,12 +343,14 @@ struct DraftMealCard: View {
 
             // Quantity (tap number → manual edit) + scale icon
             HStack(spacing: Spacing.sm) {
-                Text("\(formatNumber(item.quantity, decimals: decimalsForUnit(item.unit))) \(item.unit)")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(Color.appTextSecondary)
-                    .scaleEffect(quantityFlash)
-                    .contentShape(Rectangle())
-                    .onTapGesture { onStartEdit?() }
+                confirmedQuantityLabel(
+                    text: "\(formatNumber(item.quantity, decimals: decimalsForUnit(item.unit))) \(item.unit)",
+                    font: .system(size: 20, weight: .semibold),
+                    baseColor: Color.appTextSecondary
+                )
+                .scaleEffect(quantityFlash)
+                .contentShape(Rectangle())
+                .onTapGesture { onStartEdit?() }
 
                 if item.confirmedViaScale {
                     // Always show scale icon for scale-confirmed items
@@ -786,10 +822,11 @@ struct DraftMealCard: View {
                         .font(.appCaption1)
                         .foregroundStyle(Color.appTextTertiary)
 
-                    Text("\(formatNumber(item.quantity, decimals: decimalsForUnit(item.unit))) \(item.unit)")
-                        .font(.appCaption1)
-                        .foregroundStyle(Color.appTextTertiary)
-                        .lineLimit(1)
+                    confirmedQuantityLabel(
+                        text: "\(formatNumber(item.quantity, decimals: decimalsForUnit(item.unit))) \(item.unit)",
+                        font: .appCaption1,
+                        baseColor: Color.appTextTertiary
+                    )
                 }
 
                 HStack(spacing: Spacing.xs) {
@@ -1375,6 +1412,40 @@ struct DraftMealCard: View {
         var opts = availableUnits
         if !opts.contains(item.unit) { opts.insert(item.unit, at: 0) }
         return opts
+    }
+
+    // MARK: - In-Place Confirmed Quantity Label
+
+    @ViewBuilder
+    private func confirmedQuantityLabel(
+        text: String,
+        font: Font,
+        baseColor: Color
+    ) -> some View {
+        let isActive = confirmFlashOpacity > 0
+        HStack(spacing: Spacing.xs) {
+            if isActive {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(font)
+                    .foregroundStyle(Color.appSuccess)
+                    .transition(.scale.combined(with: .opacity))
+            }
+
+            Text(text)
+                .font(font)
+                .foregroundStyle(isActive ? Color.appSuccess : baseColor)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, isActive ? Spacing.sm : 0)
+        .padding(.vertical, isActive ? 2 : 0)
+        .background {
+            if isActive {
+                Capsule()
+                    .fill(Color.appSuccess.opacity(0.15 * confirmFlashOpacity))
+            }
+        }
+        .scaleEffect(confirmFlashScale)
+        .animation(.easeOut(duration: 0.2), value: isActive)
     }
 
     // MARK: - Flash Animation
