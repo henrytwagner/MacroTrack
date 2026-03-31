@@ -84,7 +84,7 @@ export default function AccessPage() {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder="Your name"
-                      className="w-full bg-card-bg border border-card-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted/50 focus:outline-none focus:border-accent/50 transition-colors"
+                      className="w-full bg-card-bg border border-card-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted/50 focus:outline-none focus:border-cal-red/50 transition-colors"
                     />
                   </div>
                   <div>
@@ -98,7 +98,7 @@ export default function AccessPage() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="you@example.com"
-                      className="w-full bg-card-bg border border-card-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted/50 focus:outline-none focus:border-accent/50 transition-colors"
+                      className="w-full bg-card-bg border border-card-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted/50 focus:outline-none focus:border-cal-red/50 transition-colors"
                     />
                   </div>
 
@@ -109,7 +109,7 @@ export default function AccessPage() {
                   <button
                     type="submit"
                     disabled={status === "loading"}
-                    className="w-full bg-accent text-background font-semibold py-3.5 rounded-xl hover:bg-accent-dim transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full btn-brand py-3.5 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {status === "loading" ? "Submitting..." : "Request Access"}
                   </button>
@@ -135,7 +135,7 @@ export default function AccessPage() {
 
               <div className="flex flex-col items-center gap-3 text-center">
                 <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-accent rounded-full animate-pulse-glow" />
+                  <div className="w-2 h-2 bg-cal-red rounded-full animate-pulse-glow" />
                   <span className="text-sm text-muted">Beta on TestFlight</span>
                 </div>
                 <div className="flex gap-4 text-xs text-muted/60">

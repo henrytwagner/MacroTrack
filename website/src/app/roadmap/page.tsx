@@ -61,6 +61,18 @@ const sections = [
           "Access to 500K+ verified foods from USDA FoodData Central. Real data, never estimated.",
         link: null,
       },
+      {
+        title: "BLE Smart Scale",
+        description:
+          "Place food on the scale, scan the barcode, move to the next ingredient. Gram-perfect accuracy, live weight streaming, hands-free from start to finish.",
+        link: "/features/scale",
+      },
+      {
+        title: "Smart Auto-Progression",
+        description:
+          "Prep five ingredients. Scan each one. Done — macros for everything, exact to the gram. Each scan confirms the previous item and resets the scale automatically.",
+        link: "/features/scale",
+      },
     ],
   },
   {
@@ -68,12 +80,6 @@ const sections = [
     description: "Actively being built. Coming in upcoming releases.",
     status: "In Development",
     items: [
-      {
-        title: "BLE Smart Scale",
-        description:
-          "Bluetooth scale integration for gram-perfect accuracy. Live weight streaming directly into food entries.",
-        link: "/features/scale",
-      },
       {
         title: "Nutrition Label Scanning",
         description:
@@ -85,6 +91,12 @@ const sections = [
         description:
           "Estimate serving sizes from a single photo using monocular depth analysis via iOS Vision framework.",
         link: null,
+      },
+      {
+        title: "Smart Auto-Progression",
+        description:
+          "Scan-to-confirm scale workflow. Each barcode scan locks in the previous item's weight, zeros the scale, and queues the next food automatically. Five ingredients, five scans, zero extra taps.",
+        link: "/features/kitchen-mode",
       },
     ],
   },
@@ -184,7 +196,7 @@ export default function RoadmapPage() {
                         {item.link && (
                           <Link
                             href={item.link}
-                            className="flex-shrink-0 text-accent text-sm font-medium flex items-center gap-1.5 hover:gap-2.5 transition-all"
+                            className="flex-shrink-0 text-cal-red text-sm font-medium flex items-center gap-1.5 hover:gap-2.5 transition-all"
                           >
                             Learn more
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -242,7 +254,7 @@ export default function RoadmapPage() {
               </p>
               <Link
                 href="/access"
-                className="mt-8 rounded-full bg-accent px-8 py-3.5 text-base font-semibold text-background transition-colors hover:bg-accent-dim"
+                className="mt-8 rounded-full btn-brand px-8 py-3.5 text-base"
               >
                 Get Early Access
               </Link>

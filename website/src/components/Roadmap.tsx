@@ -68,9 +68,9 @@ const roadmapItems = [
 ];
 
 const statusColors: Record<string, string> = {
-  "In Development": "bg-accent/15 text-accent border-accent/25",
-  "Coming Soon": "bg-carb-orange/15 text-carb-orange border-carb-orange/25",
-  "Planned": "bg-protein-purple/15 text-protein-purple border-protein-purple/25",
+  "In Development": "bg-cal-red/20 text-cal-red border-cal-red/30",
+  "Coming Soon": "bg-carb-orange/20 text-carb-orange border-carb-orange/30",
+  "Planned": "bg-muted/10 text-muted border-muted/20",
 };
 
 export default function Roadmap() {
@@ -79,7 +79,7 @@ export default function Roadmap() {
       <div className="max-w-7xl mx-auto px-6">
         {/* Section header */}
         <div className="text-center mb-20">
-          <p className="text-accent text-sm font-semibold tracking-widest uppercase mb-4">
+          <p className="text-cal-red text-sm font-semibold tracking-widest uppercase mb-4">
             Roadmap
           </p>
           <h2 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight">

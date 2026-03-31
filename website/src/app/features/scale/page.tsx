@@ -16,7 +16,7 @@ const supportedScales = [
     type: "Nutrition Scale",
     connection: "Bluetooth Low Energy (BLE)",
     units: ["Grams (g)", "Ounces (oz)", "Pounds & ounces (lb:oz)", "Milliliters (ml)"],
-    features: ["Live weight streaming", "Stability detection", "Auto-connect", "Multi-unit support"],
+    features: ["Live weight streaming", "Stability detection", "Auto-connect", "Multi-unit support", "Smart Auto-Progression"],
     status: "Fully Supported",
   },
 ];
@@ -66,7 +66,7 @@ export default function ScalePage() {
                 accurate macro tracking possible — no estimation, no rounding.
               </p>
               <div className="mt-8 flex flex-wrap gap-3 justify-center">
-                {["Live BLE streaming", "Auto-reconnect", "Multi-unit", "Kitchen Mode integrated"].map(
+                {["Live BLE streaming", "Smart Auto-Progression", "Auto-reconnect", "Multi-unit", "Kitchen Mode integrated"].map(
                   (tag) => (
                     <span
                       key={tag}
@@ -170,6 +170,110 @@ export default function ScalePage() {
 
         <SectionDivider />
 
+        {/* Smart Auto-Progression */}
+        <section className="py-20 sm:py-28 relative overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,rgba(64,200,224,0.05)_0%,transparent_55%)]" />
+          <div className="relative max-w-5xl mx-auto px-6">
+            <div className="text-center mb-16">
+              <p className="text-fat-cyan text-sm font-semibold tracking-widest uppercase mb-4">
+                Smart Auto-Progression
+              </p>
+              <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">
+                Scan. Weigh. Next.
+              </h2>
+              <p className="mt-4 text-muted text-lg max-w-2xl mx-auto leading-relaxed">
+                For meal prep with multiple ingredients, Auto-Progression turns your barcode scanner
+                into a seamless weighing pipeline. No tapping between items — just scan and go.
+              </p>
+            </div>
+
+            <div className="bg-card-bg border border-fat-cyan/15 rounded-3xl p-8 sm:p-10">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
+                <div>
+                  <h3 className="text-xl font-bold mb-6">The pipeline</h3>
+                  <div className="space-y-6">
+                    <div className="flex gap-4">
+                      <div className="w-8 h-8 rounded-lg bg-fat-cyan/10 border border-fat-cyan/20 flex items-center justify-center text-fat-cyan flex-shrink-0 mt-0.5 font-mono text-xs font-bold">
+                        1
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-sm mb-1">Scan → food queues, scale activates</h4>
+                        <p className="text-muted text-sm leading-relaxed">Barcode scan identifies the food and starts live weight streaming from the scale.</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="w-8 h-8 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center text-accent flex-shrink-0 mt-0.5 font-mono text-xs font-bold">
+                        2
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-sm mb-1">Place food → live macro preview</h4>
+                        <p className="text-muted text-sm leading-relaxed">Weight streams in real time. You see calories and macros update as food lands on the scale.</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="w-8 h-8 rounded-lg bg-carb-orange/10 border border-carb-orange/20 flex items-center justify-center text-carb-orange flex-shrink-0 mt-0.5 font-mono text-xs font-bold">
+                        3
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-sm mb-1">Scan next → previous auto-confirms + zeros</h4>
+                        <p className="text-muted text-sm leading-relaxed">The new scan locks in the previous item&apos;s weight and resets the scale in one motion. New item lookup starts in parallel.</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="w-8 h-8 rounded-lg bg-cal-red/10 border border-cal-red/20 flex items-center justify-center text-cal-red flex-shrink-0 mt-0.5 font-mono text-xs font-bold">
+                        4
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-sm mb-1">Save → last item auto-confirms</h4>
+                        <p className="text-muted text-sm leading-relaxed">Hit save and the final item locks in. Your entire weighed meal is logged with exact macros.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="bg-surface border border-card-border rounded-2xl p-5">
+                    <p className="text-sm font-semibold mb-3">Additional smart triggers</p>
+                    <ul className="space-y-2 text-sm text-muted">
+                      <li className="flex items-start gap-2">
+                        <svg className="w-4 h-4 text-accent flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                        </svg>
+                        <span><strong className="text-foreground">Voice chain</strong> — speaking a new food name also fires the pipeline</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <svg className="w-4 h-4 text-accent flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                        </svg>
+                        <span><strong className="text-foreground">Stability timer</strong> — auto-confirm after weight holds stable (1.5–5s, off by default)</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <svg className="w-4 h-4 text-accent flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                        </svg>
+                        <span><strong className="text-foreground">Confirmation chime</strong> — optional audible feedback for fully hands-free use</span>
+                      </li>
+                    </ul>
+                  </div>
+                  <div className="bg-surface border border-card-border rounded-2xl p-5">
+                    <p className="text-sm font-semibold mb-1">All settings are mid-session toggleable</p>
+                    <p className="text-sm text-muted">
+                      Long-press the scale icon in Kitchen Mode to open the settings sheet.
+                      Disable Auto-Progression at any point and return to manual confirm instantly.
+                    </p>
+                  </div>
+                  <div className="bg-fat-cyan/5 border border-fat-cyan/15 rounded-2xl p-5 text-center">
+                    <p className="text-fat-cyan text-sm font-semibold">5 ingredients = 5 scans</p>
+                    <p className="text-muted text-xs mt-1">That&apos;s 15–30 fewer taps for a typical meal prep session.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <SectionDivider />
+
         {/* Supported scales */}
         <section className="py-20 sm:py-28">
           <div className="max-w-5xl mx-auto px-6">
@@ -247,7 +351,7 @@ export default function ScalePage() {
             <div className="mt-8 rounded-2xl border border-dashed border-card-border p-8 text-center">
               <p className="text-muted">
                 More scales coming soon. Have a specific scale you&apos;d like supported?{" "}
-                <Link href="/about" className="text-accent hover:text-accent-dim transition-colors">
+                <Link href="/about" className="text-fat-cyan hover:text-fat-cyan/80 transition-colors">
                   Let us know.
                 </Link>
               </p>
@@ -270,7 +374,7 @@ export default function ScalePage() {
               </p>
               <Link
                 href="/access"
-                className="mt-8 rounded-full bg-accent px-8 py-3.5 text-base font-semibold text-background transition-colors hover:bg-accent-dim"
+                className="mt-8 rounded-full btn-brand px-8 py-3.5 text-base"
               >
                 Get Early Access
               </Link>

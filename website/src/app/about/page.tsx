@@ -212,7 +212,7 @@ export default function AboutPage() {
               </p>
               <Link
                 href="/access"
-                className="mt-8 rounded-full bg-accent px-8 py-3.5 text-base font-semibold text-background transition-colors hover:bg-accent-dim"
+                className="mt-8 rounded-full btn-brand px-8 py-3.5 text-base"
               >
                 Get Early Access
               </Link>

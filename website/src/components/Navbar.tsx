@@ -47,12 +47,11 @@ export default function Navbar() {
         <div className="flex items-center gap-4">
           <Link
             href="/access"
-            className="hidden sm:inline-flex bg-accent text-background font-semibold text-sm px-5 py-2.5 rounded-full hover:bg-accent-dim transition-colors"
+            className="hidden sm:inline-flex btn-brand text-sm px-5 py-2.5 rounded-full"
           >
             Get Access
           </Link>
 
-          {/* Mobile hamburger */}
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
             className="md:hidden p-2 text-muted hover:text-foreground transition-colors"
@@ -71,7 +70,6 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Mobile menu */}
       {mobileOpen && (
         <div className="md:hidden border-t border-card-border bg-background/95 backdrop-blur-xl">
           <div className="px-6 py-6 flex flex-col gap-4">
@@ -90,7 +88,7 @@ export default function Navbar() {
             <Link
               href="/access"
               onClick={() => setMobileOpen(false)}
-              className="bg-accent text-background font-semibold text-sm px-5 py-3 rounded-full text-center mt-2 hover:bg-accent-dim transition-colors"
+              className="btn-brand text-sm px-5 py-3 rounded-full text-center mt-2"
             >
               Get Access
             </Link>

@@ -33,7 +33,7 @@ const features = [
     ),
     name: "BLE Smart Scale",
     description:
-      "Connect a Bluetooth nutrition scale for gram-perfect accuracy. Live weight streaming feeds directly into your food entries as you cook.",
+      "Place food on the scale, scan the barcode, move to the next ingredient. Dialed logs the exact weight and queues the next food automatically. Prep an entire meal without lifting your phone.",
     color: "text-fat-cyan",
     bgColor: "bg-fat-cyan/10",
     href: "/features/scale",
@@ -45,9 +45,9 @@ const features = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5z" />
       </svg>
     ),
-    name: "Barcode Scanner",
+    name: "Scan & Identify",
     description:
-      "Continuous barcode detection for packaged foods. Just point your camera — Dialed scans, matches, and logs in one fluid motion.",
+      "Point your camera at a barcode or a meal — Dialed handles the rest. Continuous barcode detection for packaged foods, recognition for whole foods and restaurant meals.",
     color: "text-protein-purple",
     bgColor: "bg-protein-purple/10",
     href: null,
@@ -65,20 +65,6 @@ const features = [
     bgColor: "bg-cal-red/10",
     href: null,
   },
-  {
-    icon: (
-      <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
-      </svg>
-    ),
-    name: "Camera Recognition",
-    description:
-      "Point your camera at any meal and Dialed identifies it instantly. Get accurate nutritional data pulled from verified databases.",
-    color: "text-carb-orange",
-    bgColor: "bg-carb-orange/10",
-    href: null,
-  },
 ];
 
 export default function FeaturesPage() {
@@ -90,7 +76,7 @@ export default function FeaturesPage() {
         <section className="relative pt-32 pb-20 sm:pt-40 sm:pb-28 overflow-hidden">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,255,127,0.05)_0%,transparent_60%)]" />
           <div className="relative max-w-7xl mx-auto px-6 text-center">
-            <p className="text-accent text-sm font-semibold tracking-widest uppercase mb-4">
+            <p className="text-cal-red text-sm font-semibold tracking-widest uppercase mb-4">
               Features
             </p>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight">
@@ -126,7 +112,7 @@ export default function FeaturesPage() {
                     <h3 className="text-2xl font-bold mb-3">{feature.name}</h3>
                     <p className="text-muted leading-relaxed text-base">{feature.description}</p>
                     {feature.href && (
-                      <div className="mt-6 flex items-center gap-2 text-accent text-sm font-medium">
+                      <div className="mt-6 flex items-center gap-2 text-cal-red text-sm font-medium">
                         Learn more
                         <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
@@ -199,7 +185,7 @@ export default function FeaturesPage() {
         {/* Data trust section */}
         <section className="py-20 sm:py-28">
           <div className="max-w-4xl mx-auto px-6 text-center">
-            <p className="text-accent text-sm font-semibold tracking-widest uppercase mb-4">
+            <p className="text-cal-red text-sm font-semibold tracking-widest uppercase mb-4">
               Data You Can Trust
             </p>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">
@@ -242,7 +228,7 @@ export default function FeaturesPage() {
               </p>
               <Link
                 href="/access"
-                className="mt-8 rounded-full bg-accent px-8 py-3.5 text-base font-semibold text-background transition-colors hover:bg-accent-dim"
+                className="mt-8 rounded-full btn-brand px-8 py-3.5 text-base"
               >
                 Get Early Access
               </Link>

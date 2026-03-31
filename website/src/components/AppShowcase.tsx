@@ -20,12 +20,10 @@ const screens = [
 
 export default function AppShowcase() {
   return (
-    <section className="relative py-28 sm:py-36 overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,255,127,0.04)_0%,transparent_60%)]" />
-
+    <section className="relative py-28 sm:py-36 overflow-hidden section-gradient-warm">
       <div className="relative max-w-7xl mx-auto px-6">
         <div className="text-center mb-16">
-          <p className="text-accent text-sm font-semibold tracking-widest uppercase mb-4">
+          <p className="text-carb-orange text-sm font-semibold tracking-widest uppercase mb-4">
             The App
           </p>
           <h2 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight">
@@ -48,7 +46,7 @@ export default function AppShowcase() {
                   : "w-[180px] sm:w-[220px] lg:w-[260px] opacity-75 hidden sm:block"
               }`}
             >
-              <div className={`phone-frame ${i === 1 ? "glow-green" : ""}`}>
+              <div className={`phone-frame ${i === 1 ? "glow-rings" : ""}`}>
                 <Image
                   src={screen.src}
                   alt={screen.alt}
@@ -67,35 +65,16 @@ export default function AppShowcase() {
         {/* Feature pills below showcase */}
         <div className="mt-16 flex flex-wrap items-center justify-center gap-4">
           {[
-            { label: "Dark mode native", icon: "moon" },
-            { label: "Real-time progress", icon: "chart" },
-            { label: "Meal categorization", icon: "clock" },
-            { label: "USDA verified", icon: "check" },
+            { label: "Dark mode native", color: "text-cal-red" },
+            { label: "Real-time progress", color: "text-carb-orange" },
+            { label: "Meal categorization", color: "text-protein-purple" },
+            { label: "USDA verified", color: "text-fat-cyan" },
           ].map((pill) => (
             <div
               key={pill.label}
               className="flex items-center gap-2 bg-card-bg border border-card-border rounded-full px-5 py-2.5"
             >
-              {pill.icon === "moon" && (
-                <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
-                </svg>
-              )}
-              {pill.icon === "chart" && (
-                <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75z" />
-                </svg>
-              )}
-              {pill.icon === "clock" && (
-                <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              )}
-              {pill.icon === "check" && (
-                <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              )}
+              <span className={`w-2 h-2 rounded-full ${pill.color.replace("text-", "bg-")}`} />
               <span className="text-sm text-muted">{pill.label}</span>
             </div>
           ))}
