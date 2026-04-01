@@ -40,6 +40,7 @@ model User {
   passwordResets        PasswordReset[]
   searchLogs            SearchLog[]
   weightEntries         WeightEntry[]
+  foodPreferences       UserFoodPreference[]
 }
 
 model RefreshToken {
@@ -139,6 +140,7 @@ model CustomFood {
   user        User                  @relation(fields: [userId], references: [id])
   foodEntries FoodEntry[]
   unitConfigs FoodUnitConversion[]
+  preferences UserFoodPreference[]
 
   @@index([userId, name])
   @@index([userId, barcode])
@@ -276,8 +278,6 @@ model CommunityFood {
   addedSugarG        Float?
   category           FoodCategory?
   commonName         String?
-  defaultLogUnit     String?
-  defaultLogQuantity Float?
   dataSource         String?
   usdaFdcId          Int?
   createdByUserId    String?
@@ -295,6 +295,7 @@ model CommunityFood {
   reports        CommunityFoodReport[]
   aliases        CommunityFoodAlias[]
   unitConversions FoodUnitConversion[]
+  preferences    UserFoodPreference[]
 
   @@index([name])
   @@index([status])
@@ -457,10 +458,30 @@ enum GoalAggressiveness {
   AGGRESSIVE
 }
 
+model UserFoodPreference {
+  id              String   @id @default(uuid())
+  userId          String
+  customFoodId    String?
+  communityFoodId String?
+  usdaFdcId       Int?
+  defaultQuantity Float?
+  defaultUnit     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id])
+  customFood    CustomFood?    @relation(fields: [customFoodId], references: [id])
+  communityFood CommunityFood? @relation(fields: [communityFoodId], references: [id])
+
+  @@unique([userId, customFoodId])
+  @@unique([userId, communityFoodId])
+  @@unique([userId, usdaFdcId])
+  @@index([userId])
+}
+
 model WaitlistEntry {
   id        String   @id @default(uuid())
   name      String
   email     String   @unique
-  source    String?
   createdAt DateTime @default(now())
 }
