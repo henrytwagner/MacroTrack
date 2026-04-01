@@ -432,7 +432,7 @@ struct GoalsGuidedView: View {
 
     private func ageDisplayText(_ p: UserProfile) -> String {
         if let age = p.ageYears { return "\(age)" }
-        if let dob = p.dateOfBirth, let age = ageFromDateOfBirth(iso: dob) { return "\(age)" }
+        if let dob = p.dateOfBirth, let age = MacroCalculator.ageFromDateOfBirth(iso: dob) { return "\(age)" }
         return "Not set"
     }
 
@@ -451,74 +451,28 @@ struct GoalsGuidedView: View {
 
     private func estimateMacros() {
         guard let p = profileStore.profile,
-              let weightKg    = p.weightKg,
-              let heightCm    = p.heightCm,
+              let weightKg      = p.weightKg,
+              let heightCm      = p.heightCm,
               let activityLevel = p.activityLevel else { return }
 
-        let ageInt = p.ageYears ?? p.dateOfBirth.flatMap { ageFromDateOfBirth(iso: $0) } ?? 30
-        let age    = Double(ageInt)
+        let ageInt = p.ageYears
+            ?? p.dateOfBirth.flatMap { MacroCalculator.ageFromDateOfBirth(iso: $0) }
+            ?? 30
 
-        // BMR — Mifflin-St Jeor
-        let bmr: Double
-        if p.sex == .female {
-            bmr = 10 * weightKg + 6.25 * heightCm - 5 * age - 161
-        } else {
-            bmr = 10 * weightKg + 6.25 * heightCm - 5 * age + 5
-        }
+        let result = MacroCalculator.estimate(
+            weightKg:       weightKg,
+            heightCm:       heightCm,
+            ageYears:       ageInt,
+            sex:            p.sex,
+            activityLevel:  activityLevel,
+            goalType:       goalType,
+            aggressiveness: aggressiveness
+        )
 
-        // TDEE
-        let activityFactor: Double
-        switch activityLevel {
-        case .sedentary: activityFactor = 1.2
-        case .light:     activityFactor = 1.375
-        case .moderate:  activityFactor = 1.55
-        case .high:      activityFactor = 1.725
-        case .veryHigh:  activityFactor = 1.9
-        }
-        let tdee = bmr * activityFactor
-
-        // Goal multiplier
-        let multiplier: Double
-        switch (goalType, aggressiveness) {
-        case (.cut,      .mild):       multiplier = 0.9
-        case (.cut,      .standard):   multiplier = 0.85
-        case (.cut,      .aggressive): multiplier = 0.8
-        case (.maintain, _):           multiplier = 1.0
-        case (.gain,     .mild):       multiplier = 1.05
-        case (.gain,     .standard):   multiplier = 1.1
-        case (.gain,     .aggressive): multiplier = 1.15
-        }
-
-        let targetCalories = (tdee * multiplier / 10).rounded() * 10
-
-        // Protein
-        let proteinPerKg: Double = goalType == .cut ? 2.2 : 1.8
-        let proteinG = proteinPerKg * weightKg
-
-        // Fat (minimum 20% of calories)
-        var fatG = 0.8 * weightKg
-        let minFatCalories = 0.2 * targetCalories
-        if fatG * 9 < minFatCalories { fatG = minFatCalories / 9 }
-
-        // Carbs (remainder)
-        let carbCals = max(0, targetCalories - proteinG * 4 - fatG * 9)
-        let carbsG   = carbCals / 4
-
-        calories = String(Int(targetCalories))
-        protein  = String(Int(proteinG.rounded()))
-        carbs    = String(Int(carbsG.rounded()))
-        fat      = String(Int(fatG.rounded()))
-    }
-
-    // MARK: Age helper
-
-    private func ageFromDateOfBirth(iso: String) -> Int? {
-        let parts = iso.split(separator: "-").compactMap { Int($0) }
-        guard parts.count == 3 else { return nil }
-        var comps = DateComponents()
-        comps.year = parts[0]; comps.month = parts[1]; comps.day = parts[2]
-        guard let dob = Calendar.current.date(from: comps) else { return nil }
-        return Calendar.current.dateComponents([.year], from: dob, to: Date()).year
+        calories = String(result.calories)
+        protein  = String(result.proteinG)
+        carbs    = String(result.carbsG)
+        fat      = String(result.fatG)
     }
 
     private func parsePositiveNumber(_ s: String) -> Double? {

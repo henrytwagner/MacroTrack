@@ -6,9 +6,16 @@ import Observation
 final class ProfileStore {
     static let shared = ProfileStore()
 
-    var profile:   UserProfile? = nil
-    var isLoading: Bool = false
-    var error:     String? = nil
+    var profile:        UserProfile? = nil
+    var isLoading:      Bool = false
+    var error:          String? = nil
+    var hasLoadedOnce:  Bool = false
+
+    /// True when the user's profile has the minimum fields needed to skip onboarding.
+    var onboardingComplete: Bool {
+        guard let p = profile else { return false }
+        return p.heightCm != nil && p.weightKg != nil && p.activityLevel != nil
+    }
 
     private init() {}
 
@@ -16,8 +23,9 @@ final class ProfileStore {
         isLoading = true
         error = nil
         do {
-            profile   = try await APIClient.shared.getProfile()
-            isLoading = false
+            profile       = try await APIClient.shared.getProfile()
+            isLoading     = false
+            hasLoadedOnce = true
         } catch is CancellationError {
             // ignore
         } catch {
