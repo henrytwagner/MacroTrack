@@ -80,8 +80,8 @@ final class CreateFoodViewModel {
         case .editCustom(let food):
             name             = food.name
             brandName        = food.brandName ?? ""
-            servingSizeText  = Self.fmt(food.servingSize)
             servingUnit      = food.servingUnit
+            servingSizeText  = formatQuantity(food.servingSize, unit: food.servingUnit)
             caloriesText     = Self.fmt(food.calories)
             proteinText      = Self.fmt(food.proteinG)
             carbsText        = Self.fmt(food.carbsG)
@@ -98,8 +98,8 @@ final class CreateFoodViewModel {
             publishMode      = .community
             name             = food.name
             brandName        = food.brandName ?? ""
-            servingSizeText  = Self.fmt(food.defaultServingSize)
             servingUnit      = food.defaultServingUnit
+            servingSizeText  = formatQuantity(food.defaultServingSize, unit: food.defaultServingUnit)
             caloriesText     = Self.fmt(food.calories)
             proteinText      = Self.fmt(food.proteinG)
             carbsText        = Self.fmt(food.carbsG)
@@ -115,8 +115,8 @@ final class CreateFoodViewModel {
         case .publishFromCustom(let food):
             name             = food.name
             brandName        = food.brandName ?? ""
-            servingSizeText  = Self.fmt(food.servingSize)
             servingUnit      = food.servingUnit
+            servingSizeText  = formatQuantity(food.servingSize, unit: food.servingUnit)
             caloriesText     = Self.fmt(food.calories)
             proteinText      = Self.fmt(food.proteinG)
             carbsText        = Self.fmt(food.carbsG)
@@ -275,8 +275,8 @@ final class CreateFoodViewModel {
     func prefill(from label: ParsedNutritionLabel) {
         if let n = label.name { name = n }
         if let b = label.brandName { brandName = b }
-        servingSizeText = Self.fmt(label.servingSize.canonicalQuantity)
         servingUnit     = label.servingSize.canonicalUnit
+        servingSizeText = formatQuantity(label.servingSize.canonicalQuantity, unit: label.servingSize.canonicalUnit)
         if let v = label.calories { caloriesText = Self.fmt(v) }
         if let v = label.proteinG { proteinText  = Self.fmt(v) }
         if let v = label.carbsG   { carbsText    = Self.fmt(v) }

@@ -275,6 +275,7 @@ function scaleMacros(
   requestedQuantity: number,
   requestedUnit?: string,
   baseServingUnit?: string,
+  conversion?: { quantityInBaseServings: number },
 ): { calories: number; proteinG: number; carbsG: number; fatG: number } {
   const isServings =
     !requestedUnit ||
@@ -283,6 +284,9 @@ function scaleMacros(
   let ratio: number;
   if (isServings) {
     ratio = requestedQuantity;
+  } else if (conversion) {
+    // Use the per-food unit conversion (e.g. "patty" → 0.5 base servings)
+    ratio = requestedQuantity * conversion.quantityInBaseServings;
   } else if (baseServingSize <= 0) {
     ratio = 1;
   } else {
@@ -608,13 +612,24 @@ export async function buildDraftItemFromRef(
   const tmpId = nextTmpId();
   const [refType, refId] = foodRef.split(":") as [string, string];
 
+  // Look up per-food unit conversion for custom units (e.g. "patty")
+  const convWhere = refType === "custom"
+    ? { userId, unitName: unit, customFoodId: refId }
+    : refType === "usda"
+      ? { userId, unitName: unit, usdaFdcId: parseInt(refId, 10) }
+      : undefined;
+  const conv = convWhere
+    ? await prisma.foodUnitConversion.findFirst({ where: convWhere, select: { quantityInBaseServings: true } })
+    : null;
+  const convArg = conv ?? undefined;
+
   if (refType === "custom") {
     const custom = await prisma.customFood.findUnique({
       where: { id: refId, userId },
       select: { id: true, name: true, servingSize: true, servingUnit: true, calories: true, proteinG: true, carbsG: true, fatG: true },
     });
     if (!custom) return null;
-    const macros = scaleMacros(custom, custom.servingSize, quantity, unit, custom.servingUnit);
+    const macros = scaleMacros(custom, custom.servingSize, quantity, unit, custom.servingUnit, convArg);
     return {
       id: tmpId,
       name: custom.name,
@@ -661,7 +676,7 @@ export async function buildDraftItemFromRef(
     if (!usdaResult) return null;
     const servingSize = usdaResult.servingSize ?? 100;
     const baseUnit = usdaResult.servingSizeUnit ?? "g";
-    const macros = scaleMacros(usdaResult.macros, servingSize, quantity, unit, baseUnit);
+    const macros = scaleMacros(usdaResult.macros, servingSize, quantity, unit, baseUnit, convArg);
     return {
       id: tmpId,
       name: usdaResult.description,

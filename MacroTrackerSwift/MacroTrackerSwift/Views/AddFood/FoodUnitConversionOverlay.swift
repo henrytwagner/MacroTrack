@@ -36,6 +36,7 @@ struct FoodUnitConversionOverlay: View {
     @State private var crossTypeSuggested: Bool = false
     @State private var formError:        String? = nil
     @State private var isSaving:         Bool   = false
+    @State private var customUnitText:   String = ""
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -207,9 +208,42 @@ struct FoodUnitConversionOverlay: View {
                 .padding(.horizontal, Spacing.lg)
                 .padding(.bottom, Spacing.sm)
 
+            // Custom unit text field
+            HStack(spacing: Spacing.sm) {
+                TextField("Custom unit (e.g. patty)", text: $customUnitText)
+                    .font(.appBody)
+                    .padding(Spacing.md)
+                    .background(Color.appSurfaceSecondary)
+                    .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .submitLabel(.go)
+                    .onSubmit { submitCustomUnit() }
+
+                Button {
+                    submitCustomUnit()
+                } label: {
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(customUnitValid ? accentColor : Color.appTextTertiary)
+                }
+                .buttonStyle(.plain)
+                .disabled(!customUnitValid)
+            }
+            .padding(.horizontal, Spacing.lg)
+            .padding(.bottom, Spacing.sm)
+
+            if let error = customUnitError {
+                Text(error)
+                    .font(.appCaption1)
+                    .foregroundStyle(Color.appDestructive)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.bottom, Spacing.sm)
+            }
+
             ScrollView {
                 VStack(spacing: 0) {
-                    ForEach(availableUnits, id: \.self) { unit in
+                    ForEach(filteredAvailableUnits, id: \.self) { unit in
                         Button {
                             openForm(for: unit)
                         } label: {
@@ -485,6 +519,41 @@ struct FoodUnitConversionOverlay: View {
             + [baseServingUnit, "servings"]
         )
         return allServingUnits.filter { !taken.contains($0) }
+    }
+
+    private var filteredAvailableUnits: [String] {
+        let query = customUnitText.trimmingCharacters(in: .whitespaces).lowercased()
+        if query.isEmpty { return availableUnits }
+        return availableUnits.filter { $0.lowercased().contains(query) }
+    }
+
+    private var takenUnitNames: Set<String> {
+        Set(
+            conversions.map { $0.unitName.lowercased() }
+            + pendingConversions.map { $0.unitName.lowercased() }
+            + [baseServingUnit.lowercased(), "servings"]
+        )
+    }
+
+    private var customUnitError: String? {
+        let trimmed = customUnitText.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return nil }
+        if trimmed.count > 30 { return "Unit name must be 30 characters or fewer" }
+        if takenUnitNames.contains(trimmed.lowercased()) { return "This unit already exists" }
+        if trimmed.lowercased() == "serving" { return "Use \"servings\" instead" }
+        return nil
+    }
+
+    private var customUnitValid: Bool {
+        let trimmed = customUnitText.trimmingCharacters(in: .whitespaces)
+        return !trimmed.isEmpty && customUnitError == nil
+    }
+
+    private func submitCustomUnit() {
+        let trimmed = customUnitText.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, customUnitError == nil else { return }
+        customUnitText = ""
+        openForm(for: trimmed)
     }
 
     private var fromUnitOptions: [String] {

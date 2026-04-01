@@ -374,7 +374,7 @@ function mapUsdaCandidates(results: USDASearchResult[], query: NormalizedQuery):
 // ---------------------------------------------------------------------------
 
 function tokenize(text: string): string[] {
-  return text.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(Boolean);
+  return text.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(Boolean).map(singularize);
 }
 
 function jaccardSimilarity(a: string[], b: string[]): number {
@@ -412,6 +412,12 @@ function computeScore(candidate: ScoredCandidate, _query: NormalizedQuery): numb
     qualityScore += 0.3;
   }
 
+  // Dampen quality score for USDA — data completeness is always high for Foundation
+  // and provides no signal about whether this is the correct food match.
+  if (candidate.tier === 4) {
+    qualityScore *= 0.5;
+  }
+
   // Usage signal
   let usageScore = 0;
   if (candidate.logCount) {
@@ -427,6 +433,18 @@ function computeScore(candidate: ScoredCandidate, _query: NormalizedQuery): numb
     WEIGHT_USAGE * usageScore
   );
 }
+
+// Minimum name similarity required for auto-select, per tier.
+// Tier 1 (user history) and tier 2 (custom) have low thresholds because
+// the user has explicitly created/logged these before.
+// Tier 4 (USDA) requires strong name overlap to auto-select — quality score
+// alone (data completeness) should never be enough.
+const MIN_NAME_SCORE_FOR_AUTO_SELECT: Record<number, number> = {
+  1: 0.25,  // User history — they've logged it before
+  2: 0.25,  // Custom foods — user created it
+  3: 0.35,  // Community foods
+  4: 0.50,  // USDA — majority token overlap required
+};
 
 function rankAndSelect(
   candidates: ScoredCandidate[],
@@ -445,14 +463,16 @@ function rankAndSelect(
   candidates.sort((a, b) => b.score - a.score);
 
   const top = candidates[0];
+  const minName = MIN_NAME_SCORE_FOR_AUTO_SELECT[top.tier] ?? 0.50;
+  const nameOk = top.trigramScore >= minName;
 
-  // High confidence — auto-select
-  if (top.score >= 0.75) {
+  // High confidence — auto-select only if name match is adequate
+  if (top.score >= 0.75 && nameOk) {
     return candidateToFound(top);
   }
 
   // Moderate confidence with clear winner
-  if (top.score >= 0.45 && candidates.length >= 2) {
+  if (top.score >= 0.55 && candidates.length >= 2 && nameOk) {
     const gap = top.score - candidates[1].score;
     if (gap >= 0.15) {
       return candidateToFound(top);
@@ -464,7 +484,7 @@ function rankAndSelect(
   }
 
   // Single candidate with moderate confidence
-  if (top.score >= 0.45) {
+  if (top.score >= 0.55 && nameOk) {
     return candidateToFound(top);
   }
 

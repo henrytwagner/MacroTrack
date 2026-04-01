@@ -143,7 +143,7 @@ struct LogMealSheet: View {
                     Text("·")
                         .font(.appCaption1)
                         .foregroundStyle(Color.appTextTertiary)
-                    Text("\(fmtScaledQty(item.quantity, scaleFactor)) \(item.unit)")
+                    Text("\(formatQuantity(item.quantity * scaleFactor, unit: item.unit)) \(item.unit)")
                         .font(.appCaption1)
                         .foregroundStyle(Color.appTextTertiary)
                         .lineLimit(1)
@@ -171,10 +171,6 @@ struct LogMealSheet: View {
         return String(format: "%.2g", v)
     }
 
-    private func fmtScaledQty(_ qty: Double, _ factor: Double) -> String {
-        let v = qty * factor
-        return v.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(v))" : String(format: "%.1f", v)
-    }
 
     @ViewBuilder
     private func macroCell(_ label: String, value: Double, unit: String) -> some View {

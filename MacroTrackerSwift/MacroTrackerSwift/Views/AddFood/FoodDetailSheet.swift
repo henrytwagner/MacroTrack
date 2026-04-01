@@ -18,12 +18,12 @@ struct FoodDetailSheet: View {
     let onDismiss:       () -> Void
     let onEditCustom:    ((CustomFood) -> Void)?
     let onPublishCustom: ((CustomFood) -> Void)?
+    let onDeleteEntry:   (() -> Void)?
     /// When non-nil, the sheet is in "ingredient picker" mode: the button says "Add to Meal"
     /// and calls this closure instead of writing a FoodEntry to the log.
     let onAddToMeal:     ((SavedMealItem) -> Void)?
 
     @State private var vm: FoodDetailViewModel
-    @State private var showCustomizeConfirm: Bool = false
 
     // MARK: - Inits
 
@@ -38,6 +38,7 @@ struct FoodDetailSheet: View {
         self.onDismiss       = onDismiss
         self.onEditCustom    = onEditCustom
         self.onPublishCustom = onPublishCustom
+        self.onDeleteEntry   = nil
         self.onAddToMeal     = onAddToMeal
         _vm = State(initialValue: FoodDetailViewModel(food: identifiedFood.food, mode: .add))
     }
@@ -46,7 +47,9 @@ struct FoodDetailSheet: View {
     /// Synthesizes an AnyFood from the entry so the existing VM's ratio-based scaling works correctly:
     /// `scaleFactor = newQty / entry.quantity`, `scaledMacros = entryMacros × scaleFactor`.
     init(entry: FoodEntry,
-         onDismiss: @escaping () -> Void) {
+         onDismiss: @escaping () -> Void,
+         onEditCustom: ((CustomFood) -> Void)? = nil,
+         onDeleteEntry: (() -> Void)? = nil) {
         // Build a synthetic CustomFood whose base serving == entry's logged amount.
         // This makes scaleFactor = newQty / entry.quantity = pure ratio scaling.
         let syntheticFood = CustomFood(
@@ -72,8 +75,9 @@ struct FoodDetailSheet: View {
         self.identifiedFood  = IdentifiedFood(food: anyFood, sourceOverride: entry.source)
         self.editingEntry    = entry
         self.onDismiss       = onDismiss
-        self.onEditCustom    = nil
+        self.onEditCustom    = onEditCustom
         self.onPublishCustom = nil
+        self.onDeleteEntry   = onDeleteEntry
         self.onAddToMeal     = nil
         _vm = State(initialValue: FoodDetailViewModel(food: anyFood, mode: .edit(entry)))
     }
@@ -101,18 +105,31 @@ struct FoodDetailSheet: View {
 
     private var isEditMode: Bool { editingEntry != nil }
 
+    private var canEditFood: Bool {
+        onEditCustom != nil && (
+            isEditMode ? editingEntry?.customFoodId != nil : identifiedFood.food.asCustomFood != nil
+        )
+    }
+
+    private var hasOverflowActions: Bool {
+        canEditFood || (isEditMode && onDeleteEntry != nil)
+    }
+
     var body: some View {
         ZStack {
             // Main scrollable form
             ScrollView {
                 VStack(spacing: Spacing.lg) {
-                    macroSection
+                    sheetHeader
+                    dayPreviewSection
                     foodInfoSection
                     quantitySection
-                    if !isEditMode { customFoodActionsSection }
+                    if !(vm.scaleWeighingActive && scaleConnected) {
+                        macroDashboardSection
+                    }
                     Spacer(minLength: 100)
                 }
-                .padding(.top, Spacing.lg)
+                .padding(.top, Spacing.sm)
             }
             .scrollDismissesKeyboard(.interactively)
 
@@ -151,6 +168,64 @@ struct FoodDetailSheet: View {
         .task {
             await vm.loadConversions()
             if !isEditMode { await vm.loadPreferences() }
+            if vm.foodHasWeightUnit {
+                ScaleManager.shared.autoConnectIfNeeded()
+            }
+        }
+        .onChange(of: ScaleManager.shared.latestReading) { _, newReading in
+            vm.updateStableMacroPreview(reading: newReading)
+        }
+        .onChange(of: ScaleManager.shared.connectionState) { oldState, newState in
+            if oldState == .connected && newState != .connected {
+                vm.handleScaleDisconnect()
+            }
+        }
+    }
+
+    // MARK: - Sheet Header
+
+    private var sheetHeader: some View {
+        HStack {
+            Spacer()
+            if hasOverflowActions {
+                overflowMenu
+            }
+        }
+        .padding(.horizontal, Spacing.lg)
+    }
+
+    // MARK: - Overflow Menu
+
+    private var overflowMenu: some View {
+        Menu {
+            if canEditFood, let editAction = onEditCustom,
+               let custom = identifiedFood.food.asCustomFood {
+                Section("Food") {
+                    Button {
+                        editAction(custom)
+                    } label: {
+                        Label("Edit Nutrition Info", systemImage: "pencil")
+                    }
+                }
+            }
+
+            if isEditMode, let deleteAction = onDeleteEntry {
+                Section("Log Entry") {
+                    Button(role: .destructive) {
+                        deleteAction()
+                        onDismiss()
+                    } label: {
+                        Label("Delete from Log", systemImage: "trash")
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.appTextSecondary)
+                .frame(width: 32, height: 32)
+                .background(Color.appSurfaceSecondary)
+                .clipShape(Circle())
         }
     }
 
@@ -158,22 +233,16 @@ struct FoodDetailSheet: View {
 
     private var foodInfoSection: some View {
         let source = identifiedFood.sourceOverride ?? identifiedFood.food.foodSource
-        return VStack(alignment: .leading, spacing: Spacing.xs) {
-            HStack(spacing: Spacing.sm) {
-                Text(identifiedFood.food.displayName)
-                    .font(.appTitle2)
-                    .foregroundStyle(Color.appText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        return HStack(spacing: Spacing.sm) {
+            Text(identifiedFood.food.displayName)
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(Color.appText)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                Image(systemName: FoodSourceIndicator.systemImage(for: source))
-                    .font(.system(size: 20))
-                    .foregroundStyle(FoodSourceIndicator.accentColor(for: source))
-                    .accessibilityLabel(sourceAccessibilityLabel(source))
-            }
-
-            Text("Serving: \(Self.fmt(identifiedFood.food.baseServingSize)) \(identifiedFood.food.baseServingUnit)")
-                .font(.appCaption1)
-                .foregroundStyle(Color.appTextSecondary)
+            Image(systemName: FoodSourceIndicator.systemImage(for: source))
+                .font(.system(size: 20))
+                .foregroundStyle(FoodSourceIndicator.accentColor(for: source))
+                .accessibilityLabel(sourceAccessibilityLabel(source))
         }
         .padding(.horizontal, Spacing.lg)
     }
@@ -186,53 +255,55 @@ struct FoodDetailSheet: View {
         }
     }
 
-    // MARK: - Macros
+    // MARK: - Day Preview
 
-    private var macroSection: some View {
-        let m     = vm.scaledMacros
+    private var dayPreviewSection: some View {
         let goals = goalStore.goalsByDate[dateStore.selectedDate] ?? nil
 
-        return VStack(spacing: Spacing.lg) {
-            // Macro card — day preview with this food added at current quantity
+        return Group {
             if let g = goals {
                 DashboardMacroCard(totals: previewTotals, goals: g)
             } else {
                 MacroRingProgress(totals: previewTotals, goals: nil, variant: .default, showCalorieRing: true)
             }
-
-            // 2×2 grid — this food's macros at current quantity
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())],
-                      spacing: Spacing.sm) {
-                macroCell(label: "Calories", value: m.calories, unit: "kcal", color: .caloriesAccent)
-                macroCell(label: "Protein",  value: m.proteinG, unit: "g",    color: .proteinAccent)
-                macroCell(label: "Carbs",    value: m.carbsG,   unit: "g",    color: .carbsAccent)
-                macroCell(label: "Fat",      value: m.fatG,     unit: "g",    color: .fatAccent)
-            }
         }
-        .padding(Spacing.lg)
-        .background(Color.appSurface)
-        .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
         .padding(.horizontal, Spacing.lg)
     }
 
-    private func macroCell(label: String, value: Double, unit: String, color: Color) -> some View {
-        VStack(spacing: 2) {
-            Text("\(Self.fmt1(value))")
-                .font(.appTitle3)
-                .foregroundStyle(color)
-            Text("\(unit) \(label)")
-                .font(.appCaption2)
-                .foregroundStyle(Color.appTextSecondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, Spacing.sm)
-        .background(color.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
+    // MARK: - Macro Dashboard
+
+    private var macroDashboardSection: some View {
+        MacroDashboard(
+            cal: vm.scaledMacros.calories,
+            protein: vm.scaledMacros.proteinG,
+            carbs: vm.scaledMacros.carbsG,
+            fat: vm.scaledMacros.fatG
+        )
+        .padding(.horizontal, Spacing.lg)
     }
 
     // MARK: - Quantity
 
+    private var scaleConnected: Bool {
+        ScaleManager.shared.connectionState == .connected
+    }
+
+    @ViewBuilder
     private var quantitySection: some View {
+        if vm.scaleWeighingActive && scaleConnected {
+            if vm.isSubtractiveMode {
+                subtractiveWeighingSection
+            } else {
+                scaleWeighingSection
+            }
+        } else {
+            manualQuantitySection
+        }
+    }
+
+    // MARK: Manual Quantity (default)
+
+    private var manualQuantitySection: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             Text("Quantity")
                 .font(.appHeadline)
@@ -251,10 +322,11 @@ struct FoodDetailSheet: View {
                     if vm.quantityText.isEmpty,
                        let reading = ScaleManager.shared.latestReading,
                        reading.stable,
-                       ScaleManager.shared.connectionState == .connected {
+                       scaleConnected {
                         Button {
-                            vm.quantityText = formatScaleValue(reading.value)
-                            vm.selectedUnit = scaleUnitToFoodUnit(reading.unit)
+                            let foodUnit = scaleUnitToFoodUnit(reading.unit)
+                            vm.quantityText = formatQuantity(reading.value, unit: foodUnit)
+                            vm.selectedUnit = foodUnit
                         } label: {
                             HStack(spacing: Spacing.xs) {
                                 Image(systemName: "scalemass.fill")
@@ -289,101 +361,221 @@ struct FoodDetailSheet: View {
                     .background(Color.appSurfaceSecondary)
                     .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
                 }
+
+                // Scale button — opt-in to scale weighing
+                if vm.foodHasWeightUnit {
+                    Button {
+                        if scaleConnected {
+                            vm.enterScaleWeighing()
+                        } else {
+                            ScaleManager.shared.autoConnectIfNeeded()
+                        }
+                    } label: {
+                        Image(systemName: "scalemass.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(scaleConnected ? Color.appTint : Color.appTextTertiary)
+                            .padding(Spacing.sm)
+                            .background((scaleConnected ? Color.appTint : Color.appTextTertiary).opacity(0.1))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
 
-            // Manage unit conversions — only shown in add mode (edit mode uses logged units)
-            if !isEditMode {
-                Button {
-                    vm.overlayPanel = .preview
-                } label: {
-                    Text("Manage units")
-                        .font(.appCaption1)
-                        .foregroundStyle(Color.appTextSecondary)
-                }
-                .buttonStyle(.plain)
+            if unitUsesFractionKeyboard(vm.selectedUnit) {
+                FractionBar(text: $vm.quantityText)
             }
+
+            HStack {
+                // Manage unit conversions — only shown in add mode
+                if !isEditMode {
+                    Button {
+                        vm.overlayPanel = .preview
+                    } label: {
+                        Text("Manage units")
+                            .font(.appCaption1)
+                            .foregroundStyle(Color.appTextSecondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+
+                // Scale-confirmed badge
+                if vm.confirmedViaScale {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "scalemass.fill")
+                            .font(.system(size: 11))
+                        Text("Weighed")
+                            .font(.appCaption2)
+                    }
+                    .foregroundStyle(Color.appTint)
+                }
+            }
+
+            // Serving info
+            Text("Serving: \(formatQuantity(identifiedFood.food.baseServingSize, unit: identifiedFood.food.baseServingUnit)) \(identifiedFood.food.baseServingUnit)")
+                .font(.appCaption1)
+                .foregroundStyle(Color.appTextSecondary)
         }
         .padding(.horizontal, Spacing.lg)
     }
 
-    // MARK: - Custom Food Actions (add mode only)
+    // MARK: Scale Weighing
 
-    @ViewBuilder
-    private var customFoodActionsSection: some View {
-        if let custom = identifiedFood.food.asCustomFood {
-            HStack(spacing: Spacing.md) {
-                Button {
-                    onEditCustom?(custom)
-                } label: {
-                    Text("Edit Food")
-                        .font(.appSubhead)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(Color.appTint)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, Spacing.md)
-                        .background(Color.appTint.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
-                }
-                .buttonStyle(.plain)
+    private var scaleWeighingSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Text("Quantity")
+                .font(.appHeadline)
+                .foregroundStyle(Color.appText)
 
-                Button {
-                    onPublishCustom?(custom)
-                } label: {
-                    Text("Publish")
-                        .font(.appSubhead)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(Color.appSuccess)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, Spacing.md)
-                        .background(Color.appSuccess.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, Spacing.lg)
-        }
-
-        if let community = identifiedFood.food.asCommunityFood {
-            Button {
-                showCustomizeConfirm = true
-            } label: {
-                Text("Customize (Save as My Food)")
-                    .font(.appSubhead)
-                    .fontWeight(.semibold)
+            if let reading = vm.adjustedScaleReading {
+                // Live weight display
+                Text(reading.display)
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.appTint)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Spacing.md)
-                    .background(Color.appTint.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
+                    .contentTransition(.numericText())
+                    .animation(.easeOut(duration: 0.15), value: reading.display)
+
+                // Stability badge
+                HStack(spacing: Spacing.xs) {
+                    Circle()
+                        .fill(reading.stable ? Color.appSuccess : Color.appTextTertiary)
+                        .frame(width: 6, height: 6)
+                    Text(reading.stable ? "Stable" : "Measuring\u{2026}")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(reading.stable ? Color.appSuccess : Color.appTextSecondary)
+                }
+
+                // Macro preview (stable readings only)
+                if let macros = vm.stableMacroPreview {
+                    MacroDashboard(cal: macros.calories, protein: macros.proteinG,
+                                   carbs: macros.carbsG, fat: macros.fatG)
+                }
+
+                // Zero button + Keep Zero toggle
+                HStack(spacing: Spacing.sm) {
+                    Button {
+                        if vm.zeroOffset != nil {
+                            vm.clearZero()
+                        } else {
+                            vm.zeroScale()
+                        }
+                    } label: {
+                        HStack(spacing: Spacing.xs) {
+                            Image(systemName: vm.zeroOffset != nil ? "arrow.counterclockwise" : "scope")
+                                .font(.system(size: 12))
+                            Text(vm.zeroOffset != nil ? "Reset Zero" : "Zero")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundStyle(vm.zeroOffset != nil ? Color.caloriesAccent : Color.appTextSecondary)
+                    }
+                    .buttonStyle(.plain)
+
+                    if vm.zeroOffset != nil {
+                        Button {
+                            vm.toggleKeepZero()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: vm.keepZeroOffset ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 11))
+                                Text("Keep zero")
+                                    .font(.system(size: 11))
+                            }
+                            .foregroundStyle(vm.keepZeroOffset ? Color.appTint : Color.appTextSecondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Spacer()
+                }
+            } else {
+                // Connected but no reading yet
+                HStack(spacing: Spacing.sm) {
+                    ProgressView()
+                        .tint(Color.appTextSecondary)
+                    Text("Place food on scale\u{2026}")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                .padding(.vertical, Spacing.md)
+            }
+
+            // Manual fallback
+            Button {
+                vm.exitScaleWeighing()
+            } label: {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 12))
+                    Text("Set manually")
+                        .font(.system(size: 12))
+                }
+                .foregroundStyle(Color.appTextSecondary)
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, Spacing.lg)
-            .confirmationDialog("Save a personal copy of this food?",
-                                isPresented: $showCustomizeConfirm, titleVisibility: .visible) {
-                Button("Save as My Food") { Task { await forkCommunityFood(community) } }
-                Button("Cancel", role: .cancel) {}
-            }
         }
+        .padding(.horizontal, Spacing.lg)
     }
 
-    private func forkCommunityFood(_ food: CommunityFood) async {
-        let req = CreateCustomFoodRequest(
-            name:          food.name,
-            brandName:     food.brandName,
-            servingSize:   food.defaultServingSize,
-            servingUnit:   food.defaultServingUnit,
-            calories:      food.calories,
-            proteinG:      food.proteinG,
-            carbsG:        food.carbsG,
-            fatG:          food.fatG,
-            sodiumMg:      food.sodiumMg,
-            cholesterolMg: food.cholesterolMg,
-            fiberG:        food.fiberG,
-            sugarG:        food.sugarG,
-            saturatedFatG: food.saturatedFatG,
-            transFatG:     food.transFatG,
-            barcode:       nil)
-        _ = try? await APIClient.shared.createCustomFood(req)
+    // MARK: Subtractive Weighing
+
+    private var subtractiveWeighingSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Text("Subtractive Weighing")
+                .font(.appHeadline)
+                .foregroundStyle(Color.appText)
+
+            // Start weight (locked)
+            HStack(spacing: Spacing.sm) {
+                Text("Start:")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.appTextSecondary)
+                Text("\(formatQuantity(vm.subtractiveStartWeight ?? 0, unit: vm.subtractiveStartUnit?.rawValue ?? "g")) \(vm.subtractiveStartUnit?.rawValue ?? "g")")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.appTextSecondary)
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.appSuccess)
+            }
+
+            // Current weight (live)
+            if let reading = vm.adjustedScaleReading {
+                HStack(spacing: Spacing.sm) {
+                    Text("Now:")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.appTextSecondary)
+                    Text(reading.display)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.appTextSecondary)
+                        .contentTransition(.numericText())
+                        .animation(.easeOut(duration: 0.15), value: reading.display)
+                }
+            }
+
+            // Delta (hero-sized)
+            if let delta = vm.subtractiveDelta {
+                let unitStr = vm.subtractiveStartUnit?.rawValue ?? "g"
+                Text("\u{0394} Food: \(formatQuantity(delta, unit: unitStr)) \(unitStr)")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.appTint)
+                    .contentTransition(.numericText())
+                    .animation(.easeOut(duration: 0.15), value: delta)
+
+                // Macro preview based on delta
+                if let macros = scaledMacrosForWeight(
+                    value: delta,
+                    unitRaw: unitStr,
+                    baseMacros: identifiedFood.food.baseMacros,
+                    baseServingSize: identifiedFood.food.baseServingSize,
+                    baseServingUnit: identifiedFood.food.baseServingUnit) {
+                    MacroDashboard(cal: macros.calories, protein: macros.proteinG,
+                                   carbs: macros.carbsG, fat: macros.fatG)
+                }
+            }
+
+        }
+        .padding(.horizontal, Spacing.lg)
     }
 
     // MARK: - USDA Warning Overlay
@@ -438,11 +630,114 @@ struct FoodDetailSheet: View {
 
     // MARK: - Save Button
 
+    @ViewBuilder
     private var saveButton: some View {
+        if vm.scaleWeighingActive && scaleConnected && !vm.isSubtractiveMode {
+            scaleBottomButtons
+        } else if vm.scaleWeighingActive && scaleConnected && vm.isSubtractiveMode {
+            subtractiveBottomButtons
+        } else {
+            normalSaveButton
+        }
+    }
+
+    private var scaleBottomButtons: some View {
+        let reading = vm.adjustedScaleReading
+        let canLock = reading != nil && reading!.value > 0 && reading!.stable
+        return HStack(spacing: Spacing.sm) {
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                vm.confirmScaleReading()
+            } label: {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 15))
+                    Text("Lock in")
+                        .font(.appSubhead)
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.md + 2)
+                .background(canLock ? Color.appTint : Color.appTint.opacity(0.4))
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: BorderRadius.lg))
+            }
+            .buttonStyle(.plain)
+            .disabled(!canLock)
+
+            Button {
+                vm.startSubtractiveMode()
+            } label: {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "minus.circle")
+                        .font(.system(size: 15))
+                    Text("Subtract")
+                        .font(.appSubhead)
+                        .fontWeight(.semibold)
+                }
+                .foregroundStyle(Color.appText)
+                .padding(.horizontal, Spacing.lg)
+                .padding(.vertical, Spacing.md + 2)
+                .background(Color.appSurfaceSecondary)
+                .clipShape(RoundedRectangle(cornerRadius: BorderRadius.lg))
+                .overlay(RoundedRectangle(cornerRadius: BorderRadius.lg).stroke(Color.appBorder, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.sm)
+        .background(Color.appSurface.ignoresSafeArea())
+    }
+
+    private var subtractiveBottomButtons: some View {
+        let delta = vm.subtractiveDelta ?? 0
+        let unitStr = vm.subtractiveStartUnit?.rawValue ?? "g"
+        let canLock = delta > 0
+        return HStack(spacing: Spacing.sm) {
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                vm.confirmSubtractiveDelta()
+            } label: {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 15))
+                    Text("Lock in \(formatQuantity(delta, unit: unitStr)) \(unitStr)")
+                        .font(.appSubhead)
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.md + 2)
+                .background(canLock ? Color.appTint : Color.appTint.opacity(0.4))
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: BorderRadius.lg))
+            }
+            .buttonStyle(.plain)
+            .disabled(!canLock)
+
+            Button {
+                vm.cancelSubtractiveMode()
+            } label: {
+                Text("Cancel")
+                    .font(.appSubhead)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.appText)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.vertical, Spacing.md + 2)
+                    .background(Color.appSurfaceSecondary)
+                    .clipShape(RoundedRectangle(cornerRadius: BorderRadius.lg))
+                    .overlay(RoundedRectangle(cornerRadius: BorderRadius.lg).stroke(Color.appBorder, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.sm)
+        .background(Color.appSurface.ignoresSafeArea())
+    }
+
+    private var normalSaveButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             if let addToMeal = onAddToMeal {
-                // Ingredient-picker mode: build a SavedMealItem and hand it back.
                 let m    = vm.scaledMacros
                 let food = identifiedFood.food
                 let item = SavedMealItem(
@@ -501,26 +796,6 @@ struct FoodDetailSheet: View {
     }
 
     // MARK: - Helpers
-
-    private static func fmt(_ v: Double) -> String {
-        v.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(v))
-            : String(format: "%.1f", v)
-    }
-
-    private static func fmt1(_ v: Double) -> String {
-        v.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(v))
-            : String(format: "%.1f", v)
-    }
-
-    // MARK: - Scale Helpers
-
-    private func formatScaleValue(_ value: Double) -> String {
-        value.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(value))
-            : String(format: "%.1f", value)
-    }
 
     private func scaleUnitToFoodUnit(_ unit: ScaleUnit) -> String {
         switch unit {

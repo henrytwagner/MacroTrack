@@ -29,6 +29,52 @@ final class FoodDetailViewModel {
     var isSaving:             Bool    = false
     var saveError:            String? = nil
 
+    // MARK: - Scale Weighing State
+
+    var scaleWeighingActive:  Bool    = false
+    var confirmedViaScale:    Bool    = false
+
+    // Software zero offset
+    var zeroOffset:           Double? = nil
+    var keepZeroOffset:       Bool    = false
+
+    // Subtractive weighing
+    var subtractiveStartWeight: Double? = nil
+    var subtractiveStartUnit:   ScaleUnit? = nil
+
+    // Stable macro preview (updates only on stable readings)
+    var stableMacroPreview:   Macros? = nil
+
+    // MARK: - Scale Computed
+
+    var isScaleConnected: Bool {
+        ScaleManager.shared.connectionState == .connected
+    }
+
+    var foodHasWeightUnit: Bool {
+        weightRatiosG[food.baseServingUnit] != nil
+    }
+
+    var adjustedScaleReading: ScaleReading? {
+        guard let reading = ScaleManager.shared.latestReading else { return nil }
+        guard let offset = zeroOffset, offset != 0 else { return reading }
+        let adjusted = reading.value - offset
+        return ScaleReading(
+            value: adjusted,
+            unit: reading.unit,
+            display: Self.formatReading(adjusted, unit: reading.unit),
+            stable: reading.stable,
+            rawHex: reading.rawHex)
+    }
+
+    var isSubtractiveMode: Bool { subtractiveStartWeight != nil }
+
+    var subtractiveDelta: Double? {
+        guard let start = subtractiveStartWeight,
+              let reading = adjustedScaleReading else { return nil }
+        return max(start - reading.value, 0)
+    }
+
     // MARK: - Init
 
     init(food: AnyFood, mode: DetailMode) {
@@ -36,11 +82,11 @@ final class FoodDetailViewModel {
         self.mode = mode
         switch mode {
         case .add:
-            quantityText = Self.format(food.baseServingSize)
             selectedUnit = food.baseServingUnit
+            quantityText = formatQuantity(food.baseServingSize, unit: food.baseServingUnit)
         case .edit(let entry):
-            quantityText = Self.format(entry.quantity)
             selectedUnit = entry.unit
+            quantityText = formatQuantity(entry.quantity, unit: entry.unit)
         }
     }
 
@@ -166,12 +212,130 @@ final class FoodDetailViewModel {
         conversions.removeAll { $0.id == id }
     }
 
+    // MARK: - Scale Actions
+
+    func enterScaleWeighing() {
+        scaleWeighingActive = true
+        stableMacroPreview = nil
+    }
+
+    func exitScaleWeighing() {
+        scaleWeighingActive = false
+        cancelSubtractiveMode()
+        // Pre-fill with last reading if available
+        if let reading = adjustedScaleReading, reading.value > 0 {
+            let foodUnit = scaleUnitToFoodUnit(reading.unit)
+            quantityText = formatQuantity(reading.value, unit: foodUnit)
+            selectedUnit = foodUnit
+        }
+    }
+
+    func confirmScaleReading() {
+        guard let reading = adjustedScaleReading, reading.stable, reading.value > 0 else { return }
+        let foodUnit = scaleUnitToFoodUnit(reading.unit)
+        quantityText = formatQuantity(reading.value, unit: foodUnit)
+        selectedUnit = foodUnit
+        confirmedViaScale = true
+        scaleWeighingActive = false
+        cancelSubtractiveMode()
+    }
+
+    func zeroScale() {
+        guard let reading = ScaleManager.shared.latestReading else { return }
+        zeroOffset = reading.value
+    }
+
+    func clearZero() {
+        zeroOffset = nil
+    }
+
+    func toggleKeepZero() {
+        keepZeroOffset.toggle()
+    }
+
+    func startSubtractiveMode() {
+        guard let reading = adjustedScaleReading else { return }
+
+        // Use confirmed quantity as start weight so user can eat and reweigh
+        if quantity > 0 {
+            let scaleFoodUnit = scaleUnitToFoodUnit(reading.unit)
+            if let converted = convertUnit(fromUnit: selectedUnit, fromQty: quantity, toUnit: scaleFoodUnit) {
+                subtractiveStartWeight = converted
+                subtractiveStartUnit = reading.unit
+                return
+            }
+        }
+
+        // Fallback: use current scale reading (first-time weighing or non-convertible unit)
+        guard reading.value > 0 else { return }
+        subtractiveStartWeight = reading.value
+        subtractiveStartUnit = reading.unit
+    }
+
+    func cancelSubtractiveMode() {
+        subtractiveStartWeight = nil
+        subtractiveStartUnit = nil
+    }
+
+    func confirmSubtractiveDelta() {
+        guard let delta = subtractiveDelta, delta > 0 else { return }
+        let scaleUnit = subtractiveStartUnit ?? .g
+        let foodUnit = scaleUnitToFoodUnit(scaleUnit)
+        quantityText = formatQuantity(delta, unit: foodUnit)
+        selectedUnit = foodUnit
+        confirmedViaScale = true
+        scaleWeighingActive = false
+        subtractiveStartWeight = nil
+        subtractiveStartUnit = nil
+    }
+
+    func updateStableMacroPreview(reading: ScaleReading?) {
+        guard let reading, reading.stable else { return }
+        // Apply zero offset
+        let value: Double
+        if let offset = zeroOffset {
+            value = reading.value - offset
+        } else {
+            value = reading.value
+        }
+        guard value > 0 else {
+            stableMacroPreview = nil
+            return
+        }
+        stableMacroPreview = scaledMacrosForWeight(
+            value: value,
+            unitRaw: reading.unit.rawValue,
+            baseMacros: food.baseMacros,
+            baseServingSize: food.baseServingSize,
+            baseServingUnit: food.baseServingUnit)
+    }
+
+    func handleScaleDisconnect() {
+        if scaleWeighingActive {
+            exitScaleWeighing()
+        }
+    }
+
     // MARK: - Helpers
 
-    private static func format(_ v: Double) -> String {
-        v.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(v))
-            : String(format: "%.1f", v)
+    private static func formatReading(_ value: Double, unit: ScaleUnit) -> String {
+        let foodUnit: String
+        switch unit {
+        case .g:    foodUnit = "g"
+        case .ml:   foodUnit = "ml"
+        case .oz:   foodUnit = "oz"
+        case .lbOz: foodUnit = "oz"
+        }
+        return "\(formatQuantity(value, unit: foodUnit)) \(unit.rawValue)"
+    }
+
+    private func scaleUnitToFoodUnit(_ unit: ScaleUnit) -> String {
+        switch unit {
+        case .g:    return "g"
+        case .ml:   return "ml"
+        case .oz:   return "oz"
+        case .lbOz: return "oz"
+        }
     }
 
     private func round1(_ v: Double) -> Double {

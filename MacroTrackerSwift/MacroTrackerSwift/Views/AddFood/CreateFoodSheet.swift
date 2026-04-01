@@ -15,6 +15,7 @@ struct CreateFoodSheet: View {
     @State private var showBarcodePreview: Bool = false
     @State private var showLabelScanner:   Bool = false
     @State private var showPrefillBanner:  Bool = false
+    @State private var showCustomUnitField: Bool = false
 
     init(mode: CreateFoodMode,
          vm: CreateFoodViewModel? = nil,
@@ -23,7 +24,9 @@ struct CreateFoodSheet: View {
         self.mode      = mode
         self.onSaved   = onSaved
         self.onDismiss = onDismiss
-        _vm = State(initialValue: vm ?? CreateFoodViewModel(mode: mode))
+        let resolved = vm ?? CreateFoodViewModel(mode: mode)
+        _vm = State(initialValue: resolved)
+        _showCustomUnitField = State(initialValue: !allServingUnits.contains(resolved.servingUnit))
     }
 
     var body: some View {
@@ -245,24 +248,51 @@ struct CreateFoodSheet: View {
                 Text("Unit")
                     .font(.appCaption1)
                     .foregroundStyle(Color.appTextSecondary)
-                Menu {
-                    ForEach(allServingUnits, id: \.self) { unit in
-                        Button(unit) { vm.servingUnit = unit }
-                    }
-                } label: {
-                    HStack {
-                        Text(vm.servingUnit)
+                if showCustomUnitField {
+                    HStack(spacing: Spacing.xs) {
+                        TextField("e.g. patty", text: $vm.servingUnit)
                             .font(.appBody)
-                        Spacer()
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.appTextSecondary)
+                            .padding(Spacing.md)
+                            .background(Color.appSurfaceSecondary)
+                            .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                        Button {
+                            vm.servingUnit = "g"
+                            showCustomUnitField = false
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundStyle(Color.appTextTertiary)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .padding(Spacing.md)
-                    .background(Color.appSurfaceSecondary)
-                    .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
+                    .frame(maxWidth: .infinity)
+                } else {
+                    Menu {
+                        ForEach(allServingUnits, id: \.self) { unit in
+                            Button(unit) { vm.servingUnit = unit }
+                        }
+                        Divider()
+                        Button("Custom...") {
+                            vm.servingUnit = ""
+                            showCustomUnitField = true
+                        }
+                    } label: {
+                        HStack {
+                            Text(vm.servingUnit)
+                                .font(.appBody)
+                            Spacer()
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.appTextSecondary)
+                        }
+                        .padding(Spacing.md)
+                        .background(Color.appSurfaceSecondary)
+                        .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
             }
         }
         .padding(.horizontal, Spacing.lg)

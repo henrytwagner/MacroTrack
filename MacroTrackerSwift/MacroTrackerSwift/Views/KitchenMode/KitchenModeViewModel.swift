@@ -351,12 +351,12 @@ final class KitchenModeViewModel {
             let totalOz = value
             let lbs = Int(totalOz / 16)
             let oz = totalOz - Double(lbs) * 16
-            return String(format: "%d lb %.2f oz", lbs, oz)
+            return String(format: "%d lb %.1f oz", lbs, oz)
         default:
             if unit == .g || unit == .ml {
-                return String(format: "%.1f %@", value, unit.rawValue)
+                return "\(Int(value.rounded())) \(unit.rawValue)"
             } else {
-                return String(format: "%.2f %@", value, unit.rawValue)
+                return String(format: "%.1f %@", value, unit.rawValue)
             }
         }
     }
@@ -385,9 +385,31 @@ final class KitchenModeViewModel {
         return max(delta, 0)
     }
 
-    /// Enter subtractive weighing mode: lock current adjusted reading as start weight.
+    /// Enter subtractive weighing mode: use confirmed quantity as start weight
+    /// so user can eat and reweigh to get the consumed delta.
     func startSubtractiveMode(for itemId: String) {
         guard let reading = adjustedScaleReading else { return }
+
+        // Use item's confirmed quantity as start weight (converted to scale's unit)
+        if let item = draft.items.first(where: { $0.id == itemId }),
+           item.quantity > 0 {
+            let scaleFoodUnit: String
+            switch reading.unit {
+            case .g:    scaleFoodUnit = "g"
+            case .ml:   scaleFoodUnit = "ml"
+            case .oz:   scaleFoodUnit = "oz"
+            case .lbOz: scaleFoodUnit = "oz"
+            }
+            let itemUnit = item.unit == "lb:oz" ? "oz" : item.unit
+            if let converted = convertUnit(fromUnit: itemUnit, fromQty: item.quantity, toUnit: scaleFoodUnit) {
+                subtractiveStartWeight = converted
+                subtractiveStartUnit = reading.unit
+                subtractiveItemId = itemId
+                return
+            }
+        }
+
+        // Fallback: use current scale reading (first-time weighing or non-convertible unit)
         subtractiveStartWeight = reading.value
         subtractiveStartUnit = reading.unit
         subtractiveItemId = itemId

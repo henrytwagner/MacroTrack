@@ -74,7 +74,7 @@ struct FoodEntryRow: View {
                     Text("·")
                         .font(.appCaption1)
                         .foregroundStyle(Color.appTextTertiary)
-                    Text("\(formattedQuantity) \(entry.unit)")
+                    Text("\(formatQuantity(entry.quantity, unit: entry.unit)) \(entry.unit)")
                         .font(.appCaption1)
                         .foregroundStyle(Color.appTextTertiary)
                         .lineLimit(1)
@@ -108,13 +108,6 @@ struct FoodEntryRow: View {
 
     // MARK: - Helpers
 
-    private var formattedQuantity: String {
-        let q = entry.quantity
-        if q.truncatingRemainder(dividingBy: 1) == 0, !q.isNaN, !q.isInfinite {
-            return String(Int(q))
-        }
-        return String(format: "%.1f", q)
-    }
 
     private var accessibilitySourceLabel: String {
         switch entry.source {

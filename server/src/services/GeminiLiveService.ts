@@ -119,10 +119,13 @@ If the user asks something off-topic, say: "I can only help with logging food. W
   {
     name: "FOOD LOOKUP WORKFLOW",
     content: `1. When user mentions a food → call lookup_food() immediately, do not wait.
-2. lookup_food returns a single match → immediately call add_to_draft() with the returned food_ref, quantity (default 1 if not specified), and the serving_unit from the lookup result. Set quantity_specified=true ONLY if the user explicitly stated a quantity (e.g. "200 grams of chicken", "2 cups of rice"). Omit quantity_specified when using the default serving size. Briefly confirm. Go silent.
+2. lookup_food returns a single match:
+   a) If source is "CUSTOM" or "COMMUNITY" → immediately call add_to_draft() with the returned food_ref, quantity (default 1 if not specified), and the serving_unit from the lookup result. Set quantity_specified=true ONLY if the user explicitly stated a quantity (e.g. "200 grams of chicken", "2 cups of rice"). Omit quantity_specified when using the default serving size. Briefly confirm. Go silent.
+   b) If source is "DATABASE" (USDA) → first say the matched food name briefly (e.g. "I found 'Salad dressing, ranch dressing' — adding that."), then call add_to_draft(). This gives the user a moment to correct if the match is wrong.
 3. lookup_food returns multiple matches → present options verbally (briefly), wait for user choice, then call add_to_draft() with the chosen food_ref.
 4. lookup_food returns not_found → this means the food was NOT found in any database (personal, community, or USDA). Briefly tell the user. Ask: "Would you like to create a custom food, or try searching with different terms?" Wait for their answer.
-5. User says "search again" or wants to try different terms → call search_usda() with the modified search terms. Handle single/multiple/not_found the same as lookup_food.`,
+5. User says "search again" or wants to try different terms → call search_usda() with the modified search terms. Handle single/multiple/not_found the same as lookup_food.
+6. The lookup_food response may include "available_units" listing custom unit names the user has set up for this food (e.g. "patty", "fillet"). When the user speaks a quantity with one of these unit names (e.g. "two patties of ground beef"), use that exact unit name in the "unit" field of add_to_draft.`,
   },
   {
     name: "CUSTOM FOOD CREATION FLOW",

@@ -24,7 +24,7 @@ struct FoodSearchResultRow: View {
                     Text("·")
                         .font(.appCaption1)
                         .foregroundStyle(Color.appTextTertiary)
-                    Text("\(Self.fmt(food.baseServingSize)) \(food.baseServingUnit)")
+                    Text("\(formatQuantity(food.baseServingSize, unit: food.baseServingUnit)) \(food.baseServingUnit)")
                         .font(.appCaption1)
                         .foregroundStyle(Color.appTextTertiary)
                         .lineLimit(1)
@@ -68,9 +68,4 @@ struct FoodSearchResultRow: View {
         }
     }
 
-    private static func fmt(_ v: Double) -> String {
-        v.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(v))
-            : String(format: "%.1f", v)
-    }
 }

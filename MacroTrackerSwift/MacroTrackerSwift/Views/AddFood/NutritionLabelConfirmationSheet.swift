@@ -36,8 +36,8 @@ struct NutritionLabelConfirmationSheet: View {
         self.originalQuantity = ss.canonicalQuantity
         self.originalUnit = ss.canonicalUnit
 
-        _quantityText = State(initialValue: Self.fmt(ss.canonicalQuantity))
         _selectedUnit = State(initialValue: ss.canonicalUnit)
+        _quantityText = State(initialValue: formatQuantity(ss.canonicalQuantity, unit: ss.canonicalUnit))
         _caloriesText = State(initialValue: parsedLabel.calories.map { Self.fmt($0) } ?? "")
         _proteinText  = State(initialValue: parsedLabel.proteinG.map { Self.fmt($0) } ?? "")
         _carbsText    = State(initialValue: parsedLabel.carbsG.map { Self.fmt($0) } ?? "")
@@ -261,7 +261,7 @@ struct NutritionLabelConfirmationSheet: View {
         }
 
         if let c = converted {
-            quantityText = Self.fmt(c)
+            quantityText = formatQuantity(c, unit: selectedUnit)
         }
         // If cross-system (weight ↔ volume) or abstract, leave quantity unchanged
     }

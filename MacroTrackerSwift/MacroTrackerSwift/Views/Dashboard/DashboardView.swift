@@ -477,7 +477,7 @@ struct DashboardView: View {
                     Text("·")
                         .font(.appCaption1)
                         .foregroundStyle(Color.appTextTertiary)
-                    Text("\(formatted(entry.quantity)) \(entry.unit)")
+                    Text("\(formatQuantity(entry.quantity, unit: entry.unit)) \(entry.unit)")
                         .font(.appCaption1)
                         .foregroundStyle(Color.appTextTertiary)
                         .lineLimit(1)
@@ -598,11 +598,6 @@ struct DashboardView: View {
         return .snack
     }
 
-    private func formatted(_ v: Double) -> String {
-        v.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(v))
-            : String(format: "%.1f", v)
-    }
 
     private func dateString(daysAgo: Int) -> String {
         let cal = Calendar.current

@@ -36,6 +36,9 @@ struct LogView: View {
     @State private var showSaveAsMeal:  Bool           = false
     @State private var saveAsMealItems: [SavedMealItem] = []
 
+    // Edit custom food from entry detail
+    @State private var editingCustomFood: CustomFood? = nil
+
     // MARK: - Body
 
     var body: some View {
@@ -115,10 +118,28 @@ struct LogView: View {
                 .environment(DraftStore.shared)
         }
         .sheet(item: $editingEntry) { entry in
-            FoodDetailSheet(entry: entry, onDismiss: { editingEntry = nil })
+            FoodDetailSheet(
+                entry: entry,
+                onDismiss: { editingEntry = nil },
+                onEditCustom: entry.customFoodId != nil ? { food in
+                    editingEntry = nil
+                    editingCustomFood = food
+                } : nil,
+                onDeleteEntry: {
+                    handleDelete(entry.id)
+                })
                 .environment(dailyLogStore)
                 .environment(goalStore)
                 .environment(dateStore)
+        }
+        .sheet(item: $editingCustomFood) { food in
+            CreateFoodSheet(
+                mode: .editCustom(food),
+                onSaved: { _ in
+                    editingCustomFood = nil
+                    Task { await dailyLogStore.fetch(date: dateStore.selectedDate) }
+                },
+                onDismiss: { editingCustomFood = nil })
         }
         .task(id: dateStore.selectedDate) {
             await dailyLogStore.fetch(date: dateStore.selectedDate)

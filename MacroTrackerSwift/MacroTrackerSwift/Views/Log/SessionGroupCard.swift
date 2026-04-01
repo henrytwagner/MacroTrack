@@ -100,7 +100,7 @@ struct SessionGroupCard: View {
                         Text("·")
                             .font(.appCaption1)
                             .foregroundStyle(Color.appTextTertiary)
-                        Text("\(formattedQuantity(item.quantity)) \(item.unit)")
+                        Text("\(formatQuantity(item.quantity, unit: item.unit)) \(item.unit)")
                             .font(.appCaption1)
                             .foregroundStyle(Color.appTextTertiary)
                             .lineLimit(1)
@@ -131,12 +131,6 @@ struct SessionGroupCard: View {
 
     // MARK: - Helpers
 
-    private func formattedQuantity(_ q: Double) -> String {
-        if q.truncatingRemainder(dividingBy: 1) == 0, !q.isNaN, !q.isInfinite {
-            return String(Int(q))
-        }
-        return String(format: "%.1f", q)
-    }
 
     private func stateIcon(for state: String) -> String {
         switch state {

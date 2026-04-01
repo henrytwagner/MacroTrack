@@ -443,11 +443,23 @@ export async function foodRoutes(app: FastifyInstance) {
       const userId = request.userId;
       const body = request.body;
 
-      if (!body.unitName || body.quantityInBaseServings == null) {
+      const trimmedUnitName = (body.unitName ?? "").trim();
+      if (!trimmedUnitName || body.quantityInBaseServings == null) {
         return reply.code(400).send({
           error: "unitName and quantityInBaseServings are required",
         });
       }
+      if (trimmedUnitName.length > 30) {
+        return reply.code(400).send({
+          error: "unitName must be 30 characters or fewer",
+        });
+      }
+      if (["servings", "serving"].includes(trimmedUnitName.toLowerCase())) {
+        return reply.code(400).send({
+          error: "\"servings\" is a reserved unit name",
+        });
+      }
+      body.unitName = trimmedUnitName;
 
       if (!body.customFoodId && !body.usdaFdcId) {
         return reply.code(400).send({

@@ -164,7 +164,7 @@ struct ManageCommunityFoodsView: View {
                         Text("·")
                             .font(.appCaption1)
                             .foregroundStyle(Color.appTextTertiary)
-                        Text("\(Self.fmt(food.defaultServingSize)) \(food.defaultServingUnit)")
+                        Text("\(formatQuantity(food.defaultServingSize, unit: food.defaultServingUnit)) \(food.defaultServingUnit)")
                             .font(.appCaption1)
                             .foregroundStyle(Color.appTextTertiary)
                             .lineLimit(1)
@@ -214,9 +214,4 @@ struct ManageCommunityFoodsView: View {
 
     // MARK: - Helper
 
-    private static func fmt(_ v: Double) -> String {
-        v.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(v))
-            : String(format: "%.1f", v)
-    }
 }

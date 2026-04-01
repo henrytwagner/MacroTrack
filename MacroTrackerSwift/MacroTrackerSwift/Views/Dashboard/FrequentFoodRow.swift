@@ -22,7 +22,7 @@ struct FrequentFoodRow: View {
                     Text("·")
                         .font(.appCaption1)
                         .foregroundStyle(Color.appTextTertiary)
-                    Text("\(formatted(food.lastQuantity)) \(food.lastUnit)")
+                    Text("\(formatQuantity(food.lastQuantity, unit: food.lastUnit)) \(food.lastUnit)")
                         .font(.appCaption1)
                         .foregroundStyle(Color.appTextTertiary)
                         .lineLimit(1)
@@ -55,9 +55,4 @@ struct FrequentFoodRow: View {
         }
     }
 
-    private func formatted(_ v: Double) -> String {
-        v.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(v))
-            : String(format: "%.1f", v)
-    }
 }

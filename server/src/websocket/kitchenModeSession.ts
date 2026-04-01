@@ -231,6 +231,22 @@ async function handleLookupFood(
     }
   }
 
+  // Fetch custom unit conversions for this food
+  const [refType, refId] = result.foodRef.split(":") as [string, string];
+  const convWhere = refType === "custom"
+    ? { userId: session.userId, customFoodId: refId }
+    : refType === "usda"
+      ? { userId: session.userId, usdaFdcId: parseInt(refId, 10) }
+      : undefined;
+  const customConversions = convWhere
+    ? await prisma.foodUnitConversion.findMany({ where: convWhere, select: { unitName: true } })
+    : [];
+  const availableUnits = [
+    result.servingUnit,
+    "servings",
+    ...customConversions.map((c) => c.unitName),
+  ];
+
   return {
     status: "found",
     food_ref: result.foodRef,
@@ -242,6 +258,7 @@ async function handleLookupFood(
     fat_g_per_serving: result.fatGPerServing,
     serving_size: result.servingSize,
     serving_unit: result.servingUnit,
+    ...(availableUnits.length > 2 ? { available_units: availableUnits } : {}),
     ...(usdaNote ? { note: usdaNote } : {}),
   };
 }

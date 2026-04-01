@@ -48,8 +48,8 @@ private struct EditableMealItem: Identifiable {
         id              = UUID().uuidString
         name            = food.displayName
         quantity        = food.baseServingSize
-        quantityStr     = fmtQty(food.baseServingSize)
         unit            = food.baseServingUnit
+        quantityStr     = formatQuantity(food.baseServingSize, unit: food.baseServingUnit)
         baseQuantity    = food.baseServingSize
         baseMacros      = food.baseMacros
         source          = food.foodSource
@@ -64,8 +64,8 @@ private struct EditableMealItem: Identifiable {
         id              = UUID().uuidString
         name            = item.name
         quantity        = item.quantity
-        quantityStr     = fmtQty(item.quantity)
         unit            = item.unit
+        quantityStr     = formatQuantity(item.quantity, unit: item.unit)
         baseQuantity    = item.quantity
         baseMacros      = item.macros
         source          = item.source
@@ -75,9 +75,6 @@ private struct EditableMealItem: Identifiable {
     }
 }
 
-private func fmtQty(_ v: Double) -> String {
-    v == v.rounded() ? "\(Int(v))" : String(format: "%.1f", v)
-}
 
 // MARK: - MealCreationView
 

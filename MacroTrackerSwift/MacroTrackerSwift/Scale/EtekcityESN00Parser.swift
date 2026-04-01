@@ -30,18 +30,18 @@ func parseEtekcityPacket(_ data: Data) -> ScaleReading? {
     case 0x00:
         unit = .g
         value = Double(raw) / 10.0
-        display = "\(sign)\(String(format: "%.1f", value)) g"
+        display = "\(sign)\(Int(value.rounded())) g"
 
     case 0x02, 0x04:
         // 0x02 = ml, 0x04 = ml with density compensation (water-drop mode)
         unit = .ml
         value = Double(raw) / 10.0
-        display = "\(sign)\(String(format: "%.1f", value)) ml"
+        display = "\(sign)\(Int(value.rounded())) ml"
 
     case 0x06:
         unit = .oz
         value = Double(raw) / 100.0
-        display = "\(sign)\(String(format: "%.2f", value)) oz"
+        display = "\(sign)\(String(format: "%.1f", value)) oz"
 
     case 0x01:
         unit = .lbOz
@@ -49,13 +49,13 @@ func parseEtekcityPacket(_ data: Data) -> ScaleReading? {
         let lbs = Int(totalOz / 16)
         let ozRem = totalOz - Double(lbs) * 16
         value = Double(lbs) + ozRem / 16
-        display = "\(sign)\(lbs) lb \(String(format: "%.2f", ozRem)) oz"
+        display = "\(sign)\(lbs) lb \(String(format: "%.1f", ozRem)) oz"
 
     default:
         // Unknown unit byte — fall back to grams
         unit = .g
         value = Double(raw) / 10.0
-        display = "\(sign)\(String(format: "%.1f", value)) g"
+        display = "\(sign)\(Int(value.rounded())) g"
     }
 
     if negative { value = -value }

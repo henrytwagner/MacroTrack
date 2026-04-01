@@ -197,7 +197,7 @@ struct SavedMealRow: View {
                                 Text("·")
                                     .font(.appCaption1)
                                     .foregroundStyle(Color.appTextTertiary)
-                                Text("\(fmtQty(item.quantity)) \(item.unit)")
+                                Text("\(formatQuantity(item.quantity, unit: item.unit)) \(item.unit)")
                                     .font(.appCaption1)
                                     .foregroundStyle(Color.appTextTertiary)
                                     .lineLimit(1)
@@ -218,7 +218,4 @@ struct SavedMealRow: View {
         }
     }
 
-    private func fmtQty(_ v: Double) -> String {
-        v.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(v)) : String(format: "%.1f", v)
-    }
 }

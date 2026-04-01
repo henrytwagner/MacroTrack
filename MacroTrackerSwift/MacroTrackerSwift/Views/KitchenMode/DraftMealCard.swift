@@ -237,7 +237,7 @@ struct DraftMealCard: View {
             }
             .onChange(of: isEditing) { wasEditing, nowEditing in
                 if nowEditing && !isManualNutritionMode {
-                    editQuantityText = formatNumber(item.quantity)
+                    editQuantityText = formatQuantity(item.quantity, unit: item.unit)
                     editUnit = item.unit
                     editTimeoutToken = 0
                     onEditPreview?(item.quantity)
@@ -344,7 +344,7 @@ struct DraftMealCard: View {
             // Quantity (tap number → manual edit) + scale icon
             HStack(spacing: Spacing.sm) {
                 confirmedQuantityLabel(
-                    text: "\(formatNumber(item.quantity, decimals: decimalsForUnit(item.unit))) \(item.unit)",
+                    text: "\(formatQuantity(item.quantity, unit: item.unit)) \(item.unit)",
                     font: .system(size: 20, weight: .semibold),
                     baseColor: Color.appTextSecondary
                 )
@@ -387,31 +387,11 @@ struct DraftMealCard: View {
     // MARK: - Macro Dashboard (Hero)
 
     private func macroDashboard(cal: Double, protein: Double, carbs: Double, fat: Double) -> some View {
-        HStack(spacing: 0) {
-            macroDashboardColumn(value: cal, label: "Cal", color: Color.caloriesAccent, flash: caloriesFlash)
-            macroDashboardColumn(value: protein, label: "Protein", color: Color.proteinAccent, flash: proteinFlash)
-            macroDashboardColumn(value: carbs, label: "Carbs", color: Color.carbsAccent, flash: carbsFlash)
-            macroDashboardColumn(value: fat, label: "Fat", color: Color.fatAccent, flash: fatFlash)
-        }
-    }
-
-    private func macroDashboardColumn(value: Double, label: String, color: Color, flash: CGFloat = 1) -> some View {
-        VStack(spacing: 4) {
-            Text(label == "Cal" ? "\(Int(value.rounded()))" : String(format: "%.1fg", value))
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.appText)
-                .scaleEffect(flash)
-
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Color.appTextSecondary)
-
-            RoundedRectangle(cornerRadius: 2)
-                .fill(color)
-                .frame(height: 3)
-                .padding(.horizontal, Spacing.sm)
-        }
-        .frame(maxWidth: .infinity)
+        MacroDashboard(
+            cal: cal, protein: protein, carbs: carbs, fat: fat,
+            calFlash: caloriesFlash, proteinFlash: proteinFlash,
+            carbsFlash: carbsFlash, fatFlash: fatFlash
+        )
     }
 
     // MARK: - Hero Action Bar
@@ -632,7 +612,7 @@ struct DraftMealCard: View {
                 Text("Start:")
                     .font(.system(size: 14))
                     .foregroundStyle(Color.appTextSecondary)
-                Text("\(formatNumber(subtractiveStartWeight ?? 0)) \(scaleReading?.unit.rawValue ?? "g")")
+                Text("\(formatQuantity(subtractiveStartWeight ?? 0, unit: scaleReading?.unit.rawValue ?? "g")) \(scaleReading?.unit.rawValue ?? "g")")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Color.appTextSecondary)
                 Image(systemName: "lock.fill")
@@ -656,7 +636,7 @@ struct DraftMealCard: View {
 
             // Delta (hero-sized)
             if let delta = subtractiveDelta {
-                Text("\u{0394} Food: \(formatNumber(delta)) \(scaleReading?.unit.rawValue ?? "g")")
+                Text("\u{0394} Food: \(formatQuantity(delta, unit: scaleReading?.unit.rawValue ?? "g")) \(scaleReading?.unit.rawValue ?? "g")")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.appTint)
                     .contentTransition(.numericText())
@@ -677,7 +657,7 @@ struct DraftMealCard: View {
                     HStack(spacing: Spacing.sm) {
                         Image(systemName: "lock.fill")
                             .font(.system(size: 13))
-                        Text("Lock in \(formatNumber(subtractiveDelta ?? 0)) \(scaleReading?.unit.rawValue ?? "g")")
+                        Text("Lock in \(formatQuantity(subtractiveDelta ?? 0, unit: scaleReading?.unit.rawValue ?? "g")) \(scaleReading?.unit.rawValue ?? "g")")
                             .font(.system(size: 14, weight: .semibold))
                     }
                     .foregroundStyle(.white)
@@ -718,7 +698,7 @@ struct DraftMealCard: View {
 
             // Quantity (tap to edit) with unconfirmed indicator
             HStack(spacing: Spacing.sm) {
-                Text("\(formatNumber(item.quantity, decimals: decimalsForUnit(item.unit))) \(item.unit)")
+                Text("\(formatQuantity(item.quantity, unit: item.unit)) \(item.unit)")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(Color.appTextSecondary)
 
@@ -753,20 +733,11 @@ struct DraftMealCard: View {
         guard let baseMacros = item.baseMacros,
               let baseSize = item.baseServingSize,
               baseSize > 0 else { return nil }
-        let baseUnit = item.baseServingUnit ?? "g"
-        let readingUnit = reading.unit.rawValue
-        var readingInBaseUnit = reading.value
-        if readingUnit != baseUnit,
-           let fromG = weightRatiosG[readingUnit],
-           let toG = weightRatiosG[baseUnit] {
-            readingInBaseUnit = reading.value * fromG / toG
-        }
-        let scale = readingInBaseUnit / baseSize
-        return Macros(
-            calories: baseMacros.calories * scale,
-            proteinG: baseMacros.proteinG * scale,
-            carbsG:   baseMacros.carbsG   * scale,
-            fatG:     baseMacros.fatG     * scale)
+        return scaledMacrosForScaleReading(
+            reading,
+            baseMacros: baseMacros,
+            baseServingSize: baseSize,
+            baseServingUnit: item.baseServingUnit ?? "g")
     }
 
     /// Scale macros for a raw weight value (used by subtractive mode).
@@ -774,20 +745,12 @@ struct DraftMealCard: View {
         guard let baseMacros = item.baseMacros,
               let baseSize = item.baseServingSize,
               baseSize > 0 else { return nil }
-        let baseUnit = item.baseServingUnit ?? "g"
-        let readingUnit = unit?.rawValue ?? "g"
-        var valueInBaseUnit = value
-        if readingUnit != baseUnit,
-           let fromG = weightRatiosG[readingUnit],
-           let toG = weightRatiosG[baseUnit] {
-            valueInBaseUnit = value * fromG / toG
-        }
-        let scale = valueInBaseUnit / baseSize
-        return Macros(
-            calories: baseMacros.calories * scale,
-            proteinG: baseMacros.proteinG * scale,
-            carbsG:   baseMacros.carbsG   * scale,
-            fatG:     baseMacros.fatG     * scale)
+        return scaledMacrosForWeight(
+            value: value,
+            unitRaw: unit?.rawValue ?? "g",
+            baseMacros: baseMacros,
+            baseServingSize: baseSize,
+            baseServingUnit: item.baseServingUnit ?? "g")
     }
 
     private func dashedMacroChip(_ label: String, _ value: String) -> some View {
@@ -823,7 +786,7 @@ struct DraftMealCard: View {
                         .foregroundStyle(Color.appTextTertiary)
 
                     confirmedQuantityLabel(
-                        text: "\(formatNumber(item.quantity, decimals: decimalsForUnit(item.unit))) \(item.unit)",
+                        text: "\(formatQuantity(item.quantity, unit: item.unit)) \(item.unit)",
                         font: .appCaption1,
                         baseColor: Color.appTextTertiary
                     )
@@ -1012,7 +975,7 @@ struct DraftMealCard: View {
                 }
 
                 if let progress, let size = progress.servingSize, let unit = progress.servingUnit {
-                    Text("\(formatNumber(size, decimals: size.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)) \(unit)")
+                    Text("\(formatQuantity(size, unit: unit)) \(unit)")
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundStyle(Color.appTextSecondary)
                         .transition(.opacity.combined(with: .move(edge: .leading)))
@@ -1047,36 +1010,10 @@ struct DraftMealCard: View {
 
     /// Macro dashboard for creating state — collected values show as numbers, uncollected as "—".
     private func creatingMacroDashboard(progress: CreatingFoodProgress?) -> some View {
-        HStack(spacing: 0) {
-            creatingDashboardColumn(value: progress?.calories, label: "Cal", color: Color.caloriesAccent, isCal: true)
-            creatingDashboardColumn(value: progress?.proteinG, label: "Protein", color: Color.proteinAccent)
-            creatingDashboardColumn(value: progress?.carbsG, label: "Carbs", color: Color.carbsAccent)
-            creatingDashboardColumn(value: progress?.fatG, label: "Fat", color: Color.fatAccent)
-        }
-    }
-
-    private func creatingDashboardColumn(value: Double?, label: String, color: Color, isCal: Bool = false) -> some View {
-        VStack(spacing: 4) {
-            if let v = value {
-                Text(isCal ? "\(Int(v.rounded()))" : String(format: "%.1fg", v))
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.appText)
-            } else {
-                Text("—")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.appTextTertiary)
-            }
-
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Color.appTextSecondary)
-
-            RoundedRectangle(cornerRadius: 2)
-                .fill(value != nil ? color : color.opacity(0.25))
-                .frame(height: 3)
-                .padding(.horizontal, Spacing.sm)
-        }
-        .frame(maxWidth: .infinity)
+        MacroDashboardOptional(
+            cal: progress?.calories, protein: progress?.proteinG,
+            carbs: progress?.carbsG, fat: progress?.fatG
+        )
     }
 
     private func creatingFieldLabel(_ field: CreatingFoodField) -> String {
@@ -1216,6 +1153,10 @@ struct DraftMealCard: View {
                     }
                     .buttonStyle(.plain)
                 }
+            }
+
+            if unitUsesFractionKeyboard(editUnit) {
+                FractionBar(text: $editQuantityText)
             }
 
             // Live-scaled macro dashboard
@@ -1383,8 +1324,12 @@ struct DraftMealCard: View {
         editProtein = formatOptionalDouble(p?.proteinG)
         editCarbs = formatOptionalDouble(p?.carbsG)
         editFat = formatOptionalDouble(p?.fatG)
-        editServingSize = formatOptionalDouble(p?.servingSize)
         editServingUnit = p?.servingUnit ?? "g"
+        if let ss = p?.servingSize {
+            editServingSize = formatQuantity(ss, unit: editServingUnit)
+        } else {
+            editServingSize = ""
+        }
     }
 
     private func submitNutritionForm() {
@@ -1480,16 +1425,6 @@ struct DraftMealCard: View {
 
     // MARK: - Helpers
 
-    private func formatNumber(_ n: Double, decimals: Int = 0) -> String {
-        if decimals == 0 {
-            return String(Int(n.rounded()))
-        }
-        return String(format: "%.\(decimals)f", n)
-    }
-
-    private func decimalsForUnit(_ unit: String) -> Int {
-        unit == "oz" ? 1 : 0
-    }
 }
 
 // MARK: - GlassMacroChip

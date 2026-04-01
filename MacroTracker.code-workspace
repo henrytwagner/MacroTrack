@@ -2,6 +2,12 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "../../../.claude/plans"
+		},
+		{
+			"path": "../../../.claude/projects/-Users-henrywagner-Documents-594-MacroTracker/ideas"
 		}
 	],
 	"settings": {}
