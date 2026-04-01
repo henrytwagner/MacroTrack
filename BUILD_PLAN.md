@@ -58,17 +58,27 @@ A potential product framing: *"The AR nutrition experience, without the glasses.
 
 ### 3.1 What Exists
 
-As of March 2026, the following is functional or substantially built:
+As of April 2026, the following is functional:
 
-- **Macro tracker core**: Daily log, goal tracking, food database (USDA FoodData Central), custom food creation, and macro progress dashboard. Built on a React Native (Expo) mobile client and a Fastify/TypeScript/PostgreSQL/Prisma backend.
+- **Macro tracker core**: Daily log, goal tracking, food database (USDA FoodData Central + community foods), custom food creation, saved meals, and macro progress dashboard. Built on a native SwiftUI iOS client (iOS 17+, Swift 5.9) and a Fastify/TypeScript/PostgreSQL/Prisma backend.
 
-- **Voice input pipeline**: On-device speech recognition (expo-speech-recognition) sends transcript segments via WebSocket to the server. A Gemini 2.0 Flash integration parses transcripts into structured intent objects (`ADD_ITEMS`, `EDIT_ITEM`, `REMOVE_ITEM`, `CLARIFY`, `CREATE_FOOD_RESPONSE`, `SESSION_END`). The server streams structured responses back to the client, which renders them as draft cards in Kitchen Mode.
+- **Voice input pipeline (Gemini Live streaming)**: On-device VAD (voice activity detection) captures audio via `AVAudioEngine` with a pre-roll buffer (~300ms before VAD fires). Audio is resampled to 16 kHz int16 mono and streamed as `audioChunk` messages over WebSocket. The server forwards audio to Gemini 2.5 Flash, which returns structured intent objects and spoken audio responses. Supported intents: `ADD_ITEMS`, `EDIT_ITEM`, `REMOVE_ITEM`, `CLARIFY`, `CREATE_FOOD_RESPONSE`, `CONFIRM_FOOD_CREATION`, `DISAMBIGUATE_CHOICE`, `SESSION_END`, `QUERY_HISTORY`, `LOOKUP_FOOD_INFO`, `SUGGEST_FOODS`, `ESTIMATE_FOOD`, `CLEAR_ALL`, `CANCEL_OPERATION`, `UNDO`, `REDO`. Gemini audio responses are played back via `AVAudioPlayerNode` with gapless frame tracking. Echo suppression buffers capture while Gemini is speaking. **Current pain point**: voice command reliability and Gemini's food recall accuracy are the largest UX friction — this is the active development focus.
 
-- **Kitchen Mode UI**: Full-screen immersive logging session. Draft cards animate in as items are recognized. Cards support three visual states: `normal`, `clarifying` (pulsing highlight, question prompt), and `creating` (progressive field fill during custom food creation). Session exit options: save (persist all drafts) or cancel (discard drafts and delete session-created custom foods).
+- **Kitchen Mode UI**: Full-screen immersive logging session with hero/compact card animations. Draft cards support three visual states: `normal`, `clarifying` (pulsing highlight, question prompt), and `creating` (progressive field fill during custom food creation). Inline editing with live quantity preview. Manual nutrition entry fallback. Macro progress pill with expandable breakdown. Session exit options: save (persist all drafts) or cancel (discard drafts and delete session-created custom foods).
 
-- **BLE Scale integration (in progress)**: A Bluetooth Low Energy scale data stream is being wired into the app. The scale module (`mobile/features/scale/`) includes a BLE connection service and a simulated weight stream for development. Real packet parsing is pending scale model identification and protocol reverse engineering.
+- **BLE Scale integration (complete)**: CoreBluetooth `BluetoothScaleService.swift` with Etekcity ESN00 protocol fully decoded. Live weight streaming with stable/measuring indicators. Software zero offset with persistence across card switches. Subtractive weighing mode (before/after delta for shared dishes). Scale-to-draft integration: new items automatically activate weighing mode when their base unit is weight. Weight changes update macro values in real time.
 
-- **Barcode scanner**: Standalone module (`mobile/features/barcode/`) with iOS/Android native scanning and web fallback. Not yet integrated into the core logging flow.
+- **Auto-progression (complete)**: Configurable stability-based auto-confirm (default 3s). Chain-confirm triggers: barcode scan, voice item arrival, or timer expiry during active weighing. Auto-zero on confirm (stores raw reading as next zero reference). Visual feedback (flash animation + haptic + optional system sound). All settings persisted via UserDefaults with a settings sheet in Kitchen Mode.
+
+- **Camera food identification (photo-tap, complete)**: Live camera preview via `KitchenCameraSession` (AVFoundation dual-output architecture). User taps capture button → photo compressed and sent as base64 to server → Gemini Flash vision identifies food → result routed through standard `foodParser.ts` lookup pipeline → draft card created. Frame buffer access architecture in place for future CoreML integration.
+
+- **Barcode scanner (fully integrated)**: VisionKit `DataScannerViewController` with AVFoundation fallback for GTIN types (EAN-8, EAN-13, UPC-E). Integrated into food search flow and inline in Kitchen Mode. Duplicate-scan protection (same GTIN within 2s rejected). Barcode scan triggers auto-confirm of current weighing item. GTIN pre-fills barcode field during custom food creation.
+
+- **Nutrition label scanning (complete)**: On-device OCR via Vision framework (`NutritionLabelScanner`). Captured label sent to server `/api/nutrition/label/parse` → Gemini parses structured nutrition data → `NutritionLabelParser` validates and normalizes → pre-fills `CreateFoodSheet` fields.
+
+- **Community foods**: Full CRUD with state tracking (ACTIVE/PENDING/RETIRED). Integrated into food search results with visual indicators. Voting and reporting API endpoints.
+
+- **Saved meals**: Create, list, log, and delete meals. Per-item source tracking. Meal logging with optional scale factor (0.5x, 1.5x portions).
 
 ### 3.2 Key Architectural Decisions Already Made
 
@@ -122,7 +132,7 @@ The hardest implementation problem is byte packet decoding. Each scale manufactu
 3. Finding community-documented formats on GitHub (search: `[scale model name] BLE protocol`)
 4. Writing a parser from sample packets
 
-Once a working parser exists for the target scale model, the `BluetoothScaleService` class (currently stubbed in `mobile/features/scale/ble.ts`) will expose a clean reactive stream (Combine publisher on iOS, or an equivalent RxJS/EventEmitter pattern in React Native) that the rest of the app consumes.
+Once a working parser exists for the target scale model, the `BluetoothScaleService.swift` class exposes a clean Combine publisher stream that the rest of the app consumes.
 
 ### 4.2 Camera: Food Identification
 
@@ -134,21 +144,23 @@ Two distinct identification pathways are planned depending on food type:
 
 *Phase 1 — Gemini Flash vision (photo-tap logging):* The user taps a camera button, takes a photo, and the image is sent to the existing `gemini.ts` service as a base64-encoded frame with a structured identification prompt. Gemini returns a JSON food name, which routes directly into the existing `foodParser.ts` USDA lookup flow. No new dependencies. Slots into the current architecture in hours. Latency (~500–1000ms) is acceptable for a deliberate photo-tap interaction; it rules out live AR but is invisible in a tap-to-log flow. Gemini is also the recommended off-device fallback model for any phase where on-device inference is unavailable or insufficient.
 
-*Phase 2 — react-native-vision-camera + on-device model (live AR frames):* `react-native-vision-camera`'s Frame Processor API runs a JS function on every camera frame via JSI (no bridge overhead). **Recommended on-device model options (per faculty review, March 2026):**
+*Phase 2 — AVFoundation + on-device model (live AR frames):* `AVCaptureVideoDataOutput` delivers `CVPixelBuffer` per frame on a dedicated serial queue with no bridge overhead. **Recommended on-device model options (per faculty review, March 2026):**
 
 - **YOLO v10 / v11 / YOLO-World** — Prof. Guo's primary recommendation for on-device food detection. YOLO-World is particularly compelling because it supports open-vocabulary detection (arbitrary text labels at inference time rather than a fixed class list), which means it can handle novel food items without retraining. YOLO v10/v11 are strong choices for standard object detection if the class set is fixed. All variants export to CoreML (`.mlmodelc`) and run on the Neural Engine. Expected inference latency: ~30–60ms per frame.
 - **ARKit** — For Phase 3 AR anchoring specifically, ARKit's built-in scene understanding (plane detection, object anchoring) can provide spatial stability for overlay cards and may offer bounding-box primitives that reduce the vision model's anchoring workload.
 - **EfficientNetB0 fine-tuned on Food-101** — The original plan; still viable as a lightweight single-label classifier if YOLO proves overkill for the Phase 2 use case (single food item on a scale, not fridge scan). Revisit once YOLO is benchmarked.
 
-AR overlays will be drawn in react-native-skia on top of the vision-camera feed.
+AR overlays will be drawn using SwiftUI `Canvas` or `RealityKit` anchored on the AVFoundation camera feed.
 
 *Why specialized nutrition APIs (Passio AI, LogMeal) were evaluated and rejected:* These platforms bundle nutrition data delivery with their vision inference. Passio's SDK, for example, couples an on-device CoreML vision model with a mandatory cloud call to fetch `PassioFoodItem` nutrition data after every identification. The tokens you pay for are mostly this cloud nutrition fetch — which MacroTrack discards, since nutrition data comes from USDA and user-created sources. You cannot cleanly extract just the food name without triggering the billing layer their SDK is designed around. LogMeal is purely cloud-based and has the same data-bundling problem. Both create per-call cost for a data layer this app intentionally owns independently.
 
-**AR overlay** — Identified items in the camera frame are annotated with floating macro cards rendered in react-native-skia on top of the vision-camera feed. Full ARKit spatial anchoring is not required — 2D bounding boxes from the vision model output are sufficient for the intended UX. The overlay renders: food name, confidence score, and live macro computation bound to the current scale weight (updating in real time as the weight changes).
+**AR overlay** — Identified items in the camera frame are annotated with floating macro cards rendered using SwiftUI overlays on AVFoundation camera preview. Full ARKit spatial anchoring is not required — 2D bounding boxes from the vision model output are sufficient for the intended UX. The overlay renders: food name, confidence score, and live macro computation bound to the current scale weight (updating in real time as the weight changes).
 
 ### 4.3 Voice: Confirmation and Command
 
-Voice is already the primary input modality. In the AR-integrated flow, it is repurposed from a full input channel to a confirmation layer. The interaction vocabulary simplifies:
+Voice is the primary input modality. The voice pipeline now uses **Gemini Live streaming** — continuous audio streaming rather than batched transcript segments. The client streams raw audio chunks over WebSocket, the server forwards them to Gemini 2.5 Flash, and Gemini returns both structured intent JSON and spoken audio responses that are played back to the user.
+
+In the AR-integrated flow, voice will be repurposed from a full input channel to a confirmation layer. The interaction vocabulary simplifies:
 
 - *"Add it"* / *"Yes"* — confirm the identified item at current weight
 - *"Skip"* / *"No"* — dismiss the current item
@@ -156,18 +168,9 @@ Voice is already the primary input modality. In the AR-integrated flow, it is re
 - *"Cancel"* — abort current item
 - *"Done"* / *"Save"* — end session
 
-The existing Gemini intent parsing pipeline handles these, but the intents may be simplified — a dedicated `CONFIRM_ITEM` action type may be added to `shared/types.ts` for the scale-camera confirmation flow, distinct from the full voice transcript parsing used in Kitchen Mode today.
-
 Tap confirmation is always available as a fallback for noisy environments or user preference.
 
-**Continuous streaming voice (recommended improvement, per faculty review March 2026):**
-
-The current pipeline batches transcript segments: the STT engine segments on pauses and each segment is sent to Gemini as a discrete call. A better model — demonstrated in Prof. Guo's HandProxy paper — is continuous streaming: the transcript stream stays open, the user can speak at any time (including over previous speech), and Gemini is called every N transcript update events rather than once per segment. This produces a more seamless, interruptible command experience. Key architectural implications:
-
-- The WebSocket client sends transcript deltas as they arrive (current behavior), but the server debounces Gemini calls (e.g., every 500ms or every 2–3 new words) rather than calling on every segment boundary.
-- Gemini receives a rolling context window of the last N seconds of transcript rather than an isolated segment.
-- The intent parser should be tolerant of mid-utterance calls — returning `null` or a `WAIT` signal if the transcript is still clearly incomplete.
-- This approach is more robust to noisy kitchens, natural speech patterns, and users who self-correct mid-sentence ("add two — no, three eggs").
+**Current pain point (active focus, April 2026):** Voice command reliability and Gemini's food recall/understanding accuracy are the largest UX friction. The continuous streaming architecture is in place (per the faculty recommendation from March 2026), but the quality of Gemini's responses — correctly identifying foods from conversational speech, recalling previously logged items, and handling ambiguous or corrective utterances — is the primary area of ongoing work.
 
 ---
 
@@ -213,55 +216,55 @@ This mode is computationally heavier and will likely require on-device inference
 
 ## 7. Phased Build Plan
 
-### Phase 0: Foundation (Current)
-*Already substantially complete.*
+### Phase 0: Foundation ✅
+*Complete.*
 
-- [x] Monorepo scaffold (Expo + Fastify + shared types)
+- [x] Monorepo scaffold (SwiftUI iOS app + Fastify + shared types)
 - [x] PostgreSQL/Prisma data layer
 - [x] USDA FoodData Central integration
-- [x] Gemini voice parsing pipeline
-- [x] Kitchen Mode UI (draft cards, WebSocket session)
-- [x] Barcode scanner (standalone module)
-- [ ] BLE scale stream (in progress)
-
-**Exit criteria**: Live weight stream from physical scale displayed in app.
+- [x] Gemini voice parsing pipeline (upgraded to Gemini Live streaming)
+- [x] Kitchen Mode UI (draft cards, WebSocket session, hero/compact animations)
+- [x] Barcode scanner (VisionKit + AVFoundation, integrated into Kitchen Mode)
+- [x] BLE scale stream (CoreBluetooth, Etekcity ESN00 protocol decoded)
+- [x] Community foods (CRUD, voting, reporting)
+- [x] Saved meals (create, log, scale factor)
+- [x] Nutrition label scanning (Vision OCR + Gemini parsing)
 
 ---
 
-### Phase 1: Prove the Pipeline
-*BLE + Barcode + Voice Confirm. No camera AR yet.*
+### Phase 1: Prove the Pipeline ✅
+*Complete. BLE + Barcode + Voice Confirm + Camera photo-tap + Auto-progression.*
 
-**Goal**: End-to-end logging without estimation. Scan barcode → weigh item → voice confirm → logged.
+**Goal**: End-to-end logging without estimation. ✅ Achieved.
 
-**Work items**:
-- Complete BLE byte packet parser for target scale model
-- Integrate scale stream into Kitchen Mode: display live weight on draft cards
-- Wire barcode scanner into Kitchen Mode session: barcode scan → food lookup → draft card
-- Voice confirmation flow: `CONFIRM_ITEM` intent triggers final log write
-- Zero-out event detection → "ready for next item" state transition
+**Completed work**:
+- [x] BLE byte packet parser for Etekcity ESN00
+- [x] Scale stream integrated into Kitchen Mode with live weight on draft cards
+- [x] Barcode scanner wired into Kitchen Mode session flow
+- [x] Voice confirmation flow via Gemini Live
+- [x] Auto-progression: stability-based auto-confirm, chain-confirm on new item arrival, auto-zero
+- [x] Camera photo-tap food identification via Gemini Flash vision (Phase 1 of §4.2)
+- [x] Subtractive weighing mode (before/after weight delta)
 
-**Why this phase first**: Proves the core accuracy proposition before any computer vision complexity is introduced. A working scale + barcode + voice confirm pipeline is already a meaningfully better experience than any existing app. It's also a complete demo.
-
-**Open questions**:
-- Scale model BLE protocol (needs reverse engineering)
+**Remaining open question**:
 - Whether to use USDA, Open Food Facts, or Nutritionix for barcode-to-nutrition lookup (coverage and latency tradeoffs)
 
 ---
 
-### Phase 2: Visual Food Identification
-*Add vision model for produce and whole foods. Eliminate barcode requirement.*
+### Phase 2: Visual Food Identification (Partially Complete)
+*Photo-tap via Gemini vision is working. On-device real-time model is next.*
 
 **Goal**: Point camera at a banana, app identifies "banana," scale provides weight, macros computed.
 
-**Work items**:
-- Evaluate Passio AI SDK vs LogMeal API (accuracy, latency, cost, SDK quality)
-- Integrate selected vision model into camera feed
-- Build food ID → nutrition lookup bridge (vision model returns food name → USDA lookup)
-- Confidence threshold UX: below threshold → ask user to confirm or correct identification
-- Fallback to barcode if no visual match
+**Completed**:
+- [x] Photo-tap identification via Gemini Flash vision (capture → base64 → server → Gemini → foodParser lookup → draft card)
+- [x] Camera preview integrated into Kitchen Mode (`KitchenCameraSession`)
+- [x] Frame buffer access architecture in place for CoreML integration
 
-**Open questions**:
-- Passio AI vs LogMeal: which has better produce recognition?
+**Remaining work**:
+- On-device YOLO v10/v11/World CoreML model for real-time frame-by-frame detection (eliminates round-trip latency)
+- Confidence threshold UX: below threshold → ask user to confirm or correct identification
+- Fallback chain: on-device model → Gemini vision → barcode → manual entry
 - Latency of cloud API round-trip vs on-device inference for real-time feel
 - How to handle ambiguous identifications (e.g., "apple" — which variety? does it matter for macros?)
 
@@ -273,7 +276,7 @@ This mode is computationally heavier and will likely require on-device inference
 **Goal**: Point phone at food on scale → see a floating overlay card with food name and live-updating macros as weight changes.
 
 **Work items**:
-- Camera feed rendering pipeline (AVFoundation / Expo Camera)
+- Camera feed rendering pipeline (AVFoundation)
 - Bounding box detection on identified items (Vision framework or model output)
 - Overlay rendering: transparent card with food name, confidence, macro breakdown
 - Live weight binding: macro numbers update in real time as scale weight changes
@@ -305,16 +308,16 @@ This mode is computationally heavier and will likely require on-device inference
 
 | Capability | Technology | Status |
 |---|---|---|
-| Mobile framework | Expo (React Native) | Established |
+| Mobile framework | SwiftUI (iOS 17+, Swift 5.9) | Established |
 | Backend | Fastify + TypeScript + PostgreSQL/Prisma | Established |
 | Voice parsing | Gemini 2.0 Flash | Established |
-| Speech-to-text | expo-speech-recognition (on-device) | Established |
+| Speech-to-text | SFSpeechRecognizer + AVAudioEngine (on-device) | Established |
 | Nutrition database | USDA FoodData Central | Established |
-| BLE scale stream | CoreBluetooth / react-native-ble-plx | In progress |
-| Barcode scan | Expo Camera / AVFoundation | Built (not integrated) |
-| Visual food ID (Phase 1) | Gemini Flash vision (photo → base64 → `gemini.ts`) | Not started |
-| Visual food ID (Phase 2) | react-native-vision-camera + YOLO v10/v11/World CoreML (recommended) or EfficientNetB0 | Not started |
-| AR overlays | react-native-skia on vision-camera feed | Not started |
+| BLE scale stream | CoreBluetooth (native, no wrapper) | Complete |
+| Barcode scan | VisionKit DataScannerViewController + AVFoundation | Complete |
+| Visual food ID (Phase 1) | Gemini Flash vision (photo → base64 → gemini.ts) | Complete |
+| Visual food ID (Phase 2) | AVFoundation AVCaptureVideoDataOutput + YOLO v10/v11/World CoreML or EfficientNetB0 | Not started |
+| AR overlays | SwiftUI Canvas / RealityKit on AVFoundation feed | Not started |
 | Packaged food DB | Open Food Facts / Nutritionix | Not started |
 
 ---
@@ -351,7 +354,7 @@ An iPad or iPad mini mounted in the kitchen is a compelling future target, parti
 - The iPad mini form factor is particularly practical — small enough to prop against a backsplash or stick to a cabinet, large enough to display macro cards without squinting.
 
 **Technical considerations for iPad support:**
-- Expo/React Native supports iPad natively; the primary work is layout adaptation (the current mobile-first layouts will need responsive breakpoints or a dedicated tablet layout for Kitchen Mode and the AR camera view).
+- SwiftUI supports iPad natively; the primary work is layout adaptation (the current mobile-first layouts will need responsive breakpoints or a dedicated iPad layout for Kitchen Mode and the AR camera view).
 - Split-view and Stage Manager compatibility may be worth targeting so the app can sit alongside a recipe app.
 - The iPad's Neural Engine runs the same CoreML models as iPhone — YOLO and any other on-device vision models require no changes.
 - A dedicated "kitchen stand mode" could be a distinct UI layout: larger draft cards, larger tap targets, persistent camera feed without needing to hold the device.
@@ -362,14 +365,14 @@ An iPad or iPad mini mounted in the kitchen is a compelling future target, parti
 
 ## 11. Immediate Next Steps
 
-1. **Complete BLE scale integration** — Connect to physical scale, observe raw BLE notifications via nRF Connect, decode packet format, wire live weight into the UI demo screen (`mobile/app/scale-demo.tsx`).
+1. **Improve voice command reliability and Gemini food recall** — The largest current pain point. Gemini Live streaming is in place, but the quality of food identification from conversational speech, handling of corrections/edits, and recall of previously logged items needs significant improvement. This is the primary development focus.
 
-2. **Integrate barcode scanner into Kitchen Mode** — Move barcode scan out of standalone module and into the Kitchen Mode session flow as an alternative input trigger.
+2. **On-device visual food ID (Phase 2 remaining)** — Integrate YOLO v10/v11/World CoreML model for real-time food detection without round-trip latency. The AVFoundation frame buffer architecture is ready; the model integration and inference pipeline are the remaining work.
 
-3. **Phase 1 end-to-end test** — Run a full logging session: scan a packaged food with a barcode, weigh it on the scale, voice-confirm, verify the entry appears in the daily log with correct nutrition data.
+3. **AR overlays (Phase 3)** — Float macro tags on identified items in the camera frame, bound to live scale weight. SwiftUI Canvas or RealityKit on the AVFoundation camera preview.
 
-4. **Phase 1 Gemini photo logging** — Add camera button to Log tab, capture photo, send to `gemini.ts` for food identification, pipe result into existing `foodParser.ts`. Design the entry schema to capture (image, Gemini label, confirmed USDA match) as training data for Phase 2.
+4. **Passive Kitchen Mode evolution** — Move from voice-first to observation-first: auto-add items by combining scale readings + camera identification, with voice as a correction channel. See `FEATURES_ROADMAP.md`.
 
 ---
 
-*Last updated: March 2026. This document will be updated as phases complete and open questions are resolved.*
+*Last updated: April 2026. This document will be updated as phases complete and open questions are resolved.*
