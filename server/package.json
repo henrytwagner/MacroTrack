@@ -10,7 +10,9 @@
     "db:generate": "prisma generate --schema=src/db/prisma/schema.prisma",
     "db:migrate": "prisma migrate dev --schema=src/db/prisma/schema.prisma",
     "db:migrate:deploy": "prisma migrate deploy --schema=src/db/prisma/schema.prisma",
-    "db:push": "prisma db push --schema=src/db/prisma/schema.prisma",
+    "db:migrate:status": "prisma migrate status --schema=src/db/prisma/schema.prisma",
+    "db:migrate:diff": "prisma migrate diff --from-migrations-directory src/db/prisma/migrations --to-schema-datamodel src/db/prisma/schema.prisma --shadow-database-url \"$SHADOW_DATABASE_URL\"",
+    "db:push": "echo '⚠️  db:push does not create migrations — use db:migrate instead unless prototyping' && prisma db push --schema=src/db/prisma/schema.prisma",
     "db:studio": "prisma studio --schema=src/db/prisma/schema.prisma",
     "test": "jest",
     "decode-barcode": "tsx scripts/decode-barcode-from-file.ts"

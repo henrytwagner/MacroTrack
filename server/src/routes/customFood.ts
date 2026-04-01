@@ -24,6 +24,7 @@ export function mapCustomFood(food: {
   id: string;
   name: string;
   brandName?: string | null;
+  category?: string | null;
   servingSize: number;
   servingUnit: string;
   calories: number;
@@ -36,6 +37,11 @@ export function mapCustomFood(food: {
   sugarG: number | null;
   saturatedFatG: number | null;
   transFatG: number | null;
+  potassiumMg: number | null;
+  calciumMg: number | null;
+  ironMg: number | null;
+  vitaminDMcg: number | null;
+  addedSugarG: number | null;
   barcode: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -44,6 +50,7 @@ export function mapCustomFood(food: {
     id: food.id,
     name: food.name,
     brandName: food.brandName ?? undefined,
+    category: (food.category as CustomFood["category"]) ?? undefined,
     servingSize: food.servingSize,
     servingUnit: food.servingUnit,
     calories: food.calories,
@@ -56,6 +63,11 @@ export function mapCustomFood(food: {
     sugarG: food.sugarG ?? undefined,
     saturatedFatG: food.saturatedFatG ?? undefined,
     transFatG: food.transFatG ?? undefined,
+    potassiumMg: food.potassiumMg ?? undefined,
+    calciumMg: food.calciumMg ?? undefined,
+    ironMg: food.ironMg ?? undefined,
+    vitaminDMcg: food.vitaminDMcg ?? undefined,
+    addedSugarG: food.addedSugarG ?? undefined,
     barcode: food.barcode ?? undefined,
     createdAt: food.createdAt.toISOString(),
     updatedAt: food.updatedAt.toISOString(),
@@ -106,6 +118,7 @@ export async function customFoodRoutes(app: FastifyInstance) {
           userId,
           name: body.name,
           brandName: body.brandName?.trim() || null,
+          category: body.category as any ?? null,
           servingSize: body.servingSize,
           servingUnit: body.servingUnit,
           calories: body.calories,
@@ -118,6 +131,11 @@ export async function customFoodRoutes(app: FastifyInstance) {
           sugarG: body.sugarG,
           saturatedFatG: body.saturatedFatG,
           transFatG: body.transFatG,
+          potassiumMg: body.potassiumMg,
+          calciumMg: body.calciumMg,
+          ironMg: body.ironMg,
+          vitaminDMcg: body.vitaminDMcg,
+          addedSugarG: body.addedSugarG,
           barcode: body.barcode ?? null,
         },
       });
@@ -143,6 +161,7 @@ export async function customFoodRoutes(app: FastifyInstance) {
         data: {
           ...(body.name !== undefined && { name: body.name }),
           ...(body.brandName !== undefined && { brandName: body.brandName?.trim() || null }),
+          ...(body.category !== undefined && { category: body.category as any ?? null }),
           ...(body.servingSize !== undefined && {
             servingSize: body.servingSize,
           }),
@@ -163,6 +182,11 @@ export async function customFoodRoutes(app: FastifyInstance) {
             saturatedFatG: body.saturatedFatG,
           }),
           ...(body.transFatG !== undefined && { transFatG: body.transFatG }),
+          ...(body.potassiumMg !== undefined && { potassiumMg: body.potassiumMg }),
+          ...(body.calciumMg !== undefined && { calciumMg: body.calciumMg }),
+          ...(body.ironMg !== undefined && { ironMg: body.ironMg }),
+          ...(body.vitaminDMcg !== undefined && { vitaminDMcg: body.vitaminDMcg }),
+          ...(body.addedSugarG !== undefined && { addedSugarG: body.addedSugarG }),
           ...(body.barcode !== undefined && { barcode: body.barcode || null }),
         },
       });
@@ -228,6 +252,7 @@ export async function customFoodRoutes(app: FastifyInstance) {
           data: {
             name: custom.name,
             brandName: body.brandName?.trim() || null,
+            category: custom.category,
             defaultServingSize: custom.servingSize,
             defaultServingUnit: custom.servingUnit,
             calories: custom.calories,
@@ -240,6 +265,11 @@ export async function customFoodRoutes(app: FastifyInstance) {
             sugarG: custom.sugarG,
             saturatedFatG: custom.saturatedFatG,
             transFatG: custom.transFatG,
+            potassiumMg: custom.potassiumMg,
+            calciumMg: custom.calciumMg,
+            ironMg: custom.ironMg,
+            vitaminDMcg: custom.vitaminDMcg,
+            addedSugarG: custom.addedSugarG,
             createdByUserId: userId,
             ...(body.barcode && {
               barcodes: {
@@ -251,7 +281,23 @@ export async function customFoodRoutes(app: FastifyInstance) {
               },
             }),
           },
+          include: { barcodes: { select: { barcode: true } }, aliases: { select: { alias: true } } },
         });
+
+        // Copy user's unit conversions as system-level conversions on the new community food
+        const userConversions = await tx.foodUnitConversion.findMany({
+          where: { customFoodId: id, userId },
+        });
+        if (userConversions.length > 0) {
+          await tx.foodUnitConversion.createMany({
+            data: userConversions.map((conv) => ({
+              communityFoodId: cf.id,
+              unitName: conv.unitName,
+              quantityInBaseServings: conv.quantityInBaseServings,
+              measurementSystem: conv.measurementSystem,
+            })),
+          });
+        }
 
         await tx.foodEntry.updateMany({
           where: { customFoodId: id },

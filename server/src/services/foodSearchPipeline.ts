@@ -263,6 +263,7 @@ interface CommunityFoodRow {
   id: string;
   name: string;
   brandName: string | null;
+  commonName: string | null;
   defaultServingSize: number;
   defaultServingUnit: string;
   calories: number;
@@ -277,22 +278,33 @@ async function searchCommunityFoods(
   query: NormalizedQuery,
 ): Promise<ScoredCandidate[]> {
   const { rows } = await pool.query<CommunityFoodRow>(
-    `SELECT id, name, "brandName", "defaultServingSize", "defaultServingUnit",
-       calories, "proteinG", "carbsG", "fatG", "usesCount",
+    `SELECT cf.id, cf.name, cf."brandName", cf."commonName",
+       cf."defaultServingSize", cf."defaultServingUnit",
+       cf.calories, cf."proteinG", cf."carbsG", cf."fatG", cf."usesCount",
        GREATEST(
-         similarity(name, $1), word_similarity($1, name),
-         COALESCE(similarity("brandName", $1), 0),
-         COALESCE(word_similarity($1, "brandName"), 0)
+         similarity(cf.name, $1), word_similarity($1, cf.name),
+         COALESCE(similarity(cf."brandName", $1), 0),
+         COALESCE(word_similarity($1, cf."brandName"), 0),
+         COALESCE(similarity(cf."commonName", $1), 0),
+         COALESCE(word_similarity($1, cf."commonName"), 0),
+         COALESCE(MAX(similarity(a.alias, $1)), 0),
+         COALESCE(MAX(word_similarity($1, a.alias)), 0)
        ) AS sim
-     FROM "CommunityFood"
-     WHERE status = 'ACTIVE'
+     FROM "CommunityFood" cf
+     LEFT JOIN "CommunityFoodAlias" a ON a."communityFoodId" = cf.id
+     WHERE cf.status = 'ACTIVE'
        AND (
-         name % $1
-         OR "brandName" % $1
-         OR word_similarity($1, name) > 0.25
-         OR word_similarity($1, "brandName") > 0.25
+         cf.name % $1
+         OR cf."brandName" % $1
+         OR cf."commonName" % $1
+         OR word_similarity($1, cf.name) > 0.25
+         OR word_similarity($1, cf."brandName") > 0.25
+         OR word_similarity($1, cf."commonName") > 0.25
+         OR a.alias % $1
+         OR word_similarity($1, a.alias) > 0.25
        )
-     ORDER BY sim DESC, "trustScore" DESC
+     GROUP BY cf.id
+     ORDER BY sim DESC, cf."trustScore" DESC
      LIMIT 5`,
     [query.canonical],
   );

@@ -5,7 +5,21 @@
 
 // --- Enums & Constants ---
 
-export type FoodSource = "DATABASE" | "CUSTOM" | "COMMUNITY" | "AI_ESTIMATE";
+export type FoodSource = "DATABASE" | "CUSTOM" | "COMMUNITY";
+
+export type FoodCategory =
+  | "PROTEIN"
+  | "DAIRY"
+  | "GRAIN"
+  | "FRUIT"
+  | "VEGETABLE"
+  | "FAT_OIL"
+  | "BEVERAGE"
+  | "CONDIMENT"
+  | "SNACK"
+  | "PREPARED_MEAL"
+  | "LEGUME"
+  | "OTHER";
 
 export type MealLabel = "breakfast" | "lunch" | "dinner" | "snack";
 
@@ -46,6 +60,11 @@ export interface ExtendedNutrition {
   sugarG?: number;
   saturatedFatG?: number;
   transFatG?: number;
+  potassiumMg?: number;
+  calciumMg?: number;
+  ironMg?: number;
+  vitaminDMcg?: number;
+  addedSugarG?: number;
 }
 
 export interface DailyGoal extends Macros {
@@ -86,6 +105,7 @@ export interface CustomFood extends Macros, ExtendedNutrition {
   id: string;
   name: string;
   brandName?: string;
+  category?: FoodCategory;
   servingSize: number;
   servingUnit: string;
   barcode?: string;
@@ -100,8 +120,13 @@ export interface CommunityFood extends Macros, ExtendedNutrition {
   name: string;
   brandName?: string;
   description?: string;
+  category?: FoodCategory;
+  commonName?: string;
   defaultServingSize: number;
   defaultServingUnit: string;
+  defaultLogUnit?: string;
+  defaultLogQuantity?: number;
+  dataSource?: string;
   usdaFdcId?: number;
   createdByUserId?: string;
   status: CommunityFoodStatus;
@@ -109,6 +134,7 @@ export interface CommunityFood extends Macros, ExtendedNutrition {
   reportsCount: number;
   trustScore: number;
   barcode?: string;
+  aliases?: string[];
   lastUsedAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -135,6 +161,7 @@ export interface FoodUnitConversion {
    */
   quantityInBaseServings: number;
   customFoodId?: string;
+  communityFoodId?: string;
   usdaFdcId?: number;
   measurementSystem: 'weight' | 'volume' | 'abstract';
 }
@@ -143,6 +170,7 @@ export interface CreateFoodUnitConversionRequest {
   unitName: string;
   quantityInBaseServings: number;
   customFoodId?: string;
+  communityFoodId?: string;
   usdaFdcId?: number;
   measurementSystem?: 'weight' | 'volume' | 'abstract';
 }
@@ -303,6 +331,7 @@ export interface UpdateFoodEntryRequest {
 export interface CreateCustomFoodRequest {
   name: string;
   brandName?: string;
+  category?: FoodCategory;
   servingSize: number;
   servingUnit: string;
   calories: number;
@@ -315,6 +344,11 @@ export interface CreateCustomFoodRequest {
   sugarG?: number;
   saturatedFatG?: number;
   transFatG?: number;
+  potassiumMg?: number;
+  calciumMg?: number;
+  ironMg?: number;
+  vitaminDMcg?: number;
+  addedSugarG?: number;
   barcode?: string;
 }
 
@@ -324,8 +358,13 @@ export interface CreateCommunityFoodRequest {
   name: string;
   brandName?: string;
   description?: string;
+  category?: FoodCategory;
+  commonName?: string;
   defaultServingSize: number;
   defaultServingUnit: string;
+  defaultLogUnit?: string;
+  defaultLogQuantity?: number;
+  dataSource?: string;
   calories: number;
   proteinG: number;
   carbsG: number;
@@ -336,6 +375,12 @@ export interface CreateCommunityFoodRequest {
   sugarG?: number;
   saturatedFatG?: number;
   transFatG?: number;
+  potassiumMg?: number;
+  calciumMg?: number;
+  ironMg?: number;
+  vitaminDMcg?: number;
+  addedSugarG?: number;
+  aliases?: string[];
   barcode?: string;
   barcodeType?: string;
 }

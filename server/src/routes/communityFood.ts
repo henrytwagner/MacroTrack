@@ -13,8 +13,13 @@ interface CommunityFoodRow {
   name: string;
   brandName: string | null;
   description: string | null;
+  category: string | null;
+  commonName: string | null;
   defaultServingSize: number;
   defaultServingUnit: string;
+  defaultLogUnit: string | null;
+  defaultLogQuantity: number | null;
+  dataSource: string | null;
   calories: number;
   proteinG: number;
   carbsG: number;
@@ -25,6 +30,11 @@ interface CommunityFoodRow {
   sugarG: number | null;
   saturatedFatG: number | null;
   transFatG: number | null;
+  potassiumMg: number | null;
+  calciumMg: number | null;
+  ironMg: number | null;
+  vitaminDMcg: number | null;
+  addedSugarG: number | null;
   usdaFdcId: number | null;
   createdByUserId: string | null;
   status: string;
@@ -35,6 +45,7 @@ interface CommunityFoodRow {
   createdAt: Date;
   updatedAt: Date;
   barcodes?: { barcode: string }[];
+  aliases?: { alias: string }[];
 }
 
 export function mapCommunityFood(food: CommunityFoodRow): CommunityFood {
@@ -43,8 +54,13 @@ export function mapCommunityFood(food: CommunityFoodRow): CommunityFood {
     name: food.name,
     brandName: food.brandName ?? undefined,
     description: food.description ?? undefined,
+    category: (food.category as CommunityFood["category"]) ?? undefined,
+    commonName: food.commonName ?? undefined,
     defaultServingSize: food.defaultServingSize,
     defaultServingUnit: food.defaultServingUnit,
+    defaultLogUnit: food.defaultLogUnit ?? undefined,
+    defaultLogQuantity: food.defaultLogQuantity ?? undefined,
+    dataSource: food.dataSource ?? undefined,
     calories: food.calories,
     proteinG: food.proteinG,
     carbsG: food.carbsG,
@@ -55,7 +71,13 @@ export function mapCommunityFood(food: CommunityFoodRow): CommunityFood {
     sugarG: food.sugarG ?? undefined,
     saturatedFatG: food.saturatedFatG ?? undefined,
     transFatG: food.transFatG ?? undefined,
+    potassiumMg: food.potassiumMg ?? undefined,
+    calciumMg: food.calciumMg ?? undefined,
+    ironMg: food.ironMg ?? undefined,
+    vitaminDMcg: food.vitaminDMcg ?? undefined,
+    addedSugarG: food.addedSugarG ?? undefined,
     barcode: food.barcodes?.[0]?.barcode ?? undefined,
+    aliases: food.aliases?.map((a) => a.alias),
     usdaFdcId: food.usdaFdcId ?? undefined,
     createdByUserId: food.createdByUserId ?? undefined,
     status: food.status as CommunityFood["status"],
@@ -72,8 +94,13 @@ interface CreateCommunityFoodBody {
   name: string;
   brandName?: string;
   description?: string;
+  category?: string;
+  commonName?: string;
   defaultServingSize: number;
   defaultServingUnit: string;
+  defaultLogUnit?: string;
+  defaultLogQuantity?: number;
+  dataSource?: string;
   calories: number;
   proteinG: number;
   carbsG: number;
@@ -84,6 +111,12 @@ interface CreateCommunityFoodBody {
   sugarG?: number;
   saturatedFatG?: number;
   transFatG?: number;
+  potassiumMg?: number;
+  calciumMg?: number;
+  ironMg?: number;
+  vitaminDMcg?: number;
+  addedSugarG?: number;
+  aliases?: string[];
   barcode?: string;
   barcodeType?: string;
 }
@@ -123,7 +156,7 @@ export async function communityFoodRoutes(app: FastifyInstance) {
         orderBy: [{ trustScore: "desc" }, { usesCount: "desc" }, { name: "asc" }],
         skip: (page - 1) * limit,
         take: limit,
-        include: { barcodes: { select: { barcode: true } } },
+        include: { barcodes: { select: { barcode: true } }, aliases: { select: { alias: true } } },
       });
 
       return reply.send(foods.map(mapCommunityFood));
@@ -138,7 +171,7 @@ export async function communityFoodRoutes(app: FastifyInstance) {
 
       const food = await prisma.communityFood.findUnique({
         where: { id },
-        include: { barcodes: true },
+        include: { barcodes: true, aliases: { select: { alias: true } } },
       });
 
       if (!food) {
@@ -201,8 +234,13 @@ export async function communityFoodRoutes(app: FastifyInstance) {
           name: body.name.trim(),
           brandName: body.brandName?.trim() || null,
           description: body.description?.trim() || null,
+          category: body.category as any ?? null,
+          commonName: body.commonName?.trim() || null,
           defaultServingSize: body.defaultServingSize,
           defaultServingUnit: body.defaultServingUnit,
+          defaultLogUnit: body.defaultLogUnit?.trim() || null,
+          defaultLogQuantity: body.defaultLogQuantity ?? null,
+          dataSource: body.dataSource?.trim() || null,
           calories: body.calories,
           proteinG: body.proteinG,
           carbsG: body.carbsG,
@@ -213,6 +251,11 @@ export async function communityFoodRoutes(app: FastifyInstance) {
           sugarG: body.sugarG,
           saturatedFatG: body.saturatedFatG,
           transFatG: body.transFatG,
+          potassiumMg: body.potassiumMg,
+          calciumMg: body.calciumMg,
+          ironMg: body.ironMg,
+          vitaminDMcg: body.vitaminDMcg,
+          addedSugarG: body.addedSugarG,
           createdByUserId: userId,
           ...(body.barcode && {
             barcodes: {
@@ -223,8 +266,13 @@ export async function communityFoodRoutes(app: FastifyInstance) {
               },
             },
           }),
+          ...(body.aliases?.length && {
+            aliases: {
+              create: body.aliases.map((alias) => ({ alias: alias.trim() })),
+            },
+          }),
         },
-        include: { barcodes: true },
+        include: { barcodes: true, aliases: { select: { alias: true } } },
       });
 
       return reply.code(201).send({
@@ -273,8 +321,13 @@ export async function communityFoodRoutes(app: FastifyInstance) {
             ...(body.name !== undefined && { name: body.name.trim() }),
             ...(body.brandName !== undefined && { brandName: body.brandName?.trim() || null }),
             ...(body.description !== undefined && { description: body.description?.trim() || null }),
+            ...(body.category !== undefined && { category: body.category as any ?? null }),
+            ...(body.commonName !== undefined && { commonName: body.commonName?.trim() || null }),
             ...(body.defaultServingSize !== undefined && { defaultServingSize: body.defaultServingSize }),
             ...(body.defaultServingUnit !== undefined && { defaultServingUnit: body.defaultServingUnit }),
+            ...(body.defaultLogUnit !== undefined && { defaultLogUnit: body.defaultLogUnit?.trim() || null }),
+            ...(body.defaultLogQuantity !== undefined && { defaultLogQuantity: body.defaultLogQuantity }),
+            ...(body.dataSource !== undefined && { dataSource: body.dataSource?.trim() || null }),
             ...(body.calories !== undefined && { calories: body.calories }),
             ...(body.proteinG !== undefined && { proteinG: body.proteinG }),
             ...(body.carbsG !== undefined && { carbsG: body.carbsG }),
@@ -285,8 +338,23 @@ export async function communityFoodRoutes(app: FastifyInstance) {
             ...(body.sugarG !== undefined && { sugarG: body.sugarG }),
             ...(body.saturatedFatG !== undefined && { saturatedFatG: body.saturatedFatG }),
             ...(body.transFatG !== undefined && { transFatG: body.transFatG }),
+            ...(body.potassiumMg !== undefined && { potassiumMg: body.potassiumMg }),
+            ...(body.calciumMg !== undefined && { calciumMg: body.calciumMg }),
+            ...(body.ironMg !== undefined && { ironMg: body.ironMg }),
+            ...(body.vitaminDMcg !== undefined && { vitaminDMcg: body.vitaminDMcg }),
+            ...(body.addedSugarG !== undefined && { addedSugarG: body.addedSugarG }),
           },
         });
+
+        // Handle aliases: delete-and-recreate if provided
+        if (body.aliases !== undefined) {
+          await tx.communityFoodAlias.deleteMany({ where: { communityFoodId: id } });
+          if (body.aliases.length > 0) {
+            await tx.communityFoodAlias.createMany({
+              data: body.aliases.map((alias) => ({ communityFoodId: id, alias: alias.trim() })),
+            });
+          }
+        }
 
         // Handle barcode changes when the client explicitly sends the barcode field.
         // Matches custom food behavior: body.barcode present → apply change.
@@ -308,10 +376,10 @@ export async function communityFoodRoutes(app: FastifyInstance) {
           }
         }
 
-        // Re-fetch with barcodes so the response reflects the new state
+        // Re-fetch with barcodes and aliases so the response reflects the new state
         return await tx.communityFood.findUniqueOrThrow({
           where: { id },
-          include: { barcodes: { select: { barcode: true } } },
+          include: { barcodes: { select: { barcode: true } }, aliases: { select: { alias: true } } },
         });
       });
 

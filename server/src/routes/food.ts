@@ -73,6 +73,7 @@ function mapEntry(entry: {
 function mapCustomFood(food: {
   id: string;
   name: string;
+  category?: string | null;
   servingSize: number;
   servingUnit: string;
   calories: number;
@@ -85,12 +86,18 @@ function mapCustomFood(food: {
   sugarG: number | null;
   saturatedFatG: number | null;
   transFatG: number | null;
+  potassiumMg: number | null;
+  calciumMg: number | null;
+  ironMg: number | null;
+  vitaminDMcg: number | null;
+  addedSugarG: number | null;
   createdAt: Date;
   updatedAt: Date;
 }): CustomFood {
   return {
     id: food.id,
     name: food.name,
+    category: (food.category as CustomFood["category"]) ?? undefined,
     servingSize: food.servingSize,
     servingUnit: food.servingUnit,
     calories: food.calories,
@@ -103,6 +110,11 @@ function mapCustomFood(food: {
     sugarG: food.sugarG ?? undefined,
     saturatedFatG: food.saturatedFatG ?? undefined,
     transFatG: food.transFatG ?? undefined,
+    potassiumMg: food.potassiumMg ?? undefined,
+    calciumMg: food.calciumMg ?? undefined,
+    ironMg: food.ironMg ?? undefined,
+    vitaminDMcg: food.vitaminDMcg ?? undefined,
+    addedSugarG: food.addedSugarG ?? undefined,
     createdAt: food.createdAt.toISOString(),
     updatedAt: food.updatedAt.toISOString(),
   };
@@ -114,6 +126,7 @@ function mapFoodUnitConversion(conv: {
   quantityInBaseServings: number;
   measurementSystem: string;
   customFoodId: string | null;
+  communityFoodId: string | null;
   usdaFdcId: number | null;
 }): FoodUnitConversion {
   return {
@@ -122,6 +135,7 @@ function mapFoodUnitConversion(conv: {
     quantityInBaseServings: conv.quantityInBaseServings,
     measurementSystem: conv.measurementSystem as 'weight' | 'volume' | 'abstract',
     customFoodId: conv.customFoodId ?? undefined,
+    communityFoodId: conv.communityFoodId ?? undefined,
     usdaFdcId: conv.usdaFdcId ?? undefined,
   };
 }
@@ -368,10 +382,13 @@ export async function foodRoutes(app: FastifyInstance) {
             OR: [
               { name: { contains: query, mode: "insensitive" } },
               { brandName: { contains: query, mode: "insensitive" } },
+              { commonName: { contains: query, mode: "insensitive" } },
+              { aliases: { some: { alias: { contains: query, mode: "insensitive" } } } },
             ],
           },
           take: 10,
           orderBy: [{ trustScore: "desc" }, { usesCount: "desc" }, { name: "asc" }],
+          include: { barcodes: { select: { barcode: true } }, aliases: { select: { alias: true } } },
         }),
         searchFoods(query),
       ]);
@@ -395,29 +412,24 @@ export async function foodRoutes(app: FastifyInstance) {
     },
   );
 
-  // GET /api/food/units?customFoodId=...&usdaFdcId=...
+  // GET /api/food/units?customFoodId=...&usdaFdcId=...&communityFoodId=...
   app.get<{
-    Querystring: { customFoodId?: string; usdaFdcId?: string };
+    Querystring: { customFoodId?: string; usdaFdcId?: string; communityFoodId?: string };
   }>("/api/food/units", async (request, reply) => {
     const userId = request.userId;
-    const { customFoodId, usdaFdcId } = request.query;
+    const { customFoodId, usdaFdcId, communityFoodId } = request.query;
 
-    if (!customFoodId && !usdaFdcId) {
+    if (!customFoodId && !usdaFdcId && !communityFoodId) {
       return reply.code(400).send({
         error:
-          "Either customFoodId or usdaFdcId query parameter is required to list unit conversions.",
+          "Either customFoodId, usdaFdcId, or communityFoodId query parameter is required to list unit conversions.",
       });
     }
 
-    const where: {
-      userId: string;
-      customFoodId?: string;
-      usdaFdcId?: number;
-    } = { userId };
-
-    if (customFoodId) {
-      where.customFoodId = customFoodId;
-    }
+    // Build food-specific filter
+    const foodFilter: Record<string, unknown> = {};
+    if (customFoodId) foodFilter.customFoodId = customFoodId;
+    if (communityFoodId) foodFilter.communityFoodId = communityFoodId;
     if (usdaFdcId) {
       const parsed = Number.parseInt(usdaFdcId, 10);
       if (!Number.isFinite(parsed)) {
@@ -425,11 +437,15 @@ export async function foodRoutes(app: FastifyInstance) {
           .code(400)
           .send({ error: "usdaFdcId must be a valid integer" });
       }
-      where.usdaFdcId = parsed;
+      foodFilter.usdaFdcId = parsed;
     }
 
+    // Return both user-specific and system-level (userId=null) conversions
     const conversions = await prisma.foodUnitConversion.findMany({
-      where,
+      where: {
+        ...foodFilter,
+        OR: [{ userId }, { userId: null }],
+      },
       orderBy: { unitName: "asc" },
     });
 
@@ -461,10 +477,10 @@ export async function foodRoutes(app: FastifyInstance) {
       }
       body.unitName = trimmedUnitName;
 
-      if (!body.customFoodId && !body.usdaFdcId) {
+      if (!body.customFoodId && !body.usdaFdcId && !body.communityFoodId) {
         return reply.code(400).send({
           error:
-            "Either customFoodId or usdaFdcId is required when creating a unit conversion.",
+            "Either customFoodId, usdaFdcId, or communityFoodId is required when creating a unit conversion.",
         });
       }
 
@@ -481,6 +497,7 @@ export async function foodRoutes(app: FastifyInstance) {
           userId,
           unitName: body.unitName,
           customFoodId: body.customFoodId ?? undefined,
+          communityFoodId: body.communityFoodId ?? undefined,
           usdaFdcId: body.usdaFdcId ?? undefined,
         },
       });
@@ -492,6 +509,7 @@ export async function foodRoutes(app: FastifyInstance) {
           quantityInBaseServings: body.quantityInBaseServings,
           measurementSystem: body.measurementSystem ?? "abstract",
           customFoodId: body.customFoodId,
+          communityFoodId: body.communityFoodId,
           usdaFdcId: body.usdaFdcId,
         },
       });

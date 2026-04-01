@@ -1490,7 +1490,7 @@ async function handleEstimateFood(
     proteinG: Math.round(estimate.proteinG * ratio * 10) / 10,
     carbsG: Math.round(estimate.carbsG * ratio * 10) / 10,
     fatG: Math.round(estimate.fatG * ratio * 10) / 10,
-    source: "AI_ESTIMATE",
+    source: "CUSTOM",
     mealLabel,
     state: "estimate_card",
     isEstimate: true,
