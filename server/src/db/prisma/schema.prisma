@@ -409,3 +409,10 @@ enum GoalAggressiveness {
   STANDARD
   AGGRESSIVE
 }
+
+model WaitlistEntry {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  createdAt DateTime @default(now())
+}

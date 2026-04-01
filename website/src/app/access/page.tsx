@@ -6,13 +6,14 @@ import Image from "next/image";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 
-// TODO: Update this to your actual server URL
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  "https://backend-production-f8937.up.railway.app";
 
 export default function AccessPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "duplicate" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
@@ -32,7 +33,8 @@ export default function AccessPage() {
         throw new Error(data.message || "Something went wrong. Please try again.");
       }
 
-      setStatus("success");
+      const data = await res.json();
+      setStatus(data.message === "already_on_list" ? "duplicate" : "success");
     } catch (err) {
       setStatus("error");
       setErrorMessage(err instanceof Error ? err.message : "Something went wrong.");
@@ -58,17 +60,22 @@ export default function AccessPage() {
                 and we&apos;ll send you an invite.
               </p>
 
-              {status === "success" ? (
+              {status === "success" || status === "duplicate" ? (
                 <div className="mt-10 rounded-2xl border border-accent/30 bg-accent/5 p-8">
                   <div className="flex items-center gap-3 mb-3">
                     <svg className="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <h3 className="text-xl font-bold">You&apos;re in!</h3>
+                    <h3 className="text-xl font-bold">
+                      {status === "duplicate" ? "You\u2019re already on the list!" : "You\u2019re in!"}
+                    </h3>
                   </div>
                   <p className="text-muted leading-relaxed">
-                    We&apos;ll send a TestFlight invite to <strong className="text-foreground">{email}</strong> shortly.
-                    Check your inbox (and spam folder) for the link.
+                    {status === "duplicate" ? (
+                      <>We already have <strong className="text-foreground">{email}</strong> on our list. We&apos;ll be in touch soon!</>
+                    ) : (
+                      <>We&apos;ll send a TestFlight invite to <strong className="text-foreground">{email}</strong> shortly. Check your inbox (and spam folder) for the link.</>
+                    )}
                   </p>
                 </div>
               ) : (
@@ -108,7 +115,7 @@ export default function AccessPage() {
 
                   <button
                     type="submit"
-                    disabled={status === "loading"}
+                    disabled={status === "loading" || !name.trim() || !email.trim()}
                     className="w-full btn-brand py-3.5 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {status === "loading" ? "Submitting..." : "Request Access"}

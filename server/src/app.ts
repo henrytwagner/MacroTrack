@@ -18,6 +18,7 @@ import { statsRoutes } from "./routes/stats.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { voiceSessionRoutes } from "./websocket/voiceSession.js";
 import { kitchenModeSessionRoutes } from "./websocket/kitchenModeSession.js";
+import { waitlistRoutes } from "./routes/waitlist.js";
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
@@ -37,6 +38,7 @@ export async function buildApp() {
     return { status: "ok" };
   });
   await app.register(authRoutes);
+  await app.register(waitlistRoutes);
 
   // Auth middleware — all routes registered after this require a Bearer token
   app.addHook("preHandler", authenticate);
