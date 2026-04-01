@@ -126,6 +126,12 @@ model CustomFood {
   sugarG         Float?
   saturatedFatG  Float?
   transFatG      Float?
+  potassiumMg    Float?
+  calciumMg      Float?
+  ironMg         Float?
+  vitaminDMcg    Float?
+  addedSugarG    Float?
+  category       FoodCategory?
   barcode        String?
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
@@ -189,8 +195,9 @@ model VoiceSession {
 /// users to log with alternative units.
 model FoodUnitConversion {
   id                 String   @id @default(uuid())
-  userId             String
+  userId             String?
   customFoodId       String?
+  communityFoodId    String?
   usdaFdcId          Int?
   /// Name of the user-facing unit (e.g. "slice", "cup").
   unitName           String
@@ -204,11 +211,13 @@ model FoodUnitConversion {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  user       User        @relation(fields: [userId], references: [id])
-  customFood CustomFood? @relation(fields: [customFoodId], references: [id])
+  user           User?           @relation(fields: [userId], references: [id])
+  customFood     CustomFood?     @relation(fields: [customFoodId], references: [id])
+  communityFood  CommunityFood?  @relation(fields: [communityFoodId], references: [id])
 
   @@index([userId, customFoodId, unitName])
   @@index([userId, usdaFdcId, unitName])
+  @@index([communityFoodId, unitName])
 }
 
 model GoalProfile {
@@ -260,6 +269,16 @@ model CommunityFood {
   sugarG             Float?
   saturatedFatG      Float?
   transFatG          Float?
+  potassiumMg        Float?
+  calciumMg          Float?
+  ironMg             Float?
+  vitaminDMcg        Float?
+  addedSugarG        Float?
+  category           FoodCategory?
+  commonName         String?
+  defaultLogUnit     String?
+  defaultLogQuantity Float?
+  dataSource         String?
   usdaFdcId          Int?
   createdByUserId    String?
   status             CommunityFoodStatus @default(ACTIVE)
@@ -270,10 +289,12 @@ model CommunityFood {
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 
-  createdBy   User?                @relation("CommunityFoodCreator", fields: [createdByUserId], references: [id])
-  foodEntries FoodEntry[]
-  barcodes    CommunityFoodBarcode[]
-  reports     CommunityFoodReport[]
+  createdBy      User?                  @relation("CommunityFoodCreator", fields: [createdByUserId], references: [id])
+  foodEntries    FoodEntry[]
+  barcodes       CommunityFoodBarcode[]
+  reports        CommunityFoodReport[]
+  aliases        CommunityFoodAlias[]
+  unitConversions FoodUnitConversion[]
 
   @@index([name])
   @@index([status])
@@ -302,6 +323,18 @@ model CommunityFoodReport {
 
   communityFood CommunityFood @relation(fields: [communityFoodId], references: [id])
   reporter      User?         @relation("FoodReporter", fields: [reporterUserId], references: [id])
+}
+
+model CommunityFoodAlias {
+  id              String        @id @default(uuid())
+  communityFoodId String
+  alias           String
+  createdAt       DateTime      @default(now())
+
+  communityFood   CommunityFood @relation(fields: [communityFoodId], references: [id], onDelete: Cascade)
+
+  @@index([alias])
+  @@index([communityFoodId])
 }
 
 model USDAFoodMetrics {
@@ -356,7 +389,21 @@ enum FoodSource {
   DATABASE
   CUSTOM
   COMMUNITY
-  AI_ESTIMATE
+}
+
+enum FoodCategory {
+  PROTEIN
+  DAIRY
+  GRAIN
+  FRUIT
+  VEGETABLE
+  FAT_OIL
+  BEVERAGE
+  CONDIMENT
+  SNACK
+  PREPARED_MEAL
+  LEGUME
+  OTHER
 }
 
 enum CommunityFoodStatus {
@@ -414,5 +461,6 @@ model WaitlistEntry {
   id        String   @id @default(uuid())
   name      String
   email     String   @unique
+  source    String?
   createdAt DateTime @default(now())
 }
