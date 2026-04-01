@@ -9,6 +9,7 @@ const PUBLIC_ROUTES = [
   "/api/auth/refresh",
   "/api/auth/forgot-password",
   "/api/auth/reset-password",
+  "/api/waitlist",
 ];
 
 const WS_ROUTES = [
