@@ -281,6 +281,10 @@ struct ApiError: Error, LocalizedError, Sendable {
         return try await get("/api/food/units?customFoodId=\(customFoodId.urlEncoded)")
     }
 
+    func getFoodUnitConversionsForCommunityFood(_ communityFoodId: String) async throws -> [FoodUnitConversion] {
+        return try await get("/api/food/units?communityFoodId=\(communityFoodId.urlEncoded)")
+    }
+
     func getFoodUnitConversionsForUsdaFood(_ usdaFdcId: Int) async throws -> [FoodUnitConversion] {
         return try await get("/api/food/units?usdaFdcId=\(usdaFdcId)")
     }
@@ -300,6 +304,20 @@ struct ApiError: Error, LocalizedError, Sendable {
 
     func cascadeUnitConversions(_ data: CascadeUnitConversionsRequest) async throws {
         try await deleteWithBody("/api/food/units/cascade", method: "PATCH", body: data)
+    }
+
+    // MARK: - Food Preferences
+
+    func getFoodPreference(foodRef: String) async throws -> UserFoodPreference {
+        return try await get("/api/food/preferences/\(foodRef.urlEncoded)")
+    }
+
+    func upsertFoodPreference(foodRef: String, data: UpsertFoodPreferenceRequest) async throws -> UserFoodPreference {
+        return try await post("/api/food/preferences/\(foodRef.urlEncoded)", method: "PUT", body: data)
+    }
+
+    func deleteFoodPreference(foodRef: String) async throws {
+        try await delete("/api/food/preferences/\(foodRef.urlEncoded)")
     }
 
     // MARK: - Barcode

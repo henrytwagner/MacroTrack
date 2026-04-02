@@ -27,6 +27,7 @@ final class CreateFoodViewModel {
     // Form fields (all String for TextField binding, parsed at save time)
     var name:             String = ""
     var brandName:        String = ""
+    var category:         FoodCategory? = nil
     var servingSizeText:  String = ""
     var servingUnit:      String = "g"
     var caloriesText:     String = ""
@@ -39,8 +40,16 @@ final class CreateFoodViewModel {
     var sugarText:        String = ""
     var saturatedFatText: String = ""
     var transFatText:     String = ""
+    var potassiumText:    String = ""
+    var calciumText:      String = ""
+    var ironText:         String = ""
+    var vitaminDText:     String = ""
+    var addedSugarText:   String = ""
     var barcode:          String = ""
     var publishMode:      PublishMode = .personal
+
+    // Community-only fields
+    var commonName:              String = ""
 
     var pendingConversions: [PendingUnitConversion] = []
     var overlayPanel:       FoodUnitConversionPanel = .idle
@@ -80,6 +89,7 @@ final class CreateFoodViewModel {
         case .editCustom(let food):
             name             = food.name
             brandName        = food.brandName ?? ""
+            category         = food.category
             servingUnit      = food.servingUnit
             servingSizeText  = formatQuantity(food.servingSize, unit: food.servingUnit)
             caloriesText     = Self.fmt(food.calories)
@@ -92,12 +102,19 @@ final class CreateFoodViewModel {
             sugarText        = food.sugarG.map         { Self.fmt($0) } ?? ""
             saturatedFatText = food.saturatedFatG.map  { Self.fmt($0) } ?? ""
             transFatText     = food.transFatG.map      { Self.fmt($0) } ?? ""
+            potassiumText    = food.potassiumMg.map    { Self.fmt($0) } ?? ""
+            calciumText      = food.calciumMg.map      { Self.fmt($0) } ?? ""
+            ironText         = food.ironMg.map         { Self.fmt($0) } ?? ""
+            vitaminDText     = food.vitaminDMcg.map    { Self.fmt($0) } ?? ""
+            addedSugarText   = food.addedSugarG.map    { Self.fmt($0) } ?? ""
             barcode          = food.barcode ?? ""
 
         case .editCommunity(let food):
             publishMode      = .community
             name             = food.name
             brandName        = food.brandName ?? ""
+            category         = food.category
+            commonName       = food.commonName ?? ""
             servingUnit      = food.defaultServingUnit
             servingSizeText  = formatQuantity(food.defaultServingSize, unit: food.defaultServingUnit)
             caloriesText     = Self.fmt(food.calories)
@@ -110,17 +127,34 @@ final class CreateFoodViewModel {
             sugarText        = food.sugarG.map         { Self.fmt($0) } ?? ""
             saturatedFatText = food.saturatedFatG.map  { Self.fmt($0) } ?? ""
             transFatText     = food.transFatG.map      { Self.fmt($0) } ?? ""
+            potassiumText    = food.potassiumMg.map    { Self.fmt($0) } ?? ""
+            calciumText      = food.calciumMg.map      { Self.fmt($0) } ?? ""
+            ironText         = food.ironMg.map         { Self.fmt($0) } ?? ""
+            vitaminDText     = food.vitaminDMcg.map    { Self.fmt($0) } ?? ""
+            addedSugarText   = food.addedSugarG.map    { Self.fmt($0) } ?? ""
             barcode          = food.barcode ?? ""
 
         case .publishFromCustom(let food):
             name             = food.name
             brandName        = food.brandName ?? ""
+            category         = food.category
             servingUnit      = food.servingUnit
             servingSizeText  = formatQuantity(food.servingSize, unit: food.servingUnit)
             caloriesText     = Self.fmt(food.calories)
             proteinText      = Self.fmt(food.proteinG)
             carbsText        = Self.fmt(food.carbsG)
             fatText          = Self.fmt(food.fatG)
+            sodiumText       = food.sodiumMg.map       { Self.fmt($0) } ?? ""
+            cholesterolText  = food.cholesterolMg.map  { Self.fmt($0) } ?? ""
+            fiberText        = food.fiberG.map         { Self.fmt($0) } ?? ""
+            sugarText        = food.sugarG.map         { Self.fmt($0) } ?? ""
+            saturatedFatText = food.saturatedFatG.map  { Self.fmt($0) } ?? ""
+            transFatText     = food.transFatG.map      { Self.fmt($0) } ?? ""
+            potassiumText    = food.potassiumMg.map    { Self.fmt($0) } ?? ""
+            calciumText      = food.calciumMg.map      { Self.fmt($0) } ?? ""
+            ironText         = food.ironMg.map         { Self.fmt($0) } ?? ""
+            vitaminDText     = food.vitaminDMcg.map    { Self.fmt($0) } ?? ""
+            addedSugarText   = food.addedSugarG.map    { Self.fmt($0) } ?? ""
             barcode          = food.barcode ?? ""
             publishMode      = .community
         }
@@ -170,6 +204,8 @@ final class CreateFoodViewModel {
                     name:               name,
                     brandName:          brandName.isEmpty ? nil : brandName,
                     description:        nil,
+                    category:           category,
+                    commonName:         commonName.isEmpty ? nil : commonName,
                     defaultServingSize: servingSize,
                     defaultServingUnit: servingUnit,
                     calories:           calories,
@@ -182,6 +218,11 @@ final class CreateFoodViewModel {
                     sugarG:             Double(sugarText),
                     saturatedFatG:      Double(saturatedFatText),
                     transFatG:          Double(transFatText),
+                    potassiumMg:        Double(potassiumText),
+                    calciumMg:          Double(calciumText),
+                    ironMg:             Double(ironText),
+                    vitaminDMcg:        Double(vitaminDText),
+                    addedSugarG:        Double(addedSugarText),
                     barcode:            normalizedBarcode,
                     barcodeType:        nil)
                 _ = try await APIClient.shared.createCommunityFood(req)
@@ -190,6 +231,7 @@ final class CreateFoodViewModel {
                 let req = CreateCustomFoodRequest(
                     name:          name,
                     brandName:     brandName.isEmpty ? nil : brandName,
+                    category:      category,
                     servingSize:   servingSize,
                     servingUnit:   servingUnit,
                     calories:      calories,
@@ -202,6 +244,11 @@ final class CreateFoodViewModel {
                     sugarG:        Double(sugarText),
                     saturatedFatG: Double(saturatedFatText),
                     transFatG:     Double(transFatText),
+                    potassiumMg:   Double(potassiumText),
+                    calciumMg:     Double(calciumText),
+                    ironMg:        Double(ironText),
+                    vitaminDMcg:   Double(vitaminDText),
+                    addedSugarG:   Double(addedSugarText),
                     barcode:       normalizedBarcode)
                 let food = try await APIClient.shared.createCustomFood(req)
                 // Save pending unit conversions
@@ -221,6 +268,7 @@ final class CreateFoodViewModel {
             let req = UpdateCustomFoodRequest(
                 name:          name,
                 brandName:     brandName.isEmpty ? nil : brandName,
+                category:      category,
                 servingSize:   servingSize,
                 servingUnit:   servingUnit,
                 calories:      calories,
@@ -233,6 +281,11 @@ final class CreateFoodViewModel {
                 sugarG:        Double(sugarText),
                 saturatedFatG: Double(saturatedFatText),
                 transFatG:     Double(transFatText),
+                potassiumMg:   Double(potassiumText),
+                calciumMg:     Double(calciumText),
+                ironMg:        Double(ironText),
+                vitaminDMcg:   Double(vitaminDText),
+                addedSugarG:   Double(addedSugarText),
                 barcode:       editBarcode)
             return try await APIClient.shared.updateCustomFood(id: existing.id, data: req)
 
@@ -241,6 +294,8 @@ final class CreateFoodViewModel {
                 name:               name,
                 brandName:          brandName.isEmpty ? nil : brandName,
                 description:        nil,
+                category:           category,
+                commonName:         commonName.isEmpty ? nil : commonName,
                 defaultServingSize: servingSize,
                 defaultServingUnit: servingUnit,
                 calories:           calories,
@@ -253,6 +308,11 @@ final class CreateFoodViewModel {
                 sugarG:             Double(sugarText),
                 saturatedFatG:      Double(saturatedFatText),
                 transFatG:          Double(transFatText),
+                potassiumMg:        Double(potassiumText),
+                calciumMg:          Double(calciumText),
+                ironMg:             Double(ironText),
+                vitaminDMcg:        Double(vitaminDText),
+                addedSugarG:        Double(addedSugarText),
                 barcode:            editBarcode,
                 barcodeType:        nil)
             _ = try await APIClient.shared.updateCommunityFood(id: existing.id, data: req)

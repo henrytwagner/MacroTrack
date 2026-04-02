@@ -69,6 +69,7 @@ struct ProfileView: View {
     @Environment(AuthStore.self)       private var authStore
     @Environment(ProfileStore.self)    private var profileStore
     @Environment(AppearanceStore.self) private var appearanceStore
+    @Environment(ProgressPhotoStore.self) private var progressPhotoStore
 
     @State private var unitSystem:        String = "METRIC"
     @State private var showGoalsStub:         Bool = false
@@ -77,6 +78,8 @@ struct ProfileView: View {
     @State private var showCommunityFoods:    Bool = false
     @State private var showAccount:           Bool = false
     @State private var showScaleConnection:   Bool = false
+    @State private var showProgressGallery:   Bool = false
+    @State private var showProgressCamera:    Bool = false
 
     private let appearanceModes: [(label: String, icon: String, value: String)] = [
         ("System", "iphone",       "system"),
@@ -90,6 +93,7 @@ struct ProfileView: View {
                 pageTitle
                 profileCard
                 profileSection
+                progressSection
                 nutritionSection
                 appearanceSection
                 devicesSection
@@ -127,6 +131,19 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showScaleConnection) {
             ScaleConnectionSheet()
+        }
+        .sheet(isPresented: $showProgressGallery) {
+            NavigationStack {
+                ProgressGalleryView()
+                    .environment(progressPhotoStore)
+                    .environment(WeightStore.shared)
+                    .environment(profileStore)
+            }
+        }
+        .fullScreenCover(isPresented: $showProgressCamera) {
+            ProgressCameraView()
+                .environment(progressPhotoStore)
+                .environment(WeightStore.shared)
         }
     }
 
@@ -184,6 +201,21 @@ struct ProfileView: View {
             SettingsRow(icon: "person.circle", label: "Health profile",
                         subtitle: "Gender, height, weight, age, activity") {
                 showHealthProfile = true
+            }
+        }
+    }
+
+    private var progressSection: some View {
+        sectionGroup(label: "PROGRESS") {
+            VStack(spacing: 0) {
+                SettingsRow(icon: "photo.on.rectangle", label: "Progress Photos",
+                            subtitle: "\(progressPhotoStore.photos.count) photos") {
+                    showProgressGallery = true
+                }
+                RowSeparator()
+                SettingsRow(icon: "camera.fill", label: "Take Progress Photo") {
+                    showProgressCamera = true
+                }
             }
         }
     }
@@ -383,4 +415,5 @@ struct ProfileView: View {
         .environment(AuthStore.shared)
         .environment(ProfileStore.shared)
         .environment(AppearanceStore.shared)
+        .environment(ProgressPhotoStore.shared)
 }

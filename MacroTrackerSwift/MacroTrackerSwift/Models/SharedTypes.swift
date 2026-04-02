@@ -7,10 +7,41 @@ import Foundation
 // MARK: - Enums
 
 enum FoodSource: String, Codable, Sendable {
-    case database = "DATABASE"
-    case custom   = "CUSTOM"
+    case database  = "DATABASE"
+    case custom    = "CUSTOM"
     case community = "COMMUNITY"
-    // AI_ESTIMATE intentionally omitted — see CLAUDE.md
+}
+
+enum FoodCategory: String, Codable, Sendable, CaseIterable {
+    case protein      = "PROTEIN"
+    case dairy        = "DAIRY"
+    case grain        = "GRAIN"
+    case fruit        = "FRUIT"
+    case vegetable    = "VEGETABLE"
+    case fatOil       = "FAT_OIL"
+    case beverage     = "BEVERAGE"
+    case condiment    = "CONDIMENT"
+    case snack        = "SNACK"
+    case preparedMeal = "PREPARED_MEAL"
+    case legume       = "LEGUME"
+    case other        = "OTHER"
+
+    var displayName: String {
+        switch self {
+        case .protein:      "Protein"
+        case .dairy:        "Dairy"
+        case .grain:        "Grain"
+        case .fruit:        "Fruit"
+        case .vegetable:    "Vegetable"
+        case .fatOil:       "Fat & Oil"
+        case .beverage:     "Beverage"
+        case .condiment:    "Condiment"
+        case .snack:        "Snack"
+        case .preparedMeal: "Prepared Meal"
+        case .legume:       "Legume"
+        case .other:        "Other"
+        }
+    }
 }
 
 enum MealLabel: String, Codable, Sendable, CaseIterable {
@@ -46,6 +77,11 @@ struct ExtendedNutrition: Codable, Sendable {
     var sugarG:         Double?
     var saturatedFatG:  Double?
     var transFatG:      Double?
+    var potassiumMg:    Double?
+    var calciumMg:      Double?
+    var ironMg:         Double?
+    var vitaminDMcg:    Double?
+    var addedSugarG:    Double?
 }
 
 struct DailyGoal: Codable, Identifiable, Sendable {
@@ -110,6 +146,7 @@ struct CustomFood: Codable, Identifiable, Sendable {
     var id:              String
     var name:            String
     var brandName:       String?
+    var category:        FoodCategory?
     var servingSize:     Double
     var servingUnit:     String
     var calories:        Double
@@ -122,6 +159,11 @@ struct CustomFood: Codable, Identifiable, Sendable {
     var sugarG:          Double?
     var saturatedFatG:   Double?
     var transFatG:       Double?
+    var potassiumMg:     Double?
+    var calciumMg:       Double?
+    var ironMg:          Double?
+    var vitaminDMcg:     Double?
+    var addedSugarG:     Double?
     var barcode:         String?
     var createdAt:       String
     var updatedAt:       String
@@ -134,32 +176,41 @@ enum CommunityFoodStatus: String, Codable, Sendable {
 }
 
 struct CommunityFood: Codable, Identifiable, Sendable {
-    var id:                String
-    var name:              String
-    var brandName:         String?
-    var description:       String?
+    var id:                 String
+    var name:               String
+    var brandName:          String?
+    var description:        String?
+    var category:           FoodCategory?
+    var commonName:         String?
     var defaultServingSize: Double
     var defaultServingUnit: String
-    var calories:          Double
-    var proteinG:          Double
-    var carbsG:            Double
-    var fatG:              Double
-    var sodiumMg:          Double?
-    var cholesterolMg:     Double?
-    var fiberG:            Double?
-    var sugarG:            Double?
-    var saturatedFatG:     Double?
-    var transFatG:         Double?
-    var barcode:           String?
-    var usdaFdcId:         Int?
-    var createdByUserId:   String?
-    var status:            CommunityFoodStatus
-    var usesCount:         Int
-    var reportsCount:      Int
-    var trustScore:        Double
-    var lastUsedAt:        String?
-    var createdAt:         String
-    var updatedAt:         String
+    var dataSource:         String?
+    var calories:           Double
+    var proteinG:           Double
+    var carbsG:             Double
+    var fatG:               Double
+    var sodiumMg:           Double?
+    var cholesterolMg:      Double?
+    var fiberG:             Double?
+    var sugarG:             Double?
+    var saturatedFatG:      Double?
+    var transFatG:          Double?
+    var potassiumMg:        Double?
+    var calciumMg:          Double?
+    var ironMg:             Double?
+    var vitaminDMcg:        Double?
+    var addedSugarG:        Double?
+    var barcode:            String?
+    var aliases:            [String]?
+    var usdaFdcId:          Int?
+    var createdByUserId:    String?
+    var status:             CommunityFoodStatus
+    var usesCount:          Int
+    var reportsCount:       Int
+    var trustScore:         Double
+    var lastUsedAt:         String?
+    var createdAt:          String
+    var updatedAt:          String
 }
 
 enum MeasurementSystem: String, Codable, Sendable {
@@ -171,6 +222,7 @@ struct FoodUnitConversion: Codable, Identifiable, Sendable, Equatable {
     var unitName:                 String
     var quantityInBaseServings:   Double
     var customFoodId:             String?
+    var communityFoodId:          String?
     var usdaFdcId:                Int?
     var measurementSystem:        MeasurementSystem
 }
@@ -435,6 +487,7 @@ struct UpdateFoodEntryRequest: Codable, Sendable {
 struct CreateCustomFoodRequest: Codable, Sendable {
     var name:           String
     var brandName:      String?
+    var category:       FoodCategory?
     var servingSize:    Double
     var servingUnit:    String
     var calories:       Double
@@ -447,12 +500,18 @@ struct CreateCustomFoodRequest: Codable, Sendable {
     var sugarG:         Double?
     var saturatedFatG:  Double?
     var transFatG:      Double?
+    var potassiumMg:    Double?
+    var calciumMg:      Double?
+    var ironMg:         Double?
+    var vitaminDMcg:    Double?
+    var addedSugarG:    Double?
     var barcode:        String?
 }
 
 struct UpdateCustomFoodRequest: Codable, Sendable {
     var name:           String?
     var brandName:      String?
+    var category:       FoodCategory?
     var servingSize:    Double?
     var servingUnit:    String?
     var calories:       Double?
@@ -465,6 +524,11 @@ struct UpdateCustomFoodRequest: Codable, Sendable {
     var sugarG:         Double?
     var saturatedFatG:  Double?
     var transFatG:      Double?
+    var potassiumMg:    Double?
+    var calciumMg:      Double?
+    var ironMg:         Double?
+    var vitaminDMcg:    Double?
+    var addedSugarG:    Double?
     var barcode:        String?
 }
 
@@ -472,6 +536,8 @@ struct CreateCommunityFoodRequest: Codable, Sendable {
     var name:               String
     var brandName:          String?
     var description:        String?
+    var category:           FoodCategory?
+    var commonName:         String?
     var defaultServingSize: Double
     var defaultServingUnit: String
     var calories:           Double
@@ -484,6 +550,11 @@ struct CreateCommunityFoodRequest: Codable, Sendable {
     var sugarG:             Double?
     var saturatedFatG:      Double?
     var transFatG:          Double?
+    var potassiumMg:        Double?
+    var calciumMg:          Double?
+    var ironMg:             Double?
+    var vitaminDMcg:        Double?
+    var addedSugarG:        Double?
     var barcode:            String?
     var barcodeType:        String?
 }
@@ -542,6 +613,7 @@ struct CreateFoodUnitConversionRequest: Codable, Sendable {
     var unitName:               String
     var quantityInBaseServings: Double
     var customFoodId:           String?
+    var communityFoodId:        String?
     var usdaFdcId:              Int?
     var measurementSystem:      MeasurementSystem?
 }
@@ -556,6 +628,22 @@ struct CascadeUnitConversionsRequest: Codable, Sendable {
         var quantityInBaseServings:   Double
     }
     var updates: [Update]
+}
+
+// MARK: - User Food Preferences
+
+struct UserFoodPreference: Codable, Identifiable, Sendable {
+    var id:              String
+    var customFoodId:    String?
+    var communityFoodId: String?
+    var usdaFdcId:       Int?
+    var defaultQuantity: Double?
+    var defaultUnit:     String?
+}
+
+struct UpsertFoodPreferenceRequest: Codable, Sendable {
+    var defaultQuantity: Double?
+    var defaultUnit:     String?
 }
 
 // MARK: - Barcode
@@ -807,6 +895,37 @@ enum AnyFood: Sendable {
         }
     }
 
+    var foodCategory: FoodCategory? {
+        switch self {
+        case .custom(let f):    return f.category
+        case .community(let f): return f.category
+        case .usda:             return nil
+        }
+    }
+
+    var extendedNutrition: ExtendedNutrition {
+        switch self {
+        case .custom(let f):
+            return ExtendedNutrition(
+                sodiumMg: f.sodiumMg, cholesterolMg: f.cholesterolMg,
+                fiberG: f.fiberG, sugarG: f.sugarG,
+                saturatedFatG: f.saturatedFatG, transFatG: f.transFatG,
+                potassiumMg: f.potassiumMg, calciumMg: f.calciumMg,
+                ironMg: f.ironMg, vitaminDMcg: f.vitaminDMcg,
+                addedSugarG: f.addedSugarG)
+        case .community(let f):
+            return ExtendedNutrition(
+                sodiumMg: f.sodiumMg, cholesterolMg: f.cholesterolMg,
+                fiberG: f.fiberG, sugarG: f.sugarG,
+                saturatedFatG: f.saturatedFatG, transFatG: f.transFatG,
+                potassiumMg: f.potassiumMg, calciumMg: f.calciumMg,
+                ironMg: f.ironMg, vitaminDMcg: f.vitaminDMcg,
+                addedSugarG: f.addedSugarG)
+        case .usda:
+            return ExtendedNutrition()
+        }
+    }
+
     var asCustomFood: CustomFood? {
         guard case .custom(let f) = self else { return nil }
         return f
@@ -820,6 +939,15 @@ enum AnyFood: Sendable {
     var asUSDA: USDASearchResult? {
         guard case .usda(let f) = self else { return nil }
         return f
+    }
+
+    /// Reference string for the food preference API (e.g. "custom:abc123", "community:xyz", "usda:12345")
+    var foodRef: String {
+        switch self {
+        case .custom(let f):    return "custom:\(f.id)"
+        case .community(let f): return "community:\(f.id)"
+        case .usda(let f):      return "usda:\(f.fdcId)"
+        }
     }
 }
 

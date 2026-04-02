@@ -6,6 +6,7 @@ struct WeightTrackingView: View {
     @Environment(ProfileStore.self) private var profileStore
 
     @State private var showLogSheet = false
+    @State private var showProgressGallery = false
 
     var body: some View {
         ScrollView {
@@ -39,9 +40,21 @@ struct WeightTrackingView: View {
                     Image(systemName: "plus")
                 }
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showProgressGallery = true } label: {
+                    Label("Progress Photos", systemImage: "photo.on.rectangle")
+                }
+            }
         }
         .sheet(isPresented: $showLogSheet) {
             LogWeightSheet()
+                .environment(weightStore)
+                .environment(profileStore)
+                .environment(ProgressPhotoStore.shared)
+        }
+        .navigationDestination(isPresented: $showProgressGallery) {
+            ProgressGalleryView()
+                .environment(ProgressPhotoStore.shared)
                 .environment(weightStore)
                 .environment(profileStore)
         }

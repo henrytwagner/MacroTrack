@@ -652,6 +652,9 @@ struct FoodSearchView: View {
                 sodiumMg:    nil, cholesterolMg: nil,
                 fiberG:      nil, sugarG:        nil,
                 saturatedFatG: nil, transFatG:   nil,
+                potassiumMg: nil, calciumMg:     nil,
+                ironMg:      nil, vitaminDMcg:   nil,
+                addedSugarG: nil,
                 barcode:     nil,
                 createdAt:   "", updatedAt: "")
             return .custom(stub)
@@ -693,6 +696,9 @@ struct FoodSearchView: View {
                 sodiumMg:    nil, cholesterolMg: nil,
                 fiberG:      nil, sugarG:        nil,
                 saturatedFatG: nil, transFatG:   nil,
+                potassiumMg: nil, calciumMg:     nil,
+                ironMg:      nil, vitaminDMcg:   nil,
+                addedSugarG: nil,
                 barcode:     nil,
                 createdAt:   "", updatedAt: "")
             return .custom(stub)
@@ -726,7 +732,7 @@ struct FoodSearchView: View {
             id:                 communityFoodId ?? "",
             name:               name,
             brandName:          nil,
-            description:      nil,
+            description:        nil,
             defaultServingSize: servingSize,
             defaultServingUnit: servingUnit,
             calories:           macros.calories,
@@ -739,6 +745,11 @@ struct FoodSearchView: View {
             sugarG:             nil,
             saturatedFatG:      nil,
             transFatG:          nil,
+            potassiumMg:        nil,
+            calciumMg:          nil,
+            ironMg:             nil,
+            vitaminDMcg:        nil,
+            addedSugarG:        nil,
             usdaFdcId:          usdaFdcId,
             createdByUserId:    nil,
             status:             .active,

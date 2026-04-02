@@ -77,6 +77,10 @@ final class FoodDetailViewModel {
 
     // MARK: - Init
 
+    // User's saved default for this food (loaded async)
+    var userPreference: UserFoodPreference? = nil
+    var hasPreference: Bool { userPreference?.defaultQuantity != nil || userPreference?.defaultUnit != nil }
+
     init(food: AnyFood, mode: DetailMode) {
         self.food = food
         self.mode = mode
@@ -112,6 +116,29 @@ final class FoodDetailViewModel {
             fatG:     round1(m.fatG     * s))
     }
 
+    var scaledExtendedNutrition: ExtendedNutrition {
+        let n = food.extendedNutrition
+        let s = scaleFactor
+        return ExtendedNutrition(
+            sodiumMg:      n.sodiumMg.map      { round1($0 * s) },
+            cholesterolMg: n.cholesterolMg.map { round1($0 * s) },
+            fiberG:        n.fiberG.map        { round1($0 * s) },
+            sugarG:        n.sugarG.map        { round1($0 * s) },
+            saturatedFatG: n.saturatedFatG.map { round1($0 * s) },
+            transFatG:     n.transFatG.map     { round1($0 * s) },
+            potassiumMg:   n.potassiumMg.map   { round1($0 * s) },
+            calciumMg:     n.calciumMg.map     { round1($0 * s) },
+            ironMg:        n.ironMg.map        { round1($0 * s) },
+            vitaminDMcg:   n.vitaminDMcg.map   { round1($0 * s) },
+            addedSugarG:   n.addedSugarG.map   { round1($0 * s) })
+    }
+
+    var hasExtendedNutrition: Bool {
+        // Always show if there are macros — the section displays main macros in FDA layout
+        // plus any available micronutrients
+        true
+    }
+
     /// Pills: base unit + "servings" + conversion units, deduplicated
     var unitPills: [String] {
         var seen = Set<String>()
@@ -132,8 +159,8 @@ final class FoodDetailViewModel {
                 conversions = try await APIClient.shared.getFoodUnitConversionsForCustomFood(f.id)
             case .usda(let f):
                 conversions = try await APIClient.shared.getFoodUnitConversionsForUsdaFood(f.fdcId)
-            case .community:
-                conversions = []
+            case .community(let f):
+                conversions = try await APIClient.shared.getFoodUnitConversionsForCommunityFood(f.id)
             }
         } catch {}
         isLoadingConversions = false
@@ -145,6 +172,41 @@ final class FoodDetailViewModel {
             let prefs = try await APIClient.shared.getUserPreferences()
             suppressUsdaWarning = prefs.suppressUsdaWarning
             if !suppressUsdaWarning { showUsdaWarning = true }
+        } catch {}
+    }
+
+    /// Load user's saved default for this food and apply as pre-fill (add mode only).
+    func loadFoodPreference() async {
+        guard case .add = mode else { return }
+        do {
+            let pref = try await APIClient.shared.getFoodPreference(foodRef: food.foodRef)
+            userPreference = pref
+            if let unit = pref.defaultUnit, !unit.isEmpty {
+                selectedUnit = unit
+            }
+            if let qty = pref.defaultQuantity {
+                quantityText = formatQuantity(qty, unit: selectedUnit)
+            }
+        } catch {
+            // 404 = no preference, that's fine
+        }
+    }
+
+    /// Save the current quantity + unit as the user's default for this food.
+    func saveAsDefault() async {
+        let req = UpsertFoodPreferenceRequest(
+            defaultQuantity: quantity,
+            defaultUnit: selectedUnit)
+        do {
+            userPreference = try await APIClient.shared.upsertFoodPreference(foodRef: food.foodRef, data: req)
+        } catch {}
+    }
+
+    /// Clear the user's saved default for this food.
+    func clearDefault() async {
+        do {
+            try await APIClient.shared.deleteFoodPreference(foodRef: food.foodRef)
+            userPreference = nil
         } catch {}
     }
 

@@ -37,7 +37,7 @@ Always read this before generating or modifying Swift files.
 
 ### Models
 - All types in `Models/SharedTypes.swift` — exact port of `shared/types.ts`
-- `FoodSource.AI_ESTIMATE` is **intentionally absent** — server must never send it
+- `FoodSource.AI_ESTIMATE` has been removed from both server and client (was never used correctly)
 - All model structs conform to `Codable` and `Sendable`
 
 ## Theme

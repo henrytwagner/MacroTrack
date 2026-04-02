@@ -43,6 +43,12 @@ struct CreateFoodSheet: View {
                         // 3. Brand + barcode
                         brandRow
 
+                        // 3b. Category
+                        categoryRow
+
+                        // 3c. Community-only fields
+                        communityFieldsSection
+
                         // 4. Serving size + unit
                         servingSizeRow
 
@@ -349,6 +355,52 @@ struct CreateFoodSheet: View {
         .frame(maxWidth: .infinity)
     }
 
+    // MARK: - Category
+
+    private var categoryRow: some View {
+        HStack {
+            Text("Category")
+                .font(.appCaption1)
+                .foregroundStyle(Color.appTextSecondary)
+            Spacer()
+            Menu {
+                Button("None") { vm.category = nil }
+                Divider()
+                ForEach(FoodCategory.allCases, id: \.self) { cat in
+                    Button(cat.displayName) { vm.category = cat }
+                }
+            } label: {
+                HStack(spacing: Spacing.xs) {
+                    Text(vm.category?.displayName ?? "None")
+                        .font(.appBody)
+                        .foregroundStyle(vm.category == nil ? Color.appTextTertiary : Color.appText)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.appSurfaceSecondary)
+                .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
+            }
+        }
+        .padding(.horizontal, Spacing.lg)
+    }
+
+    // MARK: - Community-Only Fields
+
+    @ViewBuilder
+    private var communityFieldsSection: some View {
+        if vm.publishMode == .community {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                formField(label: "Common Name") {
+                    TextField("e.g. Chicken Breast", text: $vm.commonName)
+                }
+            }
+            .padding(.horizontal, Spacing.lg)
+        }
+    }
+
     // MARK: - Optional Fields
 
     @ViewBuilder
@@ -385,6 +437,18 @@ struct CreateFoodSheet: View {
                     HStack(spacing: Spacing.md) {
                         optionalField(label: "Saturated Fat g", text: $vm.saturatedFatText)
                         optionalField(label: "Trans Fat g",     text: $vm.transFatText)
+                    }
+                    HStack(spacing: Spacing.md) {
+                        optionalField(label: "Potassium mg",    text: $vm.potassiumText)
+                        optionalField(label: "Calcium mg",      text: $vm.calciumText)
+                    }
+                    HStack(spacing: Spacing.md) {
+                        optionalField(label: "Iron mg",         text: $vm.ironText)
+                        optionalField(label: "Vitamin D mcg",   text: $vm.vitaminDText)
+                    }
+                    HStack(spacing: Spacing.md) {
+                        optionalField(label: "Added Sugar g",   text: $vm.addedSugarText)
+                        Spacer().frame(maxWidth: .infinity)
                     }
                 }
                 .padding(.horizontal, Spacing.lg)

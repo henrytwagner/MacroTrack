@@ -29,7 +29,8 @@ final class ProfileStore {
         } catch is CancellationError {
             // ignore
         } catch {
-            isLoading = false
+            isLoading     = false
+            hasLoadedOnce = true
             self.error = error.localizedDescription
         }
     }

@@ -68,6 +68,11 @@ struct FoodDetailSheet: View {
             sugarG:        nil,
             saturatedFatG: nil,
             transFatG:     nil,
+            potassiumMg:   nil,
+            calciumMg:     nil,
+            ironMg:        nil,
+            vitaminDMcg:   nil,
+            addedSugarG:   nil,
             barcode:       nil,
             createdAt:     "",
             updatedAt:     "")
@@ -126,6 +131,7 @@ struct FoodDetailSheet: View {
                     quantitySection
                     if !(vm.scaleWeighingActive && scaleConnected) {
                         macroDashboardSection
+                        nutritionDetailsSection
                     }
                     Spacer(minLength: 100)
                 }
@@ -167,6 +173,7 @@ struct FoodDetailSheet: View {
         .presentationDragIndicator(.visible)
         .task {
             await vm.loadConversions()
+            await vm.loadFoodPreference()
             if !isEditMode { await vm.loadPreferences() }
             if vm.foodHasWeightUnit {
                 ScaleManager.shared.autoConnectIfNeeded()
@@ -233,16 +240,28 @@ struct FoodDetailSheet: View {
 
     private var foodInfoSection: some View {
         let source = identifiedFood.sourceOverride ?? identifiedFood.food.foodSource
-        return HStack(spacing: Spacing.sm) {
-            Text(identifiedFood.food.displayName)
-                .font(.system(size: 22, weight: .bold))
-                .foregroundStyle(Color.appText)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        let category = identifiedFood.food.foodCategory
+        return VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.sm) {
+                Text(identifiedFood.food.displayName)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Color.appText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            Image(systemName: FoodSourceIndicator.systemImage(for: source))
-                .font(.system(size: 20))
-                .foregroundStyle(FoodSourceIndicator.accentColor(for: source))
-                .accessibilityLabel(sourceAccessibilityLabel(source))
+                Image(systemName: FoodSourceIndicator.systemImage(for: source))
+                    .font(.system(size: 20))
+                    .foregroundStyle(FoodSourceIndicator.accentColor(for: source))
+                    .accessibilityLabel(sourceAccessibilityLabel(source))
+            }
+            if let cat = category {
+                Text(cat.displayName)
+                    .font(.appCaption1)
+                    .foregroundStyle(Color.appTextSecondary)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, 2)
+                    .background(Color.appSurfaceSecondary)
+                    .clipShape(Capsule())
+            }
         }
         .padding(.horizontal, Spacing.lg)
     }
@@ -280,6 +299,93 @@ struct FoodDetailSheet: View {
             fat: vm.scaledMacros.fatG
         )
         .padding(.horizontal, Spacing.lg)
+    }
+
+    // MARK: - Nutrition Details (expandable)
+
+    @State private var showNutritionDetails: Bool = false
+
+    @ViewBuilder
+    private var nutritionDetailsSection: some View {
+        if vm.hasExtendedNutrition {
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        showNutritionDetails.toggle()
+                    }
+                } label: {
+                    HStack {
+                        Text("Nutrition Details")
+                            .font(.appSubhead)
+                            .foregroundStyle(Color.appText)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.appTextSecondary)
+                            .rotationEffect(.degrees(showNutritionDetails ? 90 : 0))
+                    }
+                }
+                .buttonStyle(.plain)
+
+                if showNutritionDetails {
+                    let n = vm.scaledExtendedNutrition
+                    let m = vm.scaledMacros
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Divider().padding(.vertical, Spacing.sm)
+                        nutritionRow("Total Fat",       value: m.fatG,          unit: "g")
+                        nutritionRow("  Saturated Fat", value: n.saturatedFatG, unit: "g",   indent: true)
+                        nutritionRow("  Trans Fat",     value: n.transFatG,     unit: "g",   indent: true)
+                        nutritionRow("Cholesterol",     value: n.cholesterolMg, unit: "mg")
+                        nutritionRow("Sodium",          value: n.sodiumMg,      unit: "mg")
+                        nutritionRow("Potassium",       value: n.potassiumMg,   unit: "mg")
+                        nutritionRow("Total Carbs",     value: m.carbsG,        unit: "g")
+                        nutritionRow("  Fiber",         value: n.fiberG,        unit: "g",   indent: true)
+                        nutritionRow("  Sugars",        value: n.sugarG,        unit: "g",   indent: true)
+                        nutritionRow("    Added Sugars",value: n.addedSugarG,   unit: "g",   indent: true)
+                        nutritionRow("Protein",         value: m.proteinG,      unit: "g")
+                        Divider().padding(.vertical, Spacing.sm)
+                        nutritionRow("Calcium",         value: n.calciumMg,     unit: "mg")
+                        nutritionRow("Iron",            value: n.ironMg,        unit: "mg")
+                        nutritionRow("Vitamin D",       value: n.vitaminDMcg,   unit: "mcg")
+                    }
+                }
+            }
+            .padding(.horizontal, Spacing.lg)
+        }
+    }
+
+    private func nutritionRow(_ label: String, value: Double?, unit: String, indent: Bool = false) -> some View {
+        Group {
+            if let v = value {
+                HStack {
+                    Text(label)
+                        .font(indent ? .appCaption1 : .appSubhead)
+                        .foregroundStyle(indent ? Color.appTextSecondary : Color.appText)
+                    Spacer()
+                    Text("\(Self.fmtNutrition(v))\(unit)")
+                        .font(indent ? .appCaption1 : .appSubhead)
+                        .foregroundStyle(Color.appText)
+                }
+            }
+        }
+    }
+
+    private func nutritionRow(_ label: String, value: Double, unit: String, indent: Bool = false) -> some View {
+        HStack {
+            Text(label)
+                .font(indent ? .appCaption1 : .appSubhead)
+                .foregroundStyle(indent ? Color.appTextSecondary : Color.appText)
+            Spacer()
+            Text("\(Self.fmtNutrition(value))\(unit)")
+                .font(indent ? .appCaption1 : .appSubhead)
+                .foregroundStyle(Color.appText)
+        }
+    }
+
+    private static func fmtNutrition(_ v: Double) -> String {
+        v.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(v))
+            : String(format: "%.1f", v)
     }
 
     // MARK: - Quantity
@@ -417,6 +523,28 @@ struct FoodDetailSheet: View {
             Text("Serving: \(formatQuantity(identifiedFood.food.baseServingSize, unit: identifiedFood.food.baseServingUnit)) \(identifiedFood.food.baseServingUnit)")
                 .font(.appCaption1)
                 .foregroundStyle(Color.appTextSecondary)
+
+            // Set as default
+            if !isEditMode {
+                Button {
+                    Task {
+                        if vm.hasPreference {
+                            await vm.clearDefault()
+                        } else {
+                            await vm.saveAsDefault()
+                        }
+                    }
+                } label: {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: vm.hasPreference ? "star.fill" : "star")
+                            .font(.system(size: 12))
+                        Text(vm.hasPreference ? "Clear my default" : "Set as my default")
+                            .font(.appCaption1)
+                    }
+                    .foregroundStyle(vm.hasPreference ? Color.appWarning : Color.appTint)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, Spacing.lg)
     }

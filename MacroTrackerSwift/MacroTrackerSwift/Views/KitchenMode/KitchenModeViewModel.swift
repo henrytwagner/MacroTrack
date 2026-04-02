@@ -84,8 +84,9 @@ final class KitchenModeViewModel {
     var debugBarcode: String? = nil
 
     /// Last barcode GTIN that was successfully sent to the server.
-    /// Used to block accidental consecutive scans of the same barcode.
+    /// Used to block accidental consecutive scans of the same barcode within 5 seconds.
     private var lastProcessedGTIN: String? = nil
+    private var lastProcessedGTINTime: TimeInterval = 0
 
     /// Duplicate-scan toast message — auto-dismissed after 3 seconds.
     var duplicateScanMessage: String? = nil
@@ -1206,8 +1207,8 @@ final class KitchenModeViewModel {
                 return try await APIClient.shared.getFoodUnitConversionsForCustomFood(f.id)
             case .usda(let f):
                 return try await APIClient.shared.getFoodUnitConversionsForUsdaFood(f.fdcId)
-            case .community:
-                return []
+            case .community(let f):
+                return try await APIClient.shared.getFoodUnitConversionsForCommunityFood(f.id)
             }
         } catch {
             return []
@@ -1216,11 +1217,13 @@ final class KitchenModeViewModel {
 
     /// Fetch conversions for a server-originated draft item.
     private func fetchConversionsForServerItem(
-        source: FoodSource, customFoodId: String?, usdaFdcId: Int?
+        source: FoodSource, customFoodId: String?, communityFoodId: String? = nil, usdaFdcId: Int?
     ) async -> [FoodUnitConversion] {
         do {
             if source == .custom, let id = customFoodId {
                 return try await APIClient.shared.getFoodUnitConversionsForCustomFood(id)
+            } else if source == .community, let id = communityFoodId {
+                return try await APIClient.shared.getFoodUnitConversionsForCommunityFood(id)
             } else if source == .database, let fdcId = usdaFdcId {
                 return try await APIClient.shared.getFoodUnitConversionsForUsdaFood(fdcId)
             }
@@ -1401,8 +1404,11 @@ final class KitchenModeViewModel {
         let digits = gtin.filter(\.isNumber)
         guard !digits.isEmpty else { return }
 
-        // Block consecutive scans of the same barcode to prevent accidental misinput.
-        if digits == lastProcessedGTIN {
+        // Block consecutive scans of the same barcode within 5 seconds to prevent accidental misinput.
+        // Reset the timer on each blocked attempt so holding a barcode in view stays blocked.
+        let now = Date().timeIntervalSinceReferenceDate
+        if digits == lastProcessedGTIN, now - lastProcessedGTINTime < 5 {
+            lastProcessedGTINTime = now
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 duplicateScanMessage = "Already scanned"
             }
@@ -1442,6 +1448,7 @@ final class KitchenModeViewModel {
         }
 
         lastProcessedGTIN = digits
+        lastProcessedGTINTime = Date().timeIntervalSinceReferenceDate
     }
 
     // MARK: - Cleanup
@@ -1550,11 +1557,12 @@ final class KitchenModeViewModel {
                     // Fetch conversions for server-originated items
                     let itemId = draft.items[idx].id
                     let customFoodId = draft.items[idx].customFoodId
+                    let communityFoodId = draft.items[idx].communityFoodId
                     let usdaFdcId = draft.items[idx].usdaFdcId
                     let source = draft.items[idx].source
                     Task {
                         let convs = await fetchConversionsForServerItem(
-                            source: source, customFoodId: customFoodId, usdaFdcId: usdaFdcId)
+                            source: source, customFoodId: customFoodId, communityFoodId: communityFoodId, usdaFdcId: usdaFdcId)
                         if let i = draft.items.firstIndex(where: { $0.id == itemId }) {
                             draft.items[i].conversions = convs
                         }
