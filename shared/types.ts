@@ -124,8 +124,6 @@ export interface CommunityFood extends Macros, ExtendedNutrition {
   commonName?: string;
   defaultServingSize: number;
   defaultServingUnit: string;
-  defaultLogUnit?: string;
-  defaultLogQuantity?: number;
   dataSource?: string;
   usdaFdcId?: number;
   createdByUserId?: string;
@@ -181,6 +179,22 @@ export interface UpdateFoodUnitConversionRequest {
 
 export interface CascadeUnitConversionsRequest {
   updates: Array<{ id: string; quantityInBaseServings: number }>;
+}
+
+// --- User Food Preferences ---
+
+export interface UserFoodPreference {
+  id: string;
+  customFoodId?: string;
+  communityFoodId?: string;
+  usdaFdcId?: number;
+  defaultQuantity?: number;
+  defaultUnit?: string;
+}
+
+export interface UpsertFoodPreferenceRequest {
+  defaultQuantity?: number;
+  defaultUnit?: string;
 }
 
 export interface FoodEntry extends Macros {
@@ -362,8 +376,6 @@ export interface CreateCommunityFoodRequest {
   commonName?: string;
   defaultServingSize: number;
   defaultServingUnit: string;
-  defaultLogUnit?: string;
-  defaultLogQuantity?: number;
   dataSource?: string;
   calories: number;
   proteinG: number;

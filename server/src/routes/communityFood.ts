@@ -17,8 +17,6 @@ interface CommunityFoodRow {
   commonName: string | null;
   defaultServingSize: number;
   defaultServingUnit: string;
-  defaultLogUnit: string | null;
-  defaultLogQuantity: number | null;
   dataSource: string | null;
   calories: number;
   proteinG: number;
@@ -58,8 +56,6 @@ export function mapCommunityFood(food: CommunityFoodRow): CommunityFood {
     commonName: food.commonName ?? undefined,
     defaultServingSize: food.defaultServingSize,
     defaultServingUnit: food.defaultServingUnit,
-    defaultLogUnit: food.defaultLogUnit ?? undefined,
-    defaultLogQuantity: food.defaultLogQuantity ?? undefined,
     dataSource: food.dataSource ?? undefined,
     calories: food.calories,
     proteinG: food.proteinG,
@@ -98,8 +94,6 @@ interface CreateCommunityFoodBody {
   commonName?: string;
   defaultServingSize: number;
   defaultServingUnit: string;
-  defaultLogUnit?: string;
-  defaultLogQuantity?: number;
   dataSource?: string;
   calories: number;
   proteinG: number;
@@ -238,8 +232,6 @@ export async function communityFoodRoutes(app: FastifyInstance) {
           commonName: body.commonName?.trim() || null,
           defaultServingSize: body.defaultServingSize,
           defaultServingUnit: body.defaultServingUnit,
-          defaultLogUnit: body.defaultLogUnit?.trim() || null,
-          defaultLogQuantity: body.defaultLogQuantity ?? null,
           dataSource: body.dataSource?.trim() || null,
           calories: body.calories,
           proteinG: body.proteinG,
@@ -325,8 +317,6 @@ export async function communityFoodRoutes(app: FastifyInstance) {
             ...(body.commonName !== undefined && { commonName: body.commonName?.trim() || null }),
             ...(body.defaultServingSize !== undefined && { defaultServingSize: body.defaultServingSize }),
             ...(body.defaultServingUnit !== undefined && { defaultServingUnit: body.defaultServingUnit }),
-            ...(body.defaultLogUnit !== undefined && { defaultLogUnit: body.defaultLogUnit?.trim() || null }),
-            ...(body.defaultLogQuantity !== undefined && { defaultLogQuantity: body.defaultLogQuantity }),
             ...(body.dataSource !== undefined && { dataSource: body.dataSource?.trim() || null }),
             ...(body.calories !== undefined && { calories: body.calories }),
             ...(body.proteinG !== undefined && { proteinG: body.proteinG }),
