@@ -1,4 +1,4 @@
-# MacroTrack Server
+# Dialed Server
 
 Fastify backend with REST API, WebSocket voice sessions, and Prisma/PostgreSQL.
 

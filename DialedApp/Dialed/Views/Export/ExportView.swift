@@ -79,7 +79,7 @@ struct ExportView: View {
         do {
             let data = try await APIClient.shared.exportEntries(from: from, to: to)
             let tmpURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("macrotrack-\(from)-to-\(to).csv")
+                .appendingPathComponent("dialed-\(from)-to-\(to).csv")
             try data.write(to: tmpURL)
             exportURL = tmpURL
             showShare = true

@@ -1,7 +1,7 @@
 # TestFlight Debug Context
 
 ## Goal
-Archive and upload MacroTrackerSwift to TestFlight Internal Only.
+Archive and upload Dialed to TestFlight Internal Only.
 
 ## Current State
 - **Signing mode**: Manual (Release config)

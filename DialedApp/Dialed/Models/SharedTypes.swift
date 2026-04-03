@@ -1,5 +1,5 @@
 // ============================================================
-// MacroTrack — Shared Type Definitions (Swift port of shared/types.ts)
+// Dialed — Shared Type Definitions (Swift port of shared/types.ts)
 // ============================================================
 
 import Foundation
@@ -255,6 +255,7 @@ struct FoodEntry: Codable, Identifiable, Sendable {
     var savedMealId:     String?
     var mealInstanceId:  String?
     var createdAt:       String
+    var loggedAt:        String
 }
 
 // MARK: - Voice Session Summary
@@ -481,6 +482,7 @@ struct CreateFoodEntryRequest: Codable, Sendable {
     var usdaFdcId:       Int?
     var customFoodId:    String?
     var communityFoodId: String?
+    var loggedAt:        String?
 }
 
 struct UpdateFoodEntryRequest: Codable, Sendable {
@@ -1025,7 +1027,12 @@ nonisolated func scaleFactorForQuantity(
 
 /// Returns the appropriate meal label for the current time of day.
 nonisolated func currentMealLabel() -> MealLabel {
-    let hour = Calendar.current.component(.hour, from: Date())
+    mealLabelForTime(Date())
+}
+
+/// Returns the appropriate meal label for a given time.
+nonisolated func mealLabelForTime(_ date: Date) -> MealLabel {
+    let hour = Calendar.current.component(.hour, from: date)
     if hour >= 5  && hour < 11 { return .breakfast }
     if hour >= 11 && hour < 14 { return .lunch }
     if hour >= 14 && hour < 17 { return .snack }

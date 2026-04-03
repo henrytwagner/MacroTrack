@@ -1,6 +1,6 @@
 //
-//  MacroTrackerSwiftApp.swift
-//  MacroTrackerSwift
+//  DialedApp.swift
+//  Dialed
 //
 //  Created by Henry Wagner on 3/19/26.
 //
@@ -8,7 +8,7 @@
 import SwiftUI
 
 @main
-struct MacroTrackerSwiftApp: App {
+struct DialedApp: App {
     private let authStore        = AuthStore.shared
     private let appearanceStore  = AppearanceStore.shared
     private let dateStore        = DateStore.shared

@@ -1,6 +1,6 @@
 //
 //  ContentView.swift
-//  MacroTrackerSwift
+//  Dialed
 //
 //  Created by Henry Wagner on 3/19/26.
 //

@@ -21,7 +21,7 @@ struct SignInView: View {
                         .font(.system(size: 72))
                         .foregroundStyle(Color.accentColor)
 
-                    Text("MacroTrack")
+                    Text("Dialed")
                         .font(.largeTitle.bold())
 
                     Text("Voice-first macro tracking")

@@ -3,7 +3,7 @@ import Security
 
 /// Minimal Keychain wrapper for storing auth tokens.
 enum KeychainService {
-    private static let service = "com.macrotrack.auth"
+    private static let service = "com.dialed.auth"
 
     static func save(key: String, value: String) {
         guard let data = value.data(using: .utf8) else { return }

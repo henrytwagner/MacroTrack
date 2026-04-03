@@ -30,11 +30,11 @@
 		<true/>
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>MacroTrack connects to your Bluetooth kitchen scale for precise food weighing.</string>
+	<string>Dialed connects to your Bluetooth kitchen scale for precise food weighing.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>MacroTrack uses the camera to scan food barcodes.</string>
+	<string>Dialed uses the camera to scan food barcodes.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>MacroTrack uses the microphone to log food by voice in Kitchen Mode.</string>
+	<string>Dialed uses the microphone to log food by voice in Kitchen Mode.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationIsSceneEnabled</key>

@@ -17,12 +17,12 @@ export async function sendPasswordResetEmail(
   to: string,
   code: string
 ): Promise<void> {
-  const from = process.env.EMAIL_FROM ?? "MacroTrack <onboarding@resend.dev>";
+  const from = process.env.EMAIL_FROM ?? "Dialed <onboarding@resend.dev>";
 
   const { error } = await getResend().emails.send({
     from,
     to,
-    subject: "Your MacroTrack password reset code",
+    subject: "Your Dialed password reset code",
     html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 400px; margin: 0 auto; padding: 32px;">
         <h2 style="margin-bottom: 8px;">Password Reset</h2>

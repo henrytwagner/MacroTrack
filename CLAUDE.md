@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Active Codebase
 
-**The `mobile/` (React Native/Expo) codebase has been removed.** All development is in `MacroTrackerSwift/` (SwiftUI, iOS 17+, Swift 6). Do not reference or attempt to read `mobile/` files. The original React Native MVP spec is archived at `SPEC_v1_RN.md`.
+**The `mobile/` (React Native/Expo) codebase has been removed.** All development is in `DialedApp/` (SwiftUI, iOS 17+, Swift 6). Do not reference or attempt to read `mobile/` files. The original React Native MVP spec is archived at `SPEC_v1_RN.md`.
 
 ## Project Overview
 
-MacroTrack is a multi-modal macronutrient tracking iOS app. Users can log food via:
+Dialed is a multi-modal macronutrient tracking iOS app. Users can log food via:
 - **Kitchen Mode**: Full-screen immersive session with Gemini Live audio streaming, BLE scale integration, barcode scanning, camera food identification, and inline food search
 - **Manual search**: 3-tab food search (search results, my foods, meals) with barcode scanner
 - **Quick-add**: Frequent foods and saved meals from the Dashboard
@@ -38,12 +38,12 @@ MacroTrack is a multi-modal macronutrient tracking iOS app. Users can log food v
 
 ## Commands
 
-### iOS App (MacroTrackerSwift/)
-- Open `MacroTrackerSwift/MacroTrackerSwift.xcodeproj` in Xcode
+### iOS App (DialedApp/)
+- Open `DialedApp/Dialed.xcodeproj` in Xcode
 - Build & run on simulator: Cmd+R (requires iOS 17+ simulator)
 - Build & run on device: select device target, Cmd+R
-- Configuration: `Debug.xcconfig` / `Release.xcconfig` in `MacroTrackerSwift/`
-- Swift-specific architecture constraints: read `MacroTrackerSwift/CLAUDE.md`
+- Configuration: `Debug.xcconfig` / `Release.xcconfig` in `DialedApp/`
+- Swift-specific architecture constraints: read `DialedApp/CLAUDE.md`
 
 ### Server (from `server/`)
 ```bash
@@ -60,7 +60,7 @@ npm run test             # Jest
 This is a monorepo with four packages:
 
 ```
-MacroTrackerSwift/    SwiftUI iOS app (iOS 17+, Swift 6)
+DialedApp/    SwiftUI iOS app (iOS 17+, Swift 6)
 server/               Fastify backend (REST + WebSocket)
 shared/               TypeScript types + Gemini prompt templates
 website/              Next.js marketing/waitlist site
@@ -74,7 +74,7 @@ website/              Next.js marketing/waitlist site
 
 **3-tab navigation**: Dashboard, Log, Profile (via `ContentView.swift` + `TabRouter`).
 
-**16 @Observable @MainActor stores** in `MacroTrackerSwift/Stores/`:
+**16 @Observable @MainActor stores** in `DialedApp/Dialed/Stores/`:
 - `AuthStore` — Authentication state, login/register/logout, token refresh
 - `ProfileStore` — User profile data (health metrics, preferences)
 - `GoalStore` — Daily macro targets, goal profiles, guided goal setup
@@ -109,7 +109,7 @@ website/              Next.js marketing/waitlist site
 - `AudioCaptureService` — AVAudioEngine VAD with ~300ms pre-roll buffer, 16kHz PCM output
 - `AudioPlaybackService` — AVAudioPlayerNode for Gemini spoken responses, echo suppression
 
-**Theme**: `MacroTrackerSwift/MacroTrackerSwift/Theme/` — `Color+Theme.swift` (semantic color tokens, Spacing enum, BorderRadius enum), `Typography.swift` (font extensions). All colors, typography, and spacing must be defined here. No inline magic values in views.
+**Theme**: `DialedApp/Dialed/Theme/` — `Color+Theme.swift` (semantic color tokens, Spacing enum, BorderRadius enum), `Typography.swift` (font extensions). All colors, typography, and spacing must be defined here. No inline magic values in views.
 
 ### Server Architecture
 
@@ -174,7 +174,7 @@ website/              Next.js marketing/waitlist site
 - **FoodEntry sources**: `DATABASE` (USDA), `CUSTOM` (user-created), and `COMMUNITY` (community foods). No AI-estimate source. Personal and community sources are always preferred over USDA.
 - **Multi-modal input is a hard constraint**: Every logging action must be reachable via touch alone, without voice, and without camera. No single input modality should be required. Voice, camera, scale, and touch are all first-class — users choose the combination that works for them in any moment.
 - **BLE scale** is the accuracy anchor for quantity — prefer scale-provided weight over user-estimated quantities where available.
-- **Styling**: All colors, typography, and spacing must be defined in `MacroTrackerSwift/MacroTrackerSwift/Theme/`. No inline magic values in views.
+- **Styling**: All colors, typography, and spacing must be defined in `DialedApp/Dialed/Theme/`. No inline magic values in views.
 
 ## Gemini Function Tools
 

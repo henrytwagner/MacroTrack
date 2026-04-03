@@ -7,7 +7,7 @@ import Foundation
 /// - Info.plist contains $(API_HOST) / $(API_SCHEME) — substituted at build time
 /// - Bundle.main.object(forInfoDictionaryKey:) reads the substituted values at runtime
 ///
-/// To update the debug server address: edit MacroTrackerSwift/Debug.xcconfig.
+/// To update the debug server address: edit DialedApp/Debug.xcconfig.
 /// The fallback (#if DEBUG) is only used if the plist keys are missing/empty.
 nonisolated enum Config {
     static let baseURL: String = {
@@ -24,7 +24,7 @@ nonisolated enum Config {
         #if DEBUG
         return "http://localhost:3000"
         #else
-        return "https://api.macrotrack.app"
+        return "https://api.dialedmealsandmacros.com"
         #endif
         #endif
     }()

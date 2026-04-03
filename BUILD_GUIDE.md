@@ -1,6 +1,6 @@
-# MacroTrack — Build Guide
+# Dialed — Build Guide
 
-Step-by-step implementation guide for building MacroTrack in Cursor. Each session is a focused Cursor conversation. Start a new chat for each session and reference the relevant spec sections.
+Step-by-step implementation guide for building Dialed in Cursor. Each session is a focused Cursor conversation. Start a new chat for each session and reference the relevant spec sections.
 
 **Prerequisites**: Node.js 20+, PostgreSQL running locally, Google Gemini API key.
 
@@ -256,7 +256,7 @@ Step-by-step implementation guide for building MacroTrack in Cursor. Each sessio
 
 ## Standalone: Barcode Scanner (Independent Scope)
 
-**Containment**: This feature is developed **independently** of the main MacroTrack build sessions. It does not modify the core app flow (Log tab, Kitchen Mode, Dashboard, server, or shared types). Work on it in separate conversations or branches. Integration into the main app (e.g. “Scan barcode” on Log, “scan an item” in Kitchen Mode) is deferred until the scanner module is ready.
+**Containment**: This feature is developed **independently** of the main Dialed build sessions. It does not modify the core app flow (Log tab, Kitchen Mode, Dashboard, server, or shared types). Work on it in separate conversations or branches. Integration into the main app (e.g. “Scan barcode” on Log, “scan an item” in Kitchen Mode) is deferred until the scanner module is ready.
 
 **Goal**: A self-contained barcode scanning module that outputs a normalized GTIN. It is exercised via a **demo screen** only; the rest of the app does not call it yet.
 
@@ -347,7 +347,7 @@ Use one prompt per Cursor chat to keep context manageable. Reference this file a
    unset SKIP_BUNDLING
    ```
 
-2. **`ios/MacroTrack/AppDelegate.swift`** — In `bundleURL()`, for Debug on a **physical device** use the embedded bundle first so `expo run:ios --device` without Metro works; keep using Metro on the simulator so `expo start` still works:
+2. **`ios/Dialed/AppDelegate.swift`** — In `bundleURL()`, for Debug on a **physical device** use the embedded bundle first so `expo run:ios --device` without Metro works; keep using Metro on the simulator so `expo start` still works:
    ```swift
    override func bundleURL() -> URL? {
    #if DEBUG
@@ -396,7 +396,7 @@ If the fix above still doesn’t work, use these steps to see where the pipeline
 - After a device build, find the built `.app` (e.g. in Xcode’s DerivedData or from the build log).
 - Example (replace with your DerivedData path if different):
   ```bash
-  APP=$(find ~/Library/Developer/Xcode/DerivedData -name "MacroTrack.app" -path "*Debug-iphoneos*" -type d 2>/dev/null | head -1)
+  APP=$(find ~/Library/Developer/Xcode/DerivedData -name "Dialed.app" -path "*Debug-iphoneos*" -type d 2>/dev/null | head -1)
   ls -la "$APP/main.jsbundle" 2>/dev/null && echo "Found" || echo "main.jsbundle NOT in app"
   ```
 - **If not found:** The bundle phase may have failed, or the bundle is written somewhere else. Check the full build log for errors from the “Bundle React Native code and images” phase.
@@ -404,7 +404,7 @@ If the fix above still doesn’t work, use these steps to see where the pipeline
 
 **4. Confirm which bundle URL the app uses at runtime**
 
-- In Xcode, open `ios/MacroTrack.xcworkspace`, set the run destination to your device, and run (Run ▶️).
+- In Xcode, open `ios/Dialed.xcworkspace`, set the run destination to your device, and run (Run ▶️).
 - In `AppDelegate.swift`, set a breakpoint in `bundleURL()` (and optionally in `sourceURL(for:)`).
 - When the breakpoint hits, inspect the return value and whether you’re in the simulator or device branch.
 - **Expected on device:** `bundleURL()` returns `Bundle.main.url(forResource: "main", withExtension: "jsbundle")` (non-nil) so the app loads the embedded bundle.
@@ -416,7 +416,7 @@ If the fix above still doesn’t work, use these steps to see where the pipeline
   ```bash
   cd mobile
   rm -rf ios/build ios/bundle-phase-debug.log
-  rm -rf ~/Library/Developer/Xcode/DerivedData/MacroTrack-*
+  rm -rf ~/Library/Developer/Xcode/DerivedData/Dialed-*
   npx expo run:ios --device --no-build-cache
   ```
 - Then repeat steps 1–3.

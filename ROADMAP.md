@@ -1,4 +1,4 @@
-## MacroTrack Roadmap
+## Dialed Roadmap
 
 This document captures post-MVP features and improvements, organized by **priority** and **implementation complexity**.
 
@@ -18,7 +18,7 @@ This document captures post-MVP features and improvements, organized by **priori
 - **Health integrations (Garmin, Apple Health)**
   - Add optional integrations for importing activity and energy expenditure from Garmin Connect / Garmin Health APIs and Apple Health (HealthKit).
   - Use external activity data to drive more accurate TDEE estimates, dynamic calorie/macro targets, and “net calories” views, while keeping all per-food nutrition sourced from USDA or custom foods.
-  - For Apple Health specifically, support two-way sync: read workouts/energy and write MacroTrack nutrition entries as HealthKit samples, with granular, opt-in permissions.
+  - For Apple Health specifically, support two-way sync: read workouts/energy and write Dialed nutrition entries as HealthKit samples, with granular, opt-in permissions.
   - Treat Garmin primarily as a read-only activity source (no expectation of rich nutrition write-back), architected as an optional module that doesn’t affect the core offline logging experience.
 
 ### Medium Priority / Medium Complexity

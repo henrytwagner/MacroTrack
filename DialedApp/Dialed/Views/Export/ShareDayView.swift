@@ -10,7 +10,7 @@ struct ShareDayView: View {
         VStack(spacing: Spacing.lg) {
             // Header
             HStack {
-                Text("MacroTrack")
+                Text("Dialed")
                     .font(.appHeadline)
                     .foregroundStyle(Color.appTint)
                 Spacer()

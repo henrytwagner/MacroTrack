@@ -1,4 +1,4 @@
-# MacroTrack
+# Dialed
 
 Voice-first macronutrient tracking app. Log food via voice (Kitchen Mode), manual search, or barcode scanning.
 
@@ -6,8 +6,8 @@ Voice-first macronutrient tracking app. Log food via voice (Kitchen Mode), manua
 
 ```bash
 # Clone the repo
-git clone https://github.com/henrytwagner/MacroTrack.git
-cd MacroTrack
+git clone https://github.com/henrytwagner/Dialed.git
+cd Dialed
 
 # Enable git hooks (enforces migration safety checks)
 git config core.hooksPath .hooks
@@ -19,13 +19,13 @@ npm run db:generate
 npm run dev
 
 # iOS client (requires Xcode)
-open MacroTrackerSwift/MacroTrackerSwift.xcodeproj
+open DialedApp/Dialed.xcodeproj
 ```
 
 ## Project Structure
 
 ```
-MacroTrackerSwift/   SwiftUI iOS client (active)
+DialedApp/   SwiftUI iOS client (active)
 server/              Fastify backend (REST + WebSocket)
 shared/              TypeScript types shared by server
 mobile/              React Native client (deprecated)

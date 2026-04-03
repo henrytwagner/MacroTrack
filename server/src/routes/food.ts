@@ -47,6 +47,7 @@ function mapEntry(entry: {
   savedMealId?: string | null;
   mealInstanceId?: string | null;
   createdAt: Date;
+  loggedAt: Date;
 }): FoodEntry {
   return {
     id: entry.id,
@@ -67,6 +68,7 @@ function mapEntry(entry: {
     savedMealId: entry.savedMealId ?? undefined,
     mealInstanceId: entry.mealInstanceId ?? undefined,
     createdAt: entry.createdAt.toISOString(),
+    loggedAt: entry.loggedAt.toISOString(),
   };
 }
 
@@ -246,7 +248,7 @@ export async function foodRoutes(app: FastifyInstance) {
         usdaFdcId: entry.usdaFdcId ?? undefined,
         customFoodId: entry.customFoodId ?? undefined,
         communityFoodId: entry.communityFoodId ?? undefined,
-        loggedAt: entry.createdAt.toISOString(),
+        loggedAt: entry.loggedAt.toISOString(),
       });
 
       if (recentFoods.length >= 20) break;
@@ -285,6 +287,7 @@ export async function foodRoutes(app: FastifyInstance) {
           usdaFdcId: body.usdaFdcId,
           customFoodId: body.customFoodId,
           communityFoodId: body.communityFoodId,
+          loggedAt: body.loggedAt ? new Date(body.loggedAt) : new Date(),
         },
       });
 
@@ -857,7 +860,7 @@ export async function foodRoutes(app: FastifyInstance) {
         .header("Content-Type", "text/csv")
         .header(
           "Content-Disposition",
-          `attachment; filename="macrotrack-${from}-to-${to}.csv"`,
+          `attachment; filename="dialed-${from}-to-${to}.csv"`,
         )
         .send(csv);
     },

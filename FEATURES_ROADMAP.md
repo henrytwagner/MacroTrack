@@ -1,4 +1,4 @@
-# MacroTrack: Features Roadmap
+# Dialed: Features Roadmap
 ### Social, Intelligence, and Data Quality Layers
 
 *Status: Planning. This document captures long-term feature directions that sit on top of the multi-modal input pipeline described in `BUILD_PLAN.md`. These features are not yet in development — they represent the next horizon of work after the core camera/scale/voice pipeline matures.*

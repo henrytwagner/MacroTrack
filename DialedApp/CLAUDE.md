@@ -1,4 +1,4 @@
-# MacroTrackerSwift — Architecture Constraints
+# Dialed — Architecture Constraints
 
 This document is the source of truth for AI-assisted development of the Swift app.
 Always read this before generating or modifying Swift files.

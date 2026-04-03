@@ -68,7 +68,7 @@ struct OnboardingContainerView: View {
                     glowColor: .proteinAccent,
                     title: "Kitchen Mode",
                     headline: "Hands-free while you cook",
-                    detail: "Just say what you're making — MacroTrack listens, parses, and logs your ingredients in real time. Draft cards appear as you speak so you can review before saving."
+                    detail: "Just say what you're making — Dialed listens, parses, and logs your ingredients in real time. Draft cards appear as you speak so you can review before saving."
                  )
         case 10: OnboardingFeatureTipPage(
                     icon: "scalemass.fill",
@@ -76,7 +76,7 @@ struct OnboardingContainerView: View {
                     glowColor: .fatAccent,
                     title: "Smart Scale",
                     headline: "Precision from your countertop",
-                    detail: "Connect a Bluetooth kitchen scale for exact weights. Place an ingredient, and MacroTrack reads the measurement automatically — no typing required."
+                    detail: "Connect a Bluetooth kitchen scale for exact weights. Place an ingredient, and Dialed reads the measurement automatically — no typing required."
                  )
         default: EmptyView()
         }

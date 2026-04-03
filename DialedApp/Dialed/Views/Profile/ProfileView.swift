@@ -331,7 +331,7 @@ struct ProfileView: View {
     private var aboutSection: some View {
         sectionGroup(label: "ABOUT") {
             HStack {
-                Text("MacroTrack")
+                Text("Dialed")
                     .font(.appBody)
                     .foregroundStyle(Color.appText)
                 Spacer()

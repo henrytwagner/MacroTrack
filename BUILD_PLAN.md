@@ -1,4 +1,4 @@
-# MacroTrack: Long-Term Build Plan
+# Dialed: Long-Term Build Plan
 ### Toward a Hands-Free, Camera-Assisted, Scale-Integrated Nutrition Logger
 
 *Status: Active development. This document is a living research artifact — it captures vision, motivation, and phased implementation strategy. Specific technical details for later phases will be filled in as earlier phases mature.*
@@ -9,7 +9,7 @@
 
 Manual food logging is the single largest barrier to sustained nutrition tracking. Users abandon apps not because they stop caring about their diet, but because the friction of searching, estimating portion sizes, and typing values into forms is simply too high to maintain across every meal. This project is an attempt to eliminate that friction entirely.
 
-MacroTrack is a macro tracking application being built around three converging input modalities: a Bluetooth scale for ground-truth quantity measurement, a phone camera for visual food identification, and a voice interface for confirmation and command. The central thesis is that a phone, pointed at food on a scale, with a running voice session, can provide a logging experience more accurate and less disruptive than any existing solution — including early AR glasses prototypes — without requiring specialized hardware.
+Dialed is a macro tracking application being built around three converging input modalities: a Bluetooth scale for ground-truth quantity measurement, a phone camera for visual food identification, and a voice interface for confirmation and command. The central thesis is that a phone, pointed at food on a scale, with a running voice session, can provide a logging experience more accurate and less disruptive than any existing solution — including early AR glasses prototypes — without requiring specialized hardware.
 
 The following document describes the motivation, observations, architecture, and phased build strategy for realizing this vision.
 
@@ -152,7 +152,7 @@ Two distinct identification pathways are planned depending on food type:
 
 AR overlays will be drawn using SwiftUI `Canvas` or `RealityKit` anchored on the AVFoundation camera feed.
 
-*Why specialized nutrition APIs (Passio AI, LogMeal) were evaluated and rejected:* These platforms bundle nutrition data delivery with their vision inference. Passio's SDK, for example, couples an on-device CoreML vision model with a mandatory cloud call to fetch `PassioFoodItem` nutrition data after every identification. The tokens you pay for are mostly this cloud nutrition fetch — which MacroTrack discards, since nutrition data comes from USDA and user-created sources. You cannot cleanly extract just the food name without triggering the billing layer their SDK is designed around. LogMeal is purely cloud-based and has the same data-bundling problem. Both create per-call cost for a data layer this app intentionally owns independently.
+*Why specialized nutrition APIs (Passio AI, LogMeal) were evaluated and rejected:* These platforms bundle nutrition data delivery with their vision inference. Passio's SDK, for example, couples an on-device CoreML vision model with a mandatory cloud call to fetch `PassioFoodItem` nutrition data after every identification. The tokens you pay for are mostly this cloud nutrition fetch — which Dialed discards, since nutrition data comes from USDA and user-created sources. You cannot cleanly extract just the food name without triggering the billing layer their SDK is designed around. LogMeal is purely cloud-based and has the same data-bundling problem. Both create per-call cost for a data layer this app intentionally owns independently.
 
 **AR overlay** — Identified items in the camera frame are annotated with floating macro cards rendered using SwiftUI overlays on AVFoundation camera preview. Full ARKit spatial anchoring is not required — 2D bounding boxes from the vision model output are sufficient for the intended UX. The overlay renders: food name, confidence score, and live macro computation bound to the current scale weight (updating in real time as the weight changes).
 

@@ -48,7 +48,7 @@ struct OnboardingWelcomePage: View {
                 .offset(y: showContent ? 0 : 20)
 
                 // Title
-                Text("MacroTrack")
+                Text("Dialed")
                     .font(.system(size: 40, weight: .bold, design: .default))
                     .foregroundStyle(Color.appText)
                     .opacity(showContent ? 1 : 0)

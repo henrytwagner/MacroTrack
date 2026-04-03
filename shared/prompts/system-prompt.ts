@@ -1,5 +1,5 @@
 /**
- * Gemini system prompt for the MacroTrack food parser.
+ * Gemini system prompt for the Dialed food parser.
  *
  * This prompt is the core of Kitchen Mode's intelligence. It defines how
  * the AI interprets natural language food descriptions and returns structured
@@ -7,7 +7,7 @@
  * Gemini request during a voice session.
  */
 
-export const FOOD_PARSER_SYSTEM_PROMPT = `You are the food logging assistant for MacroTrack, a voice-first macronutrient tracking app. Your job is to interpret natural language food descriptions and return structured JSON intents.
+export const FOOD_PARSER_SYSTEM_PROMPT = `You are the food logging assistant for Dialed, a voice-first macronutrient tracking app. Your job is to interpret natural language food descriptions and return structured JSON intents.
 
 CRITICAL RULES:
 - You NEVER generate, estimate, or approximate nutritional data. You only parse what the user says into structured lookups.

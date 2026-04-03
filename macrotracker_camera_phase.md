@@ -1,14 +1,14 @@
-# MacroTrackerSwift — Camera Food Recognition Phase
+# Dialed — Camera Food Recognition Phase
 
 ## Context & Conversation Summary
 
-This planning document synthesizes a conversation about Cal AI's acquisition by MyFitnessPal and what their technical approach reveals for MacroTrackerSwift's camera food recognition feature. The core takeaways from Cal AI:
+This planning document synthesizes a conversation about Cal AI's acquisition by MyFitnessPal and what their technical approach reveals for Dialed's camera food recognition feature. The core takeaways from Cal AI:
 
 - They use **multi-model routing** (Anthropic + OpenAI + RAG) rather than one model for all food types
 - They use the **phone's depth sensor** for volume estimation, which is the primary accuracy differentiator vs. competitors
 - Their **user-correction flywheel** improves accuracy over time across all users
 - They were **photo-first from day one** — no legacy architecture to retrofit
-- Their USDA/nutrition data sourcing is looser than MacroTrackerSwift's standard (we should not copy this)
+- Their USDA/nutrition data sourcing is looser than Dialed's standard (we should not copy this)
 
 ---
 
@@ -74,7 +74,7 @@ The existing `AVCaptureSession` for barcode scanning must **not** be reconfigure
 session.beginConfiguration()
 
 let videoOutput = AVCaptureVideoDataOutput()
-videoOutput.setSampleBufferDelegate(captureCoordinator, queue: DispatchQueue(label: "com.macrotracker.camera"))
+videoOutput.setSampleBufferDelegate(captureCoordinator, queue: DispatchQueue(label: "com.dialed.camera"))
 videoOutput.videoSettings = [
     kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
 ]
@@ -388,6 +388,6 @@ class CaptureCoordinator: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
 
 ## What We Are NOT Copying from Cal AI
 
-- **Self-reported accuracy without USDA backing**: Cal AI estimates nutrition directly from vision. MacroTrackerSwift always resolves to USDA data.
+- **Self-reported accuracy without USDA backing**: Cal AI estimates nutrition directly from vision. Dialed always resolves to USDA data.
 - **Shared correction data across users**: Our flywheel is per-user only — no aggregated model training.
 - **Simultaneous multi-model routing**: We use Gemini Flash for everything initially. Multi-model routing (e.g. GPT-4o Vision as fallback) is a future optimization, not Phase 1 scope.

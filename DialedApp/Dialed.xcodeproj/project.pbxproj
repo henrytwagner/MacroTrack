@@ -12,16 +12,16 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		6F8B0AED2F6C92A10099647E /* MacroTrackerSwift.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MacroTrackerSwift.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		6F8B0B012F6C93620099647E /* MacroTrackerSwift.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = MacroTrackerSwift.xcodeproj; sourceTree = "<group>"; };
+		6F8B0AED2F6C92A10099647E /* Dialed.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dialed.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6F8B0B012F6C93620099647E /* Dialed.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Dialed.xcodeproj; sourceTree = "<group>"; };
 		6F8B0B2D2F6C9A670099647E /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		6F8B0B2F2F6C9A6F0099647E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		6F8B0AEF2F6C92A10099647E /* MacroTrackerSwift */ = {
+		6F8B0AEF2F6C92A10099647E /* Dialed */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = MacroTrackerSwift;
+			path = Dialed;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -40,7 +40,7 @@
 		6F8B0AE42F6C92A10099647E = {
 			isa = PBXGroup;
 			children = (
-				6F8B0AEF2F6C92A10099647E /* MacroTrackerSwift */,
+				6F8B0AEF2F6C92A10099647E /* Dialed */,
 				6F8B0AEE2F6C92A10099647E /* Products */,
 				6F8B0B2D2F6C9A670099647E /* Debug.xcconfig */,
 				6F8B0B2F2F6C9A6F0099647E /* Release.xcconfig */,
@@ -50,7 +50,7 @@
 		6F8B0AEE2F6C92A10099647E /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				6F8B0AED2F6C92A10099647E /* MacroTrackerSwift.app */,
+				6F8B0AED2F6C92A10099647E /* Dialed.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -63,9 +63,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		6F8B0AEC2F6C92A10099647E /* MacroTrackerSwift */ = {
+		6F8B0AEC2F6C92A10099647E /* Dialed */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 6F8B0AF82F6C92A20099647E /* Build configuration list for PBXNativeTarget "MacroTrackerSwift" */;
+			buildConfigurationList = 6F8B0AF82F6C92A20099647E /* Build configuration list for PBXNativeTarget "Dialed" */;
 			buildPhases = (
 				6F8B0AE92F6C92A10099647E /* Sources */,
 				6F8B0AEA2F6C92A10099647E /* Frameworks */,
@@ -76,13 +76,13 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				6F8B0AEF2F6C92A10099647E /* MacroTrackerSwift */,
+				6F8B0AEF2F6C92A10099647E /* Dialed */,
 			);
-			name = MacroTrackerSwift;
+			name = Dialed;
 			packageProductDependencies = (
 			);
-			productName = MacroTrackerSwift;
-			productReference = 6F8B0AED2F6C92A10099647E /* MacroTrackerSwift.app */;
+			productName = Dialed;
+			productReference = 6F8B0AED2F6C92A10099647E /* Dialed.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -100,7 +100,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 6F8B0AE82F6C92A10099647E /* Build configuration list for PBXProject "MacroTrackerSwift" */;
+			buildConfigurationList = 6F8B0AE82F6C92A10099647E /* Build configuration list for PBXProject "Dialed" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -115,12 +115,12 @@
 			projectReferences = (
 				{
 					ProductGroup = 6F8B0B022F6C93620099647E /* Products */;
-					ProjectRef = 6F8B0B012F6C93620099647E /* MacroTrackerSwift.xcodeproj */;
+					ProjectRef = 6F8B0B012F6C93620099647E /* Dialed.xcodeproj */;
 				},
 			);
 			projectRoot = "";
 			targets = (
-				6F8B0AEC2F6C92A10099647E /* MacroTrackerSwift */,
+				6F8B0AEC2F6C92A10099647E /* Dialed */,
 			);
 		};
 /* End PBXProject section */
@@ -272,7 +272,7 @@
 				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = MacroTrackerSwift/MacroTrackerSwift.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Dialed/Dialed.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -310,7 +310,7 @@
 				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = MacroTrackerSwift/MacroTrackerSwiftRelease.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Dialed/DialedRelease.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -345,7 +345,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		6F8B0AE82F6C92A10099647E /* Build configuration list for PBXProject "MacroTrackerSwift" */ = {
+		6F8B0AE82F6C92A10099647E /* Build configuration list for PBXProject "Dialed" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				6F8B0AF62F6C92A20099647E /* Debug */,
@@ -354,7 +354,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		6F8B0AF82F6C92A20099647E /* Build configuration list for PBXNativeTarget "MacroTrackerSwift" */ = {
+		6F8B0AF82F6C92A20099647E /* Build configuration list for PBXNativeTarget "Dialed" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				6F8B0AF92F6C92A20099647E /* Debug */,

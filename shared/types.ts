@@ -1,5 +1,5 @@
 // ============================================================
-// MacroTrack — Shared Type Definitions
+// Dialed — Shared Type Definitions
 // Used by both mobile/ and server/ packages.
 // ============================================================
 
@@ -216,6 +216,7 @@ export interface FoodEntry extends Macros {
   savedMealId?: string;
   mealInstanceId?: string;
   createdAt: string;
+  loggedAt: string;
 }
 
 // --- Saved Meals ---
@@ -336,6 +337,7 @@ export interface CreateFoodEntryRequest {
   usdaFdcId?: number;
   customFoodId?: string;
   communityFoodId?: string;
+  loggedAt?: string; // ISO 8601 — when the meal was eaten (defaults to now on server)
 }
 
 export interface UpdateFoodEntryRequest {
@@ -1022,6 +1024,11 @@ export interface ParsedNutritionLabelResponse {
   sugarG: number | null;
   saturatedFatG: number | null;
   transFatG: number | null;
+  potassiumMg: number | null;
+  calciumMg: number | null;
+  ironMg: number | null;
+  vitaminDMcg: number | null;
+  addedSugarG: number | null;
 }
 
 // --- Gemini Intent Types ---
