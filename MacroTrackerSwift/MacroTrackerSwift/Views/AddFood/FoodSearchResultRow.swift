@@ -63,6 +63,7 @@ struct FoodSearchResultRow: View {
     private var accessibilitySourceLabel: String {
         switch food.foodSource {
         case .custom:    return "My food"
+        case .dialed:    return "Dialed food"
         case .community: return "Community food"
         case .database:  return "USDA database food"
         }

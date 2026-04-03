@@ -112,6 +112,7 @@ struct FoodEntryRow: View {
     private var accessibilitySourceLabel: String {
         switch entry.source {
         case .custom:    return "My food"
+        case .dialed:    return "Dialed food"
         case .community: return "Community food"
         case .database:  return "USDA database food"
         }

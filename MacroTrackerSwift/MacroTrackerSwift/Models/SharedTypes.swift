@@ -10,6 +10,7 @@ enum FoodSource: String, Codable, Sendable {
     case database  = "DATABASE"
     case custom    = "CUSTOM"
     case community = "COMMUNITY"
+    case dialed    = "DIALED"
 }
 
 enum FoodCategory: String, Codable, Sendable, CaseIterable {
@@ -225,6 +226,12 @@ struct FoodUnitConversion: Codable, Identifiable, Sendable, Equatable {
     var communityFoodId:          String?
     var usdaFdcId:                Int?
     var measurementSystem:        MeasurementSystem
+    /// Null = system-level (visible to all). Present = private to this user.
+    var userId:                   String?
+    /// The user who originally authored this conversion.
+    var createdByUserId:          String?
+
+    var isSystemLevel: Bool { userId == nil }
 }
 
 // MARK: - Food Entry
@@ -345,6 +352,7 @@ struct USDASearchResult: Codable, Sendable, Equatable {
 
 struct UnifiedSearchResponse: Codable, Sendable {
     var myFoods:   [CustomFood]
+    var dialed:    [CommunityFood]
     var community: [CommunityFood]
     var database:  [USDASearchResult]
 }
@@ -656,6 +664,7 @@ struct BarcodeScanResult: Codable, Sendable {
 
 enum BarcodeLookupResult: Decodable, Sendable {
     case community(food: CommunityFood)
+    case dialed(food: CommunityFood)
     case custom(food: CustomFood)
     case notFound
 
@@ -668,6 +677,9 @@ enum BarcodeLookupResult: Decodable, Sendable {
         case "community":
             let food = try c.decode(CommunityFood.self, forKey: .food)
             self = .community(food: food)
+        case "dialed":
+            let food = try c.decode(CommunityFood.self, forKey: .food)
+            self = .dialed(food: food)
         case "custom":
             let food = try c.decode(CustomFood.self, forKey: .food)
             self = .custom(food: food)
@@ -695,6 +707,7 @@ struct PhotoIdentificationResult: Decodable, Sendable {
         switch source {
         case "custom":    return customFoodData.map { .custom($0) }
         case "community": return communityFoodData.map { .community($0) }
+        case "dialed":    return communityFoodData.map { .dialed($0) }
         case "usda":      return usdaFoodData.map { .usda($0) }
         default:          return nil
         }
@@ -715,7 +728,7 @@ struct PhotoIdentificationResult: Decodable, Sendable {
             customFoodData    = try c.decodeIfPresent(CustomFood.self, forKey: .food)
             communityFoodData = nil
             usdaFoodData      = nil
-        case "community":
+        case "dialed", "community":
             customFoodData    = nil
             communityFoodData = try c.decodeIfPresent(CommunityFood.self, forKey: .food)
             usdaFoodData      = nil
@@ -850,12 +863,14 @@ struct DraftItem: Codable, Identifiable, Sendable, Equatable {
 enum AnyFood: Sendable {
     case custom(CustomFood)
     case community(CommunityFood)
+    case dialed(CommunityFood)
     case usda(USDASearchResult)
 
     var displayName: String {
         switch self {
         case .custom(let f):    return f.name
-        case .community(let f): return f.brandName.map { "\($0) — \(f.name)" } ?? f.name
+        case .community(let f), .dialed(let f):
+            return f.brandName.map { "\($0) — \(f.name)" } ?? f.name
         case .usda(let f):      return f.description
         }
     }
@@ -863,7 +878,7 @@ enum AnyFood: Sendable {
     var baseServingSize: Double {
         switch self {
         case .custom(let f):    return f.servingSize
-        case .community(let f): return f.defaultServingSize
+        case .community(let f), .dialed(let f): return f.defaultServingSize
         case .usda(let f):      return f.servingSize ?? 100
         }
     }
@@ -871,7 +886,7 @@ enum AnyFood: Sendable {
     var baseServingUnit: String {
         switch self {
         case .custom(let f):    return f.servingUnit
-        case .community(let f): return f.defaultServingUnit
+        case .community(let f), .dialed(let f): return f.defaultServingUnit
         case .usda(let f):      return f.servingSizeUnit ?? "g"
         }
     }
@@ -880,7 +895,7 @@ enum AnyFood: Sendable {
         switch self {
         case .custom(let f):
             return Macros(calories: f.calories, proteinG: f.proteinG, carbsG: f.carbsG, fatG: f.fatG)
-        case .community(let f):
+        case .community(let f), .dialed(let f):
             return Macros(calories: f.calories, proteinG: f.proteinG, carbsG: f.carbsG, fatG: f.fatG)
         case .usda(let f):
             return f.macros
@@ -891,6 +906,7 @@ enum AnyFood: Sendable {
         switch self {
         case .custom:    return .custom
         case .community: return .community
+        case .dialed:    return .dialed
         case .usda:      return .database
         }
     }
@@ -898,7 +914,7 @@ enum AnyFood: Sendable {
     var foodCategory: FoodCategory? {
         switch self {
         case .custom(let f):    return f.category
-        case .community(let f): return f.category
+        case .community(let f), .dialed(let f): return f.category
         case .usda:             return nil
         }
     }
@@ -913,7 +929,7 @@ enum AnyFood: Sendable {
                 potassiumMg: f.potassiumMg, calciumMg: f.calciumMg,
                 ironMg: f.ironMg, vitaminDMcg: f.vitaminDMcg,
                 addedSugarG: f.addedSugarG)
-        case .community(let f):
+        case .community(let f), .dialed(let f):
             return ExtendedNutrition(
                 sodiumMg: f.sodiumMg, cholesterolMg: f.cholesterolMg,
                 fiberG: f.fiberG, sugarG: f.sugarG,
@@ -932,8 +948,10 @@ enum AnyFood: Sendable {
     }
 
     var asCommunityFood: CommunityFood? {
-        guard case .community(let f) = self else { return nil }
-        return f
+        switch self {
+        case .community(let f), .dialed(let f): return f
+        default: return nil
+        }
     }
 
     var asUSDA: USDASearchResult? {
@@ -946,6 +964,7 @@ enum AnyFood: Sendable {
         switch self {
         case .custom(let f):    return "custom:\(f.id)"
         case .community(let f): return "community:\(f.id)"
+        case .dialed(let f):    return "dialed:\(f.id)"
         case .usda(let f):      return "usda:\(f.fdcId)"
         }
     }

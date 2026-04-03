@@ -406,6 +406,24 @@ struct FoodSearchView: View {
                     .padding(.horizontal, Spacing.lg)
                 }
 
+                if !results.dialed.isEmpty {
+                    sectionHeader("DIALED")
+                    VStack(spacing: 0) {
+                        ForEach(Array(results.dialed.enumerated()), id: \.element.id) { i, food in
+                            if i > 0 { Divider().padding(.leading, Spacing.lg) }
+                            let anyF = AnyFood.dialed(food)
+                            FoodSearchResultRow(
+                                food:         anyF,
+                                showQuickAdd: false,
+                                onTap:        { handleFoodTap(anyF) },
+                                onQuickAdd:   nil)
+                        }
+                    }
+                    .background(Color.appSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
+                    .padding(.horizontal, Spacing.lg)
+                }
+
                 if !results.community.isEmpty {
                     sectionHeader("COMMUNITY")
                     VStack(spacing: 0) {
@@ -442,7 +460,7 @@ struct FoodSearchView: View {
                     .padding(.horizontal, Spacing.lg)
                 }
 
-                if results.myFoods.isEmpty && results.community.isEmpty && results.database.isEmpty {
+                if results.myFoods.isEmpty && results.dialed.isEmpty && results.community.isEmpty && results.database.isEmpty {
                     VStack(spacing: Spacing.md) {
                         Text("No results for \"\(vm.query)\"")
                             .font(.appSubhead)
@@ -577,6 +595,8 @@ struct FoodSearchView: View {
         do {
             let result = try await APIClient.shared.lookupBarcode(code: normalized)
             switch result {
+            case .dialed(let food):
+                handleFoodTap(.dialed(food))
             case .community(let food):
                 handleFoodTap(.community(food))
             case .custom(let food):
@@ -658,6 +678,14 @@ struct FoodSearchView: View {
                 barcode:     nil,
                 createdAt:   "", updatedAt: "")
             return .custom(stub)
+        case .dialed:
+            return .dialed(Self.stubCommunityFood(
+                name:              frequent.name,
+                macros:            frequent.macros,
+                servingSize:       frequent.lastQuantity,
+                servingUnit:       frequent.lastUnit,
+                communityFoodId:   frequent.communityFoodId,
+                usdaFdcId:         frequent.usdaFdcId))
         case .community:
             return .community(Self.stubCommunityFood(
                 name:              frequent.name,
@@ -702,6 +730,14 @@ struct FoodSearchView: View {
                 barcode:     nil,
                 createdAt:   "", updatedAt: "")
             return .custom(stub)
+        case .dialed:
+            return .dialed(Self.stubCommunityFood(
+                name:              recent.name,
+                macros:            recent.macros,
+                servingSize:       recent.quantity,
+                servingUnit:       recent.unit,
+                communityFoodId:   recent.communityFoodId,
+                usdaFdcId:         recent.usdaFdcId))
         case .community:
             return .community(Self.stubCommunityFood(
                 name:              recent.name,

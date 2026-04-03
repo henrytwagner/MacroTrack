@@ -8,6 +8,7 @@ struct ManageCustomFoodsView: View {
 
     @State private var vm:       ManageCustomFoodsViewModel = ManageCustomFoodsViewModel()
     @State private var editMode: CreateFoodMode?
+    @State private var infoFood: IdentifiedFood?
 
     var body: some View {
         NavigationStack {
@@ -53,10 +54,37 @@ struct ManageCustomFoodsView: View {
                 }
             }
             .task { await vm.load() }
+            .sheet(item: $infoFood) { identified in
+                FoodInfoPage(
+                    food: identified.food,
+                    onDismiss: {
+                        infoFood = nil
+                        Task { await vm.load() }
+                    },
+                    onEditCustom: { food in
+                        infoFood = nil
+                        editMode = .editCustom(food)
+                    },
+                    onPublishCustom: { food in
+                        infoFood = nil
+                        editMode = .publishFromCustom(food)
+                    },
+                    onFoodDeleted: {
+                        infoFood = nil
+                        Task { await vm.load() }
+                    })
+            }
             .sheet(item: $editMode) { mode in
                 CreateFoodSheet(
                     mode:      mode,
                     onSaved:   { _ in Task { await vm.load() } },
+                    onPublish: { food in
+                        editMode = .publishFromCustom(food)
+                    },
+                    onDelete:  { food in
+                        editMode = nil
+                        vm.delete(food)
+                    },
                     onDismiss: { editMode = nil }
                 )
             }
@@ -130,25 +158,10 @@ struct ManageCustomFoodsView: View {
                                 showQuickAdd: false,
                                 onTap:       {
                                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    editMode = .editCustom(food)
+                                    infoFood = IdentifiedFood(food: .custom(food))
                                 },
                                 onQuickAdd:  nil
                             )
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    vm.delete(food)
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-
-                                Button {
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    editMode = .publishFromCustom(food)
-                                } label: {
-                                    Label("Publish", systemImage: "globe")
-                                }
-                                .tint(Color.appTint)
-                            }
                         }
                     }
                     .background(Color.appSurface)

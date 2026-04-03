@@ -7,6 +7,8 @@ import SwiftUI
 struct CreateFoodSheet: View {
     let mode:      CreateFoodMode
     let onSaved:   ((CustomFood?) -> Void)?
+    let onPublish: ((CustomFood) -> Void)?
+    let onDelete:  ((CustomFood) -> Void)?
     let onDismiss: () -> Void
 
     @State private var vm:                 CreateFoodViewModel
@@ -17,12 +19,21 @@ struct CreateFoodSheet: View {
     @State private var showPrefillBanner:  Bool = false
     @State private var showCustomUnitField: Bool = false
 
+    private var isEditCustomMode: Bool {
+        if case .editCustom = mode { return true }
+        return false
+    }
+
     init(mode: CreateFoodMode,
          vm: CreateFoodViewModel? = nil,
          onSaved: ((CustomFood?) -> Void)? = nil,
+         onPublish: ((CustomFood) -> Void)? = nil,
+         onDelete: ((CustomFood) -> Void)? = nil,
          onDismiss: @escaping () -> Void) {
         self.mode      = mode
         self.onSaved   = onSaved
+        self.onPublish = onPublish
+        self.onDelete  = onDelete
         self.onDismiss = onDismiss
         let resolved = vm ?? CreateFoodViewModel(mode: mode)
         _vm = State(initialValue: resolved)
@@ -61,6 +72,11 @@ struct CreateFoodSheet: View {
                         // 7. Optional fields
                         optionalSection
 
+                        // 8. Publish / Delete actions (edit custom only)
+                        if case .editCustom(let food) = mode {
+                            editActionsSection(food: food)
+                        }
+
                         Spacer(minLength: 100)
                     }
                     .padding(.top, Spacing.md)
@@ -71,9 +87,12 @@ struct CreateFoodSheet: View {
                 if vm.overlayPanel != .idle {
                     FoodUnitConversionOverlay(
                         overlayPanel:       $vm.overlayPanel,
-                        conversions:        [],
+                        conversions:        vm.visibleExistingConversions,
                         onAdd:              nil,
-                        onDelete:           nil,
+                        onDelete:           isEditCustomMode ? { convId in
+                            vm.deletedConversionIds.insert(convId)
+                            vm.existingConversions.removeAll { $0.id == convId }
+                        } : nil,
                         pendingConversions: $vm.pendingConversions,
                         isDraftMode:        true,
                         baseServingSize:    Double(vm.servingSizeText) ?? 0,
@@ -319,6 +338,18 @@ struct CreateFoodSheet: View {
                     noUnitSelection:    true,
                     accentColor:        formAccent)
             }
+        } else if case .editCustom = mode {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                FoodUnitConversionsBlock(
+                    overlayPanel:       $vm.overlayPanel,
+                    conversions:        vm.visibleExistingConversions,
+                    pendingConversions:  vm.pendingConversions,
+                    selectedUnit:       .constant(""),
+                    basePills:          [],
+                    noUnitSelection:    true,
+                    accentColor:        formAccent)
+            }
+            .task { await vm.loadConversions() }
         }
     }
 
@@ -469,6 +500,51 @@ struct CreateFoodSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
         }
         .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Edit Actions (Publish / Delete)
+
+    @ViewBuilder
+    private func editActionsSection(food: CustomFood) -> some View {
+        VStack(spacing: Spacing.sm) {
+            if let publishAction = onPublish {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    publishAction(food)
+                } label: {
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "globe")
+                        Text("Publish to Community")
+                    }
+                    .font(.appSubhead)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.appSuccess)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.md)
+                    .background(Color.appSuccess.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: BorderRadius.lg))
+                }
+                .buttonStyle(.plain)
+            }
+
+            if let deleteAction = onDelete {
+                Button(role: .destructive) {
+                    deleteAction(food)
+                    onDismiss()
+                } label: {
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "trash")
+                        Text("Delete Food")
+                    }
+                    .font(.appSubhead)
+                    .foregroundStyle(Color.appDestructive)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.md)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, Spacing.lg)
     }
 
     // MARK: - Save Button

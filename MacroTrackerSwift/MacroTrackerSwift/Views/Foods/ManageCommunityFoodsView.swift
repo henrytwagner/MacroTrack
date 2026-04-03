@@ -8,6 +8,7 @@ struct ManageCommunityFoodsView: View {
 
     @State private var vm:           ManageCommunityFoodsViewModel = ManageCommunityFoodsViewModel()
     @State private var editMode:     CreateFoodMode?
+    @State private var infoFood:     IdentifiedFood?
     @State private var deleteTarget: CommunityFood?
     @State private var deleteError:  String?
 
@@ -28,6 +29,16 @@ struct ManageCommunityFoodsView: View {
             .navigationTitle("Community Foods")
             .navigationBarTitleDisplayMode(.large)
             .task { await vm.load() }
+            .sheet(item: $infoFood) { identified in
+                FoodInfoPage(
+                    food: identified.food,
+                    onDismiss: {
+                        infoFood = nil
+                        Task { await vm.load() }
+                    },
+                    onEditCustom: nil,
+                    onPublishCustom: nil)
+            }
             .sheet(item: $editMode) { mode in
                 CreateFoodSheet(
                     mode:      mode,
@@ -150,7 +161,7 @@ struct ManageCommunityFoodsView: View {
     private func communityFoodRow(_ food: CommunityFood) -> some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            editMode = .editCommunity(food)
+            infoFood = IdentifiedFood(food: .community(food))
         } label: {
             HStack(spacing: Spacing.md) {
                 VStack(alignment: .leading, spacing: 2) {

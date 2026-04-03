@@ -84,7 +84,7 @@ As of April 2026, the following is functional:
 
 - **Gemini is a parser, not a nutritionist.** The LLM never generates or estimates nutritional values. It only parses user intent from transcripts. All nutrition data comes from USDA FoodData Central or user-created custom foods. This constraint is baked into the system prompt and enforced as a project invariant.
 
-- **Single-user prototype.** No authentication. A hardcoded default user in `server/src/db/defaultUser.ts`. This is intentional — auth is a later concern.
+- **Full authentication.** Apple Sign-in, email/password registration, JWT access/refresh tokens, password reset. Auth middleware on all API routes. `defaultUser.ts` is deprecated.
 
 - **Voice-first but not voice-only.** Tap confirmation and manual entry are always present throughout the UI. The voice pipeline is primary, not mandatory.
 
@@ -310,8 +310,8 @@ This mode is computationally heavier and will likely require on-device inference
 |---|---|---|
 | Mobile framework | SwiftUI (iOS 17+, Swift 5.9) | Established |
 | Backend | Fastify + TypeScript + PostgreSQL/Prisma | Established |
-| Voice parsing | Gemini 2.0 Flash | Established |
-| Speech-to-text | SFSpeechRecognizer + AVAudioEngine (on-device) | Established |
+| Voice parsing + audio | Gemini 2.5 Flash (native audio preview) | Established |
+| Speech-to-text | Gemini Live (server-side, audio streaming via GeminiLiveService) | Established |
 | Nutrition database | USDA FoodData Central | Established |
 | BLE scale stream | CoreBluetooth (native, no wrapper) | Complete |
 | Barcode scan | VisionKit DataScannerViewController + AVFoundation | Complete |

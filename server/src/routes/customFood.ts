@@ -295,6 +295,7 @@ export async function customFoodRoutes(app: FastifyInstance) {
               unitName: conv.unitName,
               quantityInBaseServings: conv.quantityInBaseServings,
               measurementSystem: conv.measurementSystem,
+              createdByUserId: userId,
             })),
           });
         }

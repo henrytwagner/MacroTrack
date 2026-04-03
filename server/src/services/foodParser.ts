@@ -84,9 +84,7 @@ async function findCustomFood(
 // Community food fuzzy matching
 // ---------------------------------------------------------------------------
 
-async function findCommunityFood(
-  name: string,
-): Promise<{
+type CommunityFoodMatch = {
   id: string;
   name: string;
   brandName: string | null;
@@ -96,32 +94,56 @@ async function findCommunityFood(
   proteinG: number;
   carbsG: number;
   fatG: number;
-} | null> {
+};
+
+const communityFoodSelect = {
+  id: true,
+  name: true,
+  brandName: true,
+  defaultServingSize: true,
+  defaultServingUnit: true,
+  calories: true,
+  proteinG: true,
+  carbsG: true,
+  fatG: true,
+} as const;
+
+async function findDialedFood(
+  name: string,
+): Promise<CommunityFoodMatch | null> {
   const normalized = name.toLowerCase().trim();
 
-  const result = await prisma.communityFood.findFirst({
+  return prisma.communityFood.findFirst({
     where: {
       status: "ACTIVE",
+      dataSource: "DIALED",
+      OR: [
+        { name: { contains: normalized, mode: "insensitive" } },
+        { commonName: { contains: normalized, mode: "insensitive" } },
+      ],
+    },
+    orderBy: [{ trustScore: "desc" }, { usesCount: "desc" }],
+    select: communityFoodSelect,
+  });
+}
+
+async function findCommunityFood(
+  name: string,
+): Promise<CommunityFoodMatch | null> {
+  const normalized = name.toLowerCase().trim();
+
+  return prisma.communityFood.findFirst({
+    where: {
+      status: "ACTIVE",
+      NOT: { dataSource: "DIALED" },
       OR: [
         { name: { contains: normalized, mode: "insensitive" } },
         { brandName: { contains: normalized, mode: "insensitive" } },
       ],
     },
     orderBy: [{ trustScore: "desc" }, { usesCount: "desc" }],
-    select: {
-      id: true,
-      name: true,
-      brandName: true,
-      defaultServingSize: true,
-      defaultServingUnit: true,
-      calories: true,
-      proteinG: true,
-      carbsG: true,
-      fatG: true,
-    },
+    select: communityFoodSelect,
   });
-
-  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -376,8 +398,8 @@ async function lookupItem(
       }
     }
 
-    // Community food from history
-    if (history.source === "COMMUNITY" && history.communityFoodId) {
+    // Dialed or Community food from history
+    if ((history.source === "COMMUNITY" || history.source === "DIALED") && history.communityFoodId) {
       const community = await prisma.communityFood.findUnique({
         where: { id: history.communityFoodId },
         select: { id: true, name: true, brandName: true, defaultServingSize: true, defaultServingUnit: true, calories: true, proteinG: true, carbsG: true, fatG: true },
@@ -393,7 +415,7 @@ async function lookupItem(
             quantity: histQty,
             unit: histUnit === "servings" ? community.defaultServingUnit : histUnit,
             ...macros,
-            source: "COMMUNITY" as FoodSource,
+            source: history.source as FoodSource,
             communityFoodId: community.id,
             mealLabel,
             state: "normal",
@@ -418,6 +440,33 @@ async function lookupItem(
         ...macros,
         source: "CUSTOM" as FoodSource,
         customFoodId: custom.id,
+        mealLabel,
+        state: "normal",
+      },
+    };
+  }
+
+  // Tier 2a: Check Dialed foods (curated baseline data)
+  const dialed = await findDialedFood(item.name);
+  if (dialed) {
+    const macros = scaleMacros(dialed, dialed.defaultServingSize, quantity, unit, dialed.defaultServingUnit);
+    prisma.communityFood.update({
+      where: { id: dialed.id },
+      data: { usesCount: { increment: 1 }, lastUsedAt: new Date() },
+    }).catch(() => {});
+    const displayName = dialed.brandName
+      ? `${dialed.brandName} — ${dialed.name}`
+      : dialed.name;
+    return {
+      found: true,
+      draft: {
+        id: tmpId,
+        name: displayName,
+        quantity,
+        unit: unit === "servings" ? dialed.defaultServingUnit : unit,
+        ...macros,
+        source: "DIALED" as FoodSource,
+        communityFoodId: dialed.id,
         mealLabel,
         state: "normal",
       },
@@ -521,7 +570,7 @@ export async function lookupItemInUsda(
 export type KitchenLookupResult =
   | {
       status: "found";
-      foodRef: string; // "custom:UUID" | "usda:FDC_ID" | "community:UUID"
+      foodRef: string; // "custom:UUID" | "dialed:UUID" | "community:UUID" | "usda:FDC_ID"
       name: string;
       source: FoodSource;
       servingSize: number;
@@ -615,9 +664,11 @@ export async function buildDraftItemFromRef(
   // Look up per-food unit conversion for custom units (e.g. "patty")
   const convWhere = refType === "custom"
     ? { userId, unitName: unit, customFoodId: refId }
-    : refType === "usda"
-      ? { userId, unitName: unit, usdaFdcId: parseInt(refId, 10) }
-      : undefined;
+    : refType === "community" || refType === "dialed"
+      ? { communityFoodId: refId, unitName: unit }
+      : refType === "usda"
+        ? { userId, unitName: unit, usdaFdcId: parseInt(refId, 10) }
+        : undefined;
   const conv = convWhere
     ? await prisma.foodUnitConversion.findFirst({ where: convWhere, select: { quantityInBaseServings: true } })
     : null;
@@ -643,10 +694,10 @@ export async function buildDraftItemFromRef(
     };
   }
 
-  if (refType === "community") {
+  if (refType === "community" || refType === "dialed") {
     const community = await prisma.communityFood.findUnique({
       where: { id: refId },
-      select: { id: true, name: true, brandName: true, defaultServingSize: true, defaultServingUnit: true, calories: true, proteinG: true, carbsG: true, fatG: true },
+      select: { id: true, name: true, brandName: true, dataSource: true, defaultServingSize: true, defaultServingUnit: true, calories: true, proteinG: true, carbsG: true, fatG: true },
     });
     if (!community) return null;
     prisma.communityFood.update({
@@ -657,13 +708,14 @@ export async function buildDraftItemFromRef(
       ? `${community.brandName} — ${community.name}`
       : community.name;
     const macros = scaleMacros(community, community.defaultServingSize, quantity, unit, community.defaultServingUnit);
+    const source: FoodSource = community.dataSource === "DIALED" ? "DIALED" : "COMMUNITY";
     return {
       id: tmpId,
       name: displayName,
       quantity,
       unit: unit === "servings" ? community.defaultServingUnit : unit,
       ...macros,
-      source: "COMMUNITY",
+      source,
       communityFoodId: community.id,
       mealLabel,
       state: "normal",
@@ -791,7 +843,7 @@ async function getBaseFoodForEdit(
       baseServingUnit: row.servingUnit,
     };
   }
-  if (source === "COMMUNITY" && communityFoodId) {
+  if ((source === "COMMUNITY" || source === "DIALED") && communityFoodId) {
     const row = await prisma.communityFood.findUnique({
       where: { id: communityFoodId },
       select: {

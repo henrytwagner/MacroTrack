@@ -3,6 +3,7 @@ import SwiftUI
 /// Page 0: Bold hero welcome screen inspired by the website's gradient-heavy dark aesthetic.
 struct OnboardingWelcomePage: View {
     var vm: OnboardingViewModel
+    @Environment(AuthStore.self) private var authStore
 
     @State private var animateGradient = false
     @State private var showContent = false
@@ -66,7 +67,17 @@ struct OnboardingWelcomePage: View {
                     .opacity(showContent ? 1 : 0)
 
                 Spacer()
-                Spacer()
+
+                // Sign in link for existing users
+                Button {
+                    authStore.signOut()
+                } label: {
+                    Text("Already have an account? Sign in")
+                        .font(.appFootnote)
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                .opacity(showContent ? 1 : 0)
+                .padding(.bottom, Spacing.md)
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, Spacing.xl)

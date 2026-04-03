@@ -24,6 +24,7 @@ struct FoodDetailSheet: View {
     let onAddToMeal:     ((SavedMealItem) -> Void)?
 
     @State private var vm: FoodDetailViewModel
+    @State private var showFoodInfo = false
 
     // MARK: - Inits
 
@@ -116,8 +117,12 @@ struct FoodDetailSheet: View {
         )
     }
 
+    private var canPublishFood: Bool {
+        !isEditMode && onPublishCustom != nil && identifiedFood.food.asCustomFood != nil
+    }
+
     private var hasOverflowActions: Bool {
-        canEditFood || (isEditMode && onDeleteEntry != nil)
+        canEditFood || canPublishFood || (isEditMode && onDeleteEntry != nil)
     }
 
     var body: some View {
@@ -171,6 +176,13 @@ struct FoodDetailSheet: View {
         .safeAreaInset(edge: .bottom) { saveButton }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .sheet(isPresented: $showFoodInfo) {
+            FoodInfoPage(
+                food: identifiedFood.food,
+                onDismiss: { showFoodInfo = false },
+                onEditCustom: onEditCustom,
+                onPublishCustom: onPublishCustom)
+        }
         .task {
             await vm.loadConversions()
             await vm.loadFoodPreference()
@@ -194,6 +206,19 @@ struct FoodDetailSheet: View {
     private var sheetHeader: some View {
         HStack {
             Spacer()
+            if !isEditMode {
+                Button {
+                    showFoodInfo = true
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.appTextSecondary)
+                        .frame(width: 32, height: 32)
+                        .background(Color.appSurfaceSecondary)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+            }
             if hasOverflowActions {
                 overflowMenu
             }
@@ -205,13 +230,22 @@ struct FoodDetailSheet: View {
 
     private var overflowMenu: some View {
         Menu {
-            if canEditFood, let editAction = onEditCustom,
+            if canEditFood || canPublishFood,
                let custom = identifiedFood.food.asCustomFood {
                 Section("Food") {
-                    Button {
-                        editAction(custom)
-                    } label: {
-                        Label("Edit Nutrition Info", systemImage: "pencil")
+                    if let editAction = onEditCustom, canEditFood {
+                        Button {
+                            editAction(custom)
+                        } label: {
+                            Label("Edit Nutrition Info", systemImage: "pencil")
+                        }
+                    }
+                    if let publishAction = onPublishCustom, canPublishFood {
+                        Button {
+                            publishAction(custom)
+                        } label: {
+                            Label("Publish to Community", systemImage: "globe")
+                        }
                     }
                 }
             }
@@ -269,6 +303,7 @@ struct FoodDetailSheet: View {
     private func sourceAccessibilityLabel(_ source: FoodSource) -> String {
         switch source {
         case .custom:    return "My food"
+        case .dialed:    return "Dialed food"
         case .community: return "Community food"
         case .database:  return "USDA database food"
         }

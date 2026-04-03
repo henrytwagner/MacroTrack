@@ -1606,6 +1606,7 @@ async function handleBarcodeScan(
       send(socket, { type: "ask", question: `Added ${food.name}.` } satisfies WSAskMessage);
       return;
     }
+    case "dialed":
     case "community": {
       const food = result.food;
       const item: DraftItem = {
@@ -1617,7 +1618,7 @@ async function handleBarcodeScan(
         proteinG: food.proteinG,
         carbsG: food.carbsG,
         fatG: food.fatG,
-        source: "COMMUNITY",
+        source: result.source === "dialed" ? "DIALED" : "COMMUNITY",
         communityFoodId: food.id,
         mealLabel: getProvisionalMealLabel(),
         state: "normal",

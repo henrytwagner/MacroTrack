@@ -5,7 +5,7 @@
 
 // --- Enums & Constants ---
 
-export type FoodSource = "DATABASE" | "CUSTOM" | "COMMUNITY";
+export type FoodSource = "DATABASE" | "CUSTOM" | "COMMUNITY" | "DIALED";
 
 export type FoodCategory =
   | "PROTEIN"
@@ -162,6 +162,10 @@ export interface FoodUnitConversion {
   communityFoodId?: string;
   usdaFdcId?: number;
   measurementSystem: 'weight' | 'volume' | 'abstract';
+  /** Null/absent = system-level (visible to all). Present = private to this user. */
+  userId?: string;
+  /** The user who originally authored this conversion. */
+  createdByUserId?: string;
 }
 
 export interface CreateFoodUnitConversionRequest {
@@ -284,6 +288,7 @@ export interface UserPreferences {
 
 export interface UnifiedSearchResponse {
   myFoods: CustomFood[];
+  dialed: CommunityFood[];
   community: CommunityFood[];
   database: USDASearchResult[];
 }

@@ -7,30 +7,31 @@ datasource db {
 }
 
 model User {
-  id                   String          @id @default(uuid())
-  appleUserId          String?         @unique
-  email                String?         @unique
+  id                   String         @id @default(uuid())
+  appleUserId          String?        @unique
+  email                String?        @unique
   passwordHash         String?
-  name                 String          @default("Default User")
-  createdAt            DateTime        @default(now())
+  name                 String         @default("Default User")
+  createdAt            DateTime       @default(now())
   // Profile fields
   heightCm             Float?
   weightKg             Float?
-  sex                  Sex             @default(UNSPECIFIED)
-  dateOfBirth          DateTime?       @db.Date
+  sex                  Sex            @default(UNSPECIFIED)
+  dateOfBirth          DateTime?      @db.Date
   activityLevel        ActivityLevel?
-  preferredUnits       UnitSystem      @default(METRIC)
+  preferredUnits       UnitSystem     @default(METRIC)
   currentGoalProfileId String?
 
   // Relations
-  dailyGoal            DailyGoal?
-  foodEntries          FoodEntry[]
-  customFoods          CustomFood[]
-  voiceSessions        VoiceSession[]
-  goalProfiles         GoalProfile[]
-  currentGoalProfile   GoalProfile?    @relation("CurrentGoalProfile", fields: [currentGoalProfileId], references: [id])
-  goalTimelineEntries  GoalTimeline[]      @relation("UserGoalTimeline")
-  unitConversions      FoodUnitConversion[]
+  dailyGoal             DailyGoal?
+  foodEntries           FoodEntry[]
+  customFoods           CustomFood[]
+  voiceSessions         VoiceSession[]
+  goalProfiles          GoalProfile[]
+  currentGoalProfile    GoalProfile?           @relation("CurrentGoalProfile", fields: [currentGoalProfileId], references: [id])
+  goalTimelineEntries   GoalTimeline[]         @relation("UserGoalTimeline")
+  unitConversions       FoodUnitConversion[]
+  createdConversions    FoodUnitConversion[] @relation("ConversionCreator")
   createdCommunityFoods CommunityFood[]        @relation("CommunityFoodCreator")
   createdBarcodes       CommunityFoodBarcode[] @relation("BarcodeCreator")
   foodReports           CommunityFoodReport[]  @relation("FoodReporter")
@@ -69,36 +70,36 @@ model PasswordReset {
 }
 
 model DailyGoal {
-  id        String @id @default(uuid())
-  userId    String @unique
-  calories  Int
-  proteinG  Float
-  carbsG    Float
-  fatG      Float
-  user      User   @relation(fields: [userId], references: [id])
+  id       String @id @default(uuid())
+  userId   String @unique
+  calories Int
+  proteinG Float
+  carbsG   Float
+  fatG     Float
+  user     User   @relation(fields: [userId], references: [id])
 }
 
 model FoodEntry {
-  id           String   @id @default(uuid())
-  userId       String
-  date         DateTime @db.Date
-  mealLabel    MealLabel
-  name         String
-  calories     Float
-  proteinG     Float
-  carbsG       Float
-  fatG         Float
-  quantity     Float
-  unit         String
-  source          FoodSource
-  usdaFdcId       Int?
-  customFoodId    String?
-  communityFoodId String?
-  confirmedViaScale Boolean  @default(false)
-  voiceSessionId  String?
-  savedMealId     String?
-  mealInstanceId  String?
-  createdAt       DateTime @default(now())
+  id                String     @id @default(uuid())
+  userId            String
+  date              DateTime   @db.Date
+  mealLabel         MealLabel
+  name              String
+  calories          Float
+  proteinG          Float
+  carbsG            Float
+  fatG              Float
+  quantity          Float
+  unit              String
+  source            FoodSource
+  usdaFdcId         Int?
+  customFoodId      String?
+  communityFoodId   String?
+  confirmedViaScale Boolean    @default(false)
+  voiceSessionId    String?
+  savedMealId       String?
+  mealInstanceId    String?
+  createdAt         DateTime   @default(now())
 
   user          User           @relation(fields: [userId], references: [id])
   customFood    CustomFood?    @relation(fields: [customFoodId], references: [id])
@@ -111,33 +112,33 @@ model FoodEntry {
 }
 
 model CustomFood {
-  id             String               @id @default(uuid())
-  userId         String
-  name           String
-  brandName      String?
-  servingSize    Float
-  servingUnit    String
-  calories       Float
-  proteinG       Float
-  carbsG         Float
-  fatG           Float
-  sodiumMg       Float?
-  cholesterolMg  Float?
-  fiberG         Float?
-  sugarG         Float?
-  saturatedFatG  Float?
-  transFatG      Float?
-  potassiumMg    Float?
-  calciumMg      Float?
-  ironMg         Float?
-  vitaminDMcg    Float?
-  addedSugarG    Float?
-  category       FoodCategory?
-  barcode        String?
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  id            String        @id @default(uuid())
+  userId        String
+  name          String
+  brandName     String?
+  servingSize   Float
+  servingUnit   String
+  calories      Float
+  proteinG      Float
+  carbsG        Float
+  fatG          Float
+  sodiumMg      Float?
+  cholesterolMg Float?
+  fiberG        Float?
+  sugarG        Float?
+  saturatedFatG Float?
+  transFatG     Float?
+  potassiumMg   Float?
+  calciumMg     Float?
+  ironMg        Float?
+  vitaminDMcg   Float?
+  addedSugarG   Float?
+  category      FoodCategory?
+  barcode       String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  user        User                  @relation(fields: [userId], references: [id])
+  user        User                 @relation(fields: [userId], references: [id])
   foodEntries FoodEntry[]
   unitConfigs FoodUnitConversion[]
   preferences UserFoodPreference[]
@@ -159,9 +160,9 @@ model SavedMeal {
 }
 
 model SavedMealItem {
-  id              String    @id @default(uuid())
+  id              String     @id @default(uuid())
   savedMealId     String
-  savedMeal       SavedMeal @relation(fields: [savedMealId], references: [id], onDelete: Cascade)
+  savedMeal       SavedMeal  @relation(fields: [savedMealId], references: [id], onDelete: Cascade)
   name            String
   quantity        Float
   unit            String
@@ -176,16 +177,16 @@ model SavedMealItem {
 }
 
 model VoiceSession {
-  id             String        @id @default(uuid())
-  userId         String
-  date           DateTime?     @db.Date
-  startedAt      DateTime      @default(now())
-  endedAt        DateTime?
-  status         SessionStatus @default(active)
-  draftItems     Json?
-  savedSnapshot  Json?
-  user           User          @relation(fields: [userId], references: [id])
-  foodEntries    FoodEntry[]
+  id            String        @id @default(uuid())
+  userId        String
+  date          DateTime?     @db.Date
+  startedAt     DateTime      @default(now())
+  endedAt       DateTime?
+  status        SessionStatus @default(active)
+  draftItems    Json?
+  savedSnapshot Json?
+  user          User          @relation(fields: [userId], references: [id])
+  foodEntries   FoodEntry[]
 
   @@index([userId])
   @@index([userId, date])
@@ -196,26 +197,31 @@ model VoiceSession {
 /// Used to keep macros tied to a single canonical base while allowing
 /// users to log with alternative units.
 model FoodUnitConversion {
-  id                 String   @id @default(uuid())
-  userId             String?
-  customFoodId       String?
-  communityFoodId    String?
-  usdaFdcId          Int?
+  id                     String   @id @default(uuid())
+  userId                 String?
+  customFoodId           String?
+  communityFoodId        String?
+  usdaFdcId              Int?
   /// Name of the user-facing unit (e.g. "slice", "cup").
-  unitName           String
+  unitName               String
   /// How many base servings this unit represents.
   /// For example, if the base serving is "100 g" and the user defines
   /// 1 slice = 30 g, then quantityInBaseServings = 0.3.
   quantityInBaseServings Float
   /// Measurement system for the unit: 'weight', 'volume', or 'abstract'.
   /// Used for consistency checks and cascade updates.
-  measurementSystem  String   @default("abstract")
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  measurementSystem      String   @default("abstract")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
-  user           User?           @relation(fields: [userId], references: [id])
-  customFood     CustomFood?     @relation(fields: [customFoodId], references: [id])
-  communityFood  CommunityFood?  @relation(fields: [communityFoodId], references: [id])
+  /// The user who originally authored this conversion (preserved on
+  /// system-level conversions after publish, where userId becomes null).
+  createdByUserId        String?
+
+  user          User?          @relation(fields: [userId], references: [id])
+  createdBy     User?          @relation("ConversionCreator", fields: [createdByUserId], references: [id])
+  customFood    CustomFood?    @relation(fields: [customFoodId], references: [id])
+  communityFood CommunityFood? @relation(fields: [communityFoodId], references: [id])
 
   @@index([userId, customFoodId, unitName])
   @@index([userId, usdaFdcId, unitName])
@@ -223,15 +229,15 @@ model FoodUnitConversion {
 }
 
 model GoalProfile {
-  id             String        @id @default(uuid())
-  userId         String
-  name           String
-  createdAt      DateTime      @default(now())
-  archivedAt     DateTime?
+  id         String    @id @default(uuid())
+  userId     String
+  name       String
+  createdAt  DateTime  @default(now())
+  archivedAt DateTime?
 
-  user           User          @relation(fields: [userId], references: [id])
-  goalEntries    GoalTimeline[]
-  currentForUsers User[]       @relation("CurrentGoalProfile")
+  user            User           @relation(fields: [userId], references: [id])
+  goalEntries     GoalTimeline[]
+  currentForUsers User[]         @relation("CurrentGoalProfile")
 }
 
 model GoalTimeline {
@@ -247,8 +253,8 @@ model GoalTimeline {
   aggressiveness GoalAggressiveness
   createdAt      DateTime           @default(now())
 
-  user           User               @relation("UserGoalTimeline", fields: [userId], references: [id])
-  profile        GoalProfile?       @relation(fields: [profileId], references: [id])
+  user    User         @relation("UserGoalTimeline", fields: [userId], references: [id])
+  profile GoalProfile? @relation(fields: [profileId], references: [id])
 
   @@index([userId, effectiveDate(sort: Desc)])
   @@index([profileId, effectiveDate])
@@ -289,17 +295,18 @@ model CommunityFood {
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 
-  createdBy      User?                  @relation("CommunityFoodCreator", fields: [createdByUserId], references: [id])
-  foodEntries    FoodEntry[]
-  barcodes       CommunityFoodBarcode[]
-  reports        CommunityFoodReport[]
-  aliases        CommunityFoodAlias[]
+  createdBy       User?                  @relation("CommunityFoodCreator", fields: [createdByUserId], references: [id])
+  foodEntries     FoodEntry[]
+  barcodes        CommunityFoodBarcode[]
+  reports         CommunityFoodReport[]
+  aliases         CommunityFoodAlias[]
   unitConversions FoodUnitConversion[]
-  preferences    UserFoodPreference[]
+  preferences     UserFoodPreference[]
 
   @@index([name])
   @@index([status])
   @@index([usdaFdcId])
+  @@index([dataSource])
 }
 
 model CommunityFoodBarcode {
@@ -327,12 +334,12 @@ model CommunityFoodReport {
 }
 
 model CommunityFoodAlias {
-  id              String        @id @default(uuid())
+  id              String   @id @default(uuid())
   communityFoodId String
   alias           String
-  createdAt       DateTime      @default(now())
+  createdAt       DateTime @default(now())
 
-  communityFood   CommunityFood @relation(fields: [communityFoodId], references: [id], onDelete: Cascade)
+  communityFood CommunityFood @relation(fields: [communityFoodId], references: [id], onDelete: Cascade)
 
   @@index([alias])
   @@index([communityFoodId])
@@ -390,6 +397,7 @@ enum FoodSource {
   DATABASE
   CUSTOM
   COMMUNITY
+  DIALED
 }
 
 enum FoodCategory {

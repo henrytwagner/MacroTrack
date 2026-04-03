@@ -80,6 +80,7 @@ public extension Color {
     static let appDestructive    = Color(lightHex: 0xFF3B30, darkHex: 0xFF453A)
     static let appSuccess        = Color(lightHex: 0x34C759, darkHex: 0x30D158)
     static let appWarning        = Color(lightHex: 0xFF9500, darkHex: 0xFF9F0A)
+    static let appDialed         = Color(lightHex: 0x5856D6, darkHex: 0x5E5CE6)
 
     // Macro Accents
     static let caloriesAccent = Color(lightHex: 0xFF2D55, darkHex: 0xFF375F)

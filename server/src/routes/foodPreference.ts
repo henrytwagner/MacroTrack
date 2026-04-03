@@ -7,6 +7,7 @@ function parseFoodRef(foodRef: string): { customFoodId?: string; communityFoodId
   if (!type || !id) return null;
   switch (type) {
     case "custom":    return { customFoodId: id };
+    case "dialed":
     case "community": return { communityFoodId: id };
     case "usda": {
       const parsed = Number.parseInt(id, 10);
@@ -48,7 +49,7 @@ export async function foodPreferenceRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const userId = request.userId;
       const ref = parseFoodRef(request.params.foodRef);
-      if (!ref) return reply.code(400).send({ error: "Invalid foodRef format. Use custom:<id>, community:<id>, or usda:<fdcId>" });
+      if (!ref) return reply.code(400).send({ error: "Invalid foodRef format. Use custom:<id>, dialed:<id>, community:<id>, or usda:<fdcId>" });
 
       const pref = await prisma.userFoodPreference.findFirst({
         where: { userId, ...ref },

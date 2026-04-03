@@ -21,18 +21,15 @@ Always read this before generating or modifying Swift files.
 - All side effects go in `.task {}` or explicit action methods
 
 ### Stores (Observation layer)
-- One `@Observable @MainActor final class` per RN store
+- One `@Observable @MainActor final class` per domain concern
 - Singletons via `static let shared`
 - Each store owns its fetch/mutate methods; views call them, not `APIClient` directly
-- Store responsibilities match RN Zustand stores 1:1 through Phase G cutover:
-  - `DateStore` ↔ `dateStore.ts`
-  - `DailyLogStore` ↔ `dailyLogStore.ts`
-  - `GoalStore` ↔ `goalStore.ts`
-  - `DraftStore` ↔ `draftStore.ts`
+- 16 stores: `AuthStore`, `ProfileStore`, `GoalStore`, `DailyLogStore`, `DateStore`, `DraftStore`, `SessionStore`, `WeightStore`, `MealsStore`, `ProgressPhotoStore`, `CalendarStore`, `StatsStore`, `InsightsStore`, `AppearanceStore`, `DashboardLayoutStore`, `TabRouter`
 
 ### Networking
 - `actor APIClient` — never call it from a `View` body; always from a store method or `.task {}`
-- `WSClient` — skeleton in Phase A; full integration with `DraftStore` in Phase E
+- `WSClient` — WebSocket client for Kitchen Mode real-time communication with `DraftStore`
+- `KeychainService` — secure JWT token storage (access + refresh tokens)
 - Base URL reads from `Config.baseURL` (xcconfig-driven; falls back to `#if DEBUG` constant)
 
 ### Models
@@ -47,19 +44,12 @@ Always read this before generating or modifying Swift files.
 - All typography from `Font` extensions in `Typography.swift`
 - No magic numbers in views
 
-## Before Porting a Screen
+## Before Modifying a Screen
 
-1. Read the corresponding RN source file first (e.g., `mobile/app/(tabs)/log.tsx`)
-2. Read `SPEC.md` for requirements
-3. Check `BUILD_PLAN.md` for phase scope
-4. Check the parent `CLAUDE.md` for cross-cutting constraints
+1. Read `BUILD_PLAN.md` for current feature scope and phasing
+2. Check the parent `CLAUDE.md` for cross-cutting constraints
+3. Check existing store methods before adding new API calls — the store may already have what you need
 
-## Phase Status
+## Migration Status
 
-- **Phase A**: Foundation (Config, Types, Theme, Stores, APIClient, WSClient skeleton) ✓
-- **Phase B**: Shell + Simple Screens (Dashboard + Profile) ✓
-- **Phase C**: Manual search + food detail
-- **Phase D**: Settings, profile, goals
-- **Phase E**: Kitchen Mode (WSClient + DraftStore integration)
-- **Phase F**: Barcode scanner
-- **Phase G**: Feature parity cutover; retire RN app
+**Complete.** All migration phases (A-G) are done. The SwiftUI app is the sole active client. The React Native `mobile/` directory has been removed. No further porting work is needed.

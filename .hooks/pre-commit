@@ -35,7 +35,8 @@ if [ -z "$schema_changed" ] && [ -n "$new_migration" ]; then
 fi
 
 # Reject hand-written .sql files directly in the migrations directory (not in subdirectories)
-loose_sql=$(git diff --cached --name-only --diff-filter=A -- "$MIGRATIONS_DIR/*.sql")
+# Use grep to exclude files inside timestamped subdirs (which are legitimate Prisma migrations)
+loose_sql=$(git diff --cached --name-only --diff-filter=A -- "$MIGRATIONS_DIR" | grep -E "^${MIGRATIONS_DIR}/[^/]+\.sql$" || true)
 if [ -n "$loose_sql" ]; then
   echo ""
   echo "ERROR: Loose .sql file(s) added to migrations directory:"

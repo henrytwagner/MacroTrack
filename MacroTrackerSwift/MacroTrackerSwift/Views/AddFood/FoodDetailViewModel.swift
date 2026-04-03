@@ -96,6 +96,21 @@ final class FoodDetailViewModel {
 
     // MARK: - Computed
 
+    /// Deduplicated conversions: user-level overrides system-level for the same unitName.
+    var mergedConversions: [FoodUnitConversion] {
+        var byName: [String: FoodUnitConversion] = [:]
+        for conv in conversions {
+            if let existing = byName[conv.unitName] {
+                if conv.userId != nil || existing.isSystemLevel {
+                    byName[conv.unitName] = conv
+                }
+            } else {
+                byName[conv.unitName] = conv
+            }
+        }
+        return Array(byName.values).sorted { $0.unitName < $1.unitName }
+    }
+
     var quantity: Double { Double(quantityText) ?? 0 }
 
     var scaleFactor: Double {
@@ -103,7 +118,7 @@ final class FoodDetailViewModel {
             quantity:    quantity,
             unit:        selectedUnit,
             baseServing: (food.baseServingSize, food.baseServingUnit),
-            conversion:  conversions.first { $0.unitName == selectedUnit })
+            conversion:  mergedConversions.first { $0.unitName == selectedUnit })
     }
 
     var scaledMacros: Macros {
@@ -143,7 +158,7 @@ final class FoodDetailViewModel {
     var unitPills: [String] {
         var seen = Set<String>()
         var pills: [String] = []
-        for unit in [food.baseServingUnit, "servings"] + conversions.map(\.unitName) {
+        for unit in [food.baseServingUnit, "servings"] + mergedConversions.map(\.unitName) {
             if seen.insert(unit).inserted { pills.append(unit) }
         }
         return pills
@@ -159,7 +174,7 @@ final class FoodDetailViewModel {
                 conversions = try await APIClient.shared.getFoodUnitConversionsForCustomFood(f.id)
             case .usda(let f):
                 conversions = try await APIClient.shared.getFoodUnitConversionsForUsdaFood(f.fdcId)
-            case .community(let f):
+            case .dialed(let f), .community(let f):
                 conversions = try await APIClient.shared.getFoodUnitConversionsForCommunityFood(f.id)
             }
         } catch {}

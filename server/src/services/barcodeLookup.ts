@@ -32,6 +32,7 @@ type CommunityFoodRow = NonNullable<
 
 export type BarcodeLookupResult =
   | { source: "custom"; food: CustomFoodRow }
+  | { source: "dialed"; food: CommunityFoodRow }
   | { source: "community"; food: CommunityFoodRow }
   | { source: "not_found"; normalizedGtin: string };
 
@@ -82,7 +83,11 @@ export async function lookupBarcode(
     include: { communityFood: true },
   });
   if (communityRecord?.communityFood) {
-    return { source: "community", food: communityRecord.communityFood };
+    const isDialed = communityRecord.communityFood.dataSource === "DIALED";
+    return {
+      source: isDialed ? "dialed" : "community",
+      food: communityRecord.communityFood,
+    };
   }
 
   return { source: "not_found", normalizedGtin: normalized };

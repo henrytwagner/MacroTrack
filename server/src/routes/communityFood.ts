@@ -290,6 +290,9 @@ export async function communityFoodRoutes(app: FastifyInstance) {
       if (!existing) {
         return reply.code(404).send({ error: "Community food not found" });
       }
+      if (existing.dataSource === "DIALED") {
+        return reply.code(403).send({ error: "Dialed foods cannot be modified" });
+      }
 
       const barcodeProvided = body.barcode !== undefined;
       const trimmedBarcode =
@@ -387,6 +390,9 @@ export async function communityFoodRoutes(app: FastifyInstance) {
       if (!existing) {
         return reply.code(404).send({ error: "Community food not found" });
       }
+      if (existing.dataSource === "DIALED") {
+        return reply.code(403).send({ error: "Dialed foods cannot be deleted" });
+      }
 
       await prisma.communityFood.delete({ where: { id } });
       return reply.code(204).send();
@@ -408,6 +414,9 @@ export async function communityFoodRoutes(app: FastifyInstance) {
       const food = await prisma.communityFood.findUnique({ where: { id } });
       if (!food) {
         return reply.code(404).send({ error: "Community food not found" });
+      }
+      if (food.dataSource === "DIALED") {
+        return reply.code(403).send({ error: "Dialed foods cannot be reported" });
       }
 
       const newReportsCount = food.reportsCount + 1;

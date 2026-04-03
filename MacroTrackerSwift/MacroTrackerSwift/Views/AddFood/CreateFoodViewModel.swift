@@ -51,8 +51,10 @@ final class CreateFoodViewModel {
     // Community-only fields
     var commonName:              String = ""
 
-    var pendingConversions: [PendingUnitConversion] = []
-    var overlayPanel:       FoodUnitConversionPanel = .idle
+    var pendingConversions:   [PendingUnitConversion] = []
+    var existingConversions:  [FoodUnitConversion] = []
+    var deletedConversionIds: Set<String> = []
+    var overlayPanel:         FoodUnitConversionPanel = .idle
 
     var isSaving: Bool   = false
     var saveError: String? = nil
@@ -287,7 +289,23 @@ final class CreateFoodViewModel {
                 vitaminDMcg:   Double(vitaminDText),
                 addedSugarG:   Double(addedSugarText),
                 barcode:       editBarcode)
-            return try await APIClient.shared.updateCustomFood(id: existing.id, data: req)
+            let updated = try await APIClient.shared.updateCustomFood(id: existing.id, data: req)
+
+            // Batch-delete removed conversions
+            for convId in deletedConversionIds {
+                try? await APIClient.shared.deleteFoodUnitConversion(id: convId)
+            }
+            // Batch-create new pending conversions
+            for conv in pendingConversions {
+                let convReq = CreateFoodUnitConversionRequest(
+                    unitName:               conv.unitName,
+                    quantityInBaseServings: conv.quantityInBaseServings,
+                    customFoodId:           existing.id,
+                    usdaFdcId:              nil,
+                    measurementSystem:      nil)
+                _ = try? await APIClient.shared.createFoodUnitConversion(convReq)
+            }
+            return updated
 
         case .editCommunity(let existing):
             let req = CreateCommunityFoodRequest(
@@ -326,6 +344,21 @@ final class CreateFoodViewModel {
             _ = try await APIClient.shared.publishCustomFood(id: food.id, data: req)
             return nil
         }
+    }
+
+    // MARK: - Conversions (edit mode)
+
+    /// Load existing conversions for a custom food being edited.
+    func loadConversions() async {
+        guard case .editCustom(let food) = mode else { return }
+        do {
+            existingConversions = try await APIClient.shared.getFoodUnitConversionsForCustomFood(food.id)
+        } catch {}
+    }
+
+    /// Filtered existing conversions excluding those marked for deletion.
+    var visibleExistingConversions: [FoodUnitConversion] {
+        existingConversions.filter { !deletedConversionIds.contains($0.id) }
     }
 
     // MARK: - Prefill from Nutrition Label

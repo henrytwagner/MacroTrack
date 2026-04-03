@@ -32,6 +32,9 @@ struct FoodUnitConversionsBlock: View {
     /// Primary accent for pills and the add button (e.g. community publish uses `appSuccess`).
     var accentColor: Color = Color.appTint
 
+    /// IDs of system-level (immutable) conversions — shown with a lock icon.
+    var systemConversionIds: Set<String> = []
+
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Spacing.sm) {
@@ -46,7 +49,7 @@ struct FoodUnitConversionsBlock: View {
 
                     // Saved conversion pills — selection mode
                     ForEach(conversions) { conv in
-                        pill(label: conv.unitName, isSelected: selectedUnit == conv.unitName, isPreviewActive: false) {
+                        pill(label: conv.unitName, isSelected: selectedUnit == conv.unitName, isPreviewActive: false, isSystem: systemConversionIds.contains(conv.id)) {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             selectedUnit = conv.unitName
                         }
@@ -60,10 +63,10 @@ struct FoodUnitConversionsBlock: View {
                         }
                     }
                 } else {
-                    // noUnitSelection mode (CreateFoodSheet): only conversion pills, no base pills
+                    // noUnitSelection mode (CreateFoodSheet / FoodInfoPage): only conversion pills, no base pills
                     ForEach(conversions) { conv in
                         let isActive = overlayPanel == .unitPreview(unitName: conv.unitName)
-                        pill(label: conv.unitName, isSelected: false, isPreviewActive: isActive) {
+                        pill(label: conv.unitName, isSelected: false, isPreviewActive: isActive, isSystem: systemConversionIds.contains(conv.id)) {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             if isActive {
                                 overlayPanel = .idle
@@ -107,23 +110,30 @@ struct FoodUnitConversionsBlock: View {
 
     // MARK: - Pill
 
-    private func pill(label: String, isSelected: Bool, isPreviewActive: Bool, onTap: @escaping () -> Void) -> some View {
+    private func pill(label: String, isSelected: Bool, isPreviewActive: Bool, isSystem: Bool = false, onTap: @escaping () -> Void) -> some View {
         Button(action: onTap) {
-            Text(label)
-                .font(.appCaption1)
-                .fontWeight(isSelected ? .semibold : .regular)
-                .foregroundStyle(isSelected ? Color.white : Color.appText)
-                .padding(.horizontal, Spacing.md)
-                .padding(.vertical, Spacing.xs + 2)
-                .background(isSelected ? accentColor : Color.appSurfaceSecondary)
-                .clipShape(Capsule())
-                .overlay(
-                    Capsule()
-                        .stroke(
-                            isPreviewActive ? accentColor : (isSelected ? Color.clear : Color.appBorder),
-                            lineWidth: isPreviewActive ? 1.5 : 0.5
-                        )
-                )
+            HStack(spacing: 3) {
+                if isSystem {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.7) : Color.appTextTertiary)
+                }
+                Text(label)
+                    .font(.appCaption1)
+                    .fontWeight(isSelected ? .semibold : .regular)
+                    .foregroundStyle(isSelected ? Color.white : Color.appText)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs + 2)
+            .background(isSelected ? accentColor : Color.appSurfaceSecondary)
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(
+                        isPreviewActive ? accentColor : (isSelected ? Color.clear : Color.appBorder),
+                        lineWidth: isPreviewActive ? 1.5 : 0.5
+                    )
+            )
         }
         .buttonStyle(.plain)
     }

@@ -4,42 +4,46 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Active Codebase
 
-**The `mobile/` (React Native/Expo) directory is deprecated.** All active development is in `MacroTrackerSwift/` (SwiftUI). Do not reference, suggest changes to, or read files from `mobile/` by default. Only touch `mobile/` if explicitly asked.
+**The `mobile/` (React Native/Expo) codebase has been removed.** All development is in `MacroTrackerSwift/` (SwiftUI, iOS 17+, Swift 6). Do not reference or attempt to read `mobile/` files. The original React Native MVP spec is archived at `SPEC_v1_RN.md`.
 
 ## Project Overview
 
-MacroTrack is a voice-first macronutrient tracking app. Users can log food via voice in "Kitchen Mode" (immersive full-screen modal with live draft cards and WebSocket streaming), manual search, or barcode scanning.
+MacroTrack is a multi-modal macronutrient tracking iOS app. Users can log food via:
+- **Kitchen Mode**: Full-screen immersive session with Gemini Live audio streaming, BLE scale integration, barcode scanning, camera food identification, and inline food search
+- **Manual search**: 3-tab food search (search results, my foods, meals) with barcode scanner
+- **Quick-add**: Frequent foods and saved meals from the Dashboard
+
+**Project origin**: Started as a University of Michigan EECS 594 course project (Henry Wagner, Ryan Kendra, Lucas Kellar). Now a personal project and business venture.
 
 **Current development focus:**
-- Improving the voice logging flow and Kitchen Mode UI (responsiveness, polish, UX refinements)
-- Improving manual entry pages
-- Integrating BLE scale input as a quantity source alongside voice
+- Improving voice command reliability and Gemini food recall accuracy (the largest UX friction)
+- TestFlight polish — preparing for public beta
+- Seed data — populating community food/recipe database to reduce USDA reliance
+- Community meals / recipe sharing (see `FEATURES_ROADMAP.md` Feature 3)
 - Long-term: evolving toward a camera-assisted, scale-integrated, AR-overlay logging experience (see `BUILD_PLAN.md`)
 
-Full product specification lives in `SPEC.md`. Consult it for detailed requirements. Long-term vision and phased build strategy for the input pipeline (scale, camera, voice, AR) lives in `BUILD_PLAN.md`. Long-term feature directions for social, data quality, and intelligence layers live in `FEATURES_ROADMAP.md`.
+**Reference documents:**
+- `BUILD_PLAN.md` — Long-term vision and phased build strategy for the camera/scale/voice/AR input pipeline
+- `FEATURES_ROADMAP.md` — Social, intelligence, and data quality layers (reputation, recipes, day validation, pantry)
+- `SPEC_v1_RN.md` — Archived original React Native MVP spec (February 2026)
 
 **Private planning doc** lives at `.claude/projects/.../PLANNING.md` (not in the repo). Read it at the start of sessions to pick up current priorities, in-progress decisions, and next steps. Update it as work progresses — especially when finishing a task, making a design decision, or discovering something the next session needs to know. This is the cross-session scratchpad; keep it concise and current. It also has an "Ideas & Explorations" section for long-term thinking that goes beyond `FEATURES_ROADMAP.md`. When an idea grows enough to need real detail, spin it into its own file under `.claude/projects/.../ideas/<name>.md` and link it from the planning doc.
 
 **Long-term feature directions** (see `FEATURES_ROADMAP.md` for full details):
 - **Passive Kitchen Mode**: Evolving Kitchen Mode from voice-first to observation-first — auto-add items by combining scale readings + camera identification, with voice as a correction channel. Does not require the YOLO/AR pipeline.
 - **User Reputation**: Single global reputation score per user governing community food trustworthiness. Upvotes, reports, and contribution quality determine score.
-- **Recipe Sharing & Meal Prep**: Personal meal portioning (`totalServings` on SavedMeal) + a separate community recipe system with discovery, ratings, and forking. Recipes are distinct from community foods.
+- **Recipe Sharing & Meal Prep** (a.k.a. "Community Meals"): Personal meal portioning (`totalServings` on SavedMeal) + a separate community recipe system with discovery, ratings, and forking. Recipes are distinct from community foods.
 - **Day Validation & AI Insights**: Users validate days as accurate. Rule-based insights detect metabolic adaptation, over-restriction, and macro imbalances. Long-term, LLM analysis of validated data corpus for deeper pattern recognition and goal adjustment suggestions.
 - **Pantry & Macro-Aware Suggestions**: Virtual pantry inventory of foods at home. App recommends snacks and meals that fill remaining macro gaps using available pantry items. Connects to community recipes (filter by pantry availability) and Fridge Scan Mode (auto-populate pantry from camera).
 
 ## Commands
 
-### Mobile (from `mobile/`)
-```bash
-npm run start:dev        # Start Metro (always use this — clears cache)
-npx expo run:ios         # Run on iOS simulator (separate terminal from Metro)
-npm run ios:device       # Run on physical device
-npm run lint             # ESLint
-npm run test             # Jest (all tests)
-npm test -- --testPathPattern=barcode  # Run a single test file by pattern
-```
-
-> **iOS workflow**: Two terminals required. Terminal 1: `npm run start:dev` (must run on port 8081). Terminal 2: `npx expo run:ios`.
+### iOS App (MacroTrackerSwift/)
+- Open `MacroTrackerSwift/MacroTrackerSwift.xcodeproj` in Xcode
+- Build & run on simulator: Cmd+R (requires iOS 17+ simulator)
+- Build & run on device: select device target, Cmd+R
+- Configuration: `Debug.xcconfig` / `Release.xcconfig` in `MacroTrackerSwift/`
+- Swift-specific architecture constraints: read `MacroTrackerSwift/CLAUDE.md`
 
 ### Server (from `server/`)
 ```bash
@@ -53,84 +57,152 @@ npm run test             # Jest
 
 ## Architecture
 
-This is a monorepo with three packages:
+This is a monorepo with four packages:
 
 ```
-mobile/     Expo React Native app
-server/     Fastify backend (REST + WebSocket)
-shared/     TypeScript types shared across mobile and server
+MacroTrackerSwift/    SwiftUI iOS app (iOS 17+, Swift 6)
+server/               Fastify backend (REST + WebSocket)
+shared/               TypeScript types + Gemini prompt templates
+website/              Next.js marketing/waitlist site
 ```
 
 ### Shared Types
 
-`shared/types.ts` is the single source of truth for all domain models. Both `mobile/` and `server/` import from it via the `@shared/*` path alias.
+`shared/types.ts` is the single source of truth for all domain models. The server imports from it via the `@shared/*` path alias. The Swift app has its own `Models/SharedTypes.swift` that mirrors these types.
 
-### Mobile State Management
+### SwiftUI Architecture
 
-Four Zustand stores in `mobile/stores/`:
-- `dateStore` — Selected date (shared across all tabs). Defaults to today. All entry CRUD uses this date.
-- `draftStore` — Kitchen Mode draft items and WebSocket session state
-- `dailyLogStore` — Entries for the selected date; also tracks frequent/recent foods
-- `goalStore` — Daily macro targets
+**3-tab navigation**: Dashboard, Log, Profile (via `ContentView.swift` + `TabRouter`).
+
+**16 @Observable @MainActor stores** in `MacroTrackerSwift/Stores/`:
+- `AuthStore` — Authentication state, login/register/logout, token refresh
+- `ProfileStore` — User profile data (health metrics, preferences)
+- `GoalStore` — Daily macro targets, goal profiles, guided goal setup
+- `DailyLogStore` — Entries for the selected date, frequent/recent foods
+- `DateStore` — Selected date (shared across all tabs, defaults to today)
+- `DraftStore` — Kitchen Mode draft items, WebSocket session lifecycle
+- `SessionStore` — Paused Kitchen Mode sessions (persist/resume)
+- `WeightStore` — Weight entries, trends, weekly rate
+- `MealsStore` — Saved meals CRUD
+- `ProgressPhotoStore` — Progress photo capture, storage, comparison
+- `CalendarStore` — Calendar data for date navigation
+- `StatsStore` — Weekly stats, top foods, macro distribution
+- `InsightsStore` — Rule-based nutrition insights (streaks, trends)
+- `AppearanceStore` — Theme (system/light/dark), units (metric/imperial)
+- `DashboardLayoutStore` — Dashboard card layout preferences
+- `TabRouter` — Tab selection state
+
+**Network layer**:
+- `APIClient` (actor) — 50+ REST endpoints, JWT auth headers, auto-refresh
+- `WSClient` — WebSocket for Kitchen Mode real-time communication
+- `KeychainService` — Secure JWT token storage
+
+**Camera**:
+- `KitchenCameraSession` — AVFoundation dual-output (barcode metadata + video frames)
+- `ProgressCameraSession` — Front camera for progress photos with ghost overlay
+
+**Scale**:
+- `BluetoothScaleService` — CoreBluetooth, Etekcity ESN00 protocol fully decoded
+- `ScaleManager` — Singleton with connection state machine and reading stream
+
+**Voice**:
+- `AudioCaptureService` — AVAudioEngine VAD with ~300ms pre-roll buffer, 16kHz PCM output
+- `AudioPlaybackService` — AVAudioPlayerNode for Gemini spoken responses, echo suppression
+
+**Theme**: `MacroTrackerSwift/MacroTrackerSwift/Theme/` — `Color+Theme.swift` (semantic color tokens, Spacing enum, BorderRadius enum), `Typography.swift` (font extensions). All colors, typography, and spacing must be defined here. No inline magic values in views.
 
 ### Server Architecture
 
-**REST API** (`server/src/routes/`) handles food CRUD, search, goals, profile, barcode, and community foods.
+**REST API** (`server/src/routes/`): auth, food CRUD, search, goals, profile, barcode, community foods, custom foods, meals, sessions, weight, stats, nutrition label parsing, food preferences, waitlist.
 
-**WebSocket** at `/ws/voice-session` handles Kitchen Mode voice sessions. The handler in `server/src/websocket/voiceSession.ts` maintains a state machine: `normal` or `creating:<itemId>` (mid-custom-food-creation).
+**WebSocket handlers** (`server/src/websocket/`):
+- `/ws/kitchen-mode` — **Active handler** (`kitchenModeSession.ts`). Gemini Live function-call-driven. No state machine — session logic is driven by Gemini's function calls. This is the handler for all new Kitchen Mode work.
+- `/ws/voice-session` — **Legacy handler** (`voiceSession.ts`). Uses the old state machine (`normal` / `creating:<itemId>`) and `{ action, payload }` intent format. Still registered but superseded.
+
+**Auth middleware** (`server/src/middleware/authenticate.ts`): JWT-based. All API routes require authentication except auth endpoints and health check.
 
 **Services layer** (`server/src/services/`):
-- `foodParser.ts` — Lookup orchestrator: custom foods → USDA FoodData Central → no match (triggers voice-guided creation flow)
-- `gemini.ts` — Gemini 2.0 Flash client; parses transcripts into structured intents only
+- `GeminiLiveService.ts` — Gemini 2.5 Flash Live session manager. Bidirectional audio streaming, 13 function tool declarations, composable system prompt
+- `gemini.ts` — Gemini 2.5 Flash text-mode client (used by legacy voice session and non-audio tasks like nutrition label parsing, camera food ID)
+- `foodParser.ts` — Lookup orchestrator: custom foods → community foods → USDA → no match. Also handles disambiguation, scale confirm, draft item building
+- `foodSearchPipeline.ts` — Unified food search orchestration (manual search flow)
 - `usda.ts` — USDA FoodData Central API client
+- `barcodeLookup.ts` — Barcode-to-food lookup
+- `jwt.ts` — JWT access/refresh token signing and verification
+- `appleAuth.ts` — Apple Sign-in identity token verification
+- `email.ts` — Password reset emails (Resend)
+- `goalService.ts` — Goal profile/timeline computation from health metrics
+- `mealCategorizer.ts` — Time-based meal label assignment
 
 ### Food Lookup Chain
 
 1. User's custom foods (fuzzy match) — highest trust, user-controlled
 2. Community foods (`CommunityFood` model) — reviewed/shared data, preferred over generic database entries
-3. USDA FoodData Central — lower priority; data quality is inconsistent. Use as a fallback, not a default authority.
-4. No match → Voice-guided custom food creation (user provides nutrition values)
+3. USDA FoodData Central — **absolute last resort**. Data quality is unreliable (inconsistent serving sizes, nutrient gaps). The strategic direction is to minimize USDA usage by building up community and custom food databases. Never privilege USDA results over community or custom entries.
+4. No match → Custom food creation (user provides nutrition values, voice-guided or manual)
 
-**There is no AI-generated nutrition fallback.** Gemini is a parser only — it never generates, estimates, or fabricates nutrition data. All nutrition comes from user-created custom foods, community foods, or USDA.
-
-**On data source trust:** Personal and community-logged data is treated as more reliable than USDA entries, which have inconsistent serving sizes and nutrient completeness. Do not privilege USDA results over community or custom entries when both are available. The direction of travel is toward personal and community data as primary sources.
+**There is no AI-generated nutrition fallback.** Gemini is a parser only — it never generates, estimates, or fabricates nutrition data. All nutrition comes from user-created custom foods, community foods, or (as a last resort) USDA.
 
 ### Kitchen Mode Flow
 
-On-device STT (expo-speech-recognition) sends transcript segments via WebSocket → Gemini parses intent → foodParser looks up food → server streams back `WSItemsAddedMessage`, `WSClarifyMessage`, `WSCreateFoodPromptMessage`, etc. → mobile updates draft cards.
+**Gemini Live audio pipeline**: Client captures audio via `AVAudioEngine` with VAD and ~300ms pre-roll buffer. Raw PCM audio (16kHz int16 mono) streams as `audioChunk` messages over WebSocket. Server forwards audio to Gemini 2.5 Flash via `GeminiLiveService`. Gemini returns two things: (a) function calls (structured actions) and (b) spoken audio responses (played back via `AVAudioPlayerNode`). Echo suppression buffers capture while Gemini is speaking.
 
-Draft cards have three visual states: `normal`, `clarifying` (pulsing highlight + question), `creating` (fields fill progressively as user speaks nutrition info).
+**Function-call architecture** (not intent parsing): The `kitchenModeSession.ts` handler is entirely function-call-driven. Gemini directly invokes tools like `lookup_food`, `add_to_draft`, `edit_draft_item`, `remove_draft_item`, `begin_custom_food_creation`, `report_nutrition_field`, `create_custom_food`, `abandon_creation`, `undo`, `redo`, `save_session`, `cancel_session`, `open_barcode_scanner`. No separate intent parsing step.
 
-Session exit outcomes:
+**Multi-modal input events**: Non-voice inputs (touch edits, scale confirmations, barcode scans, camera captures) are sent as WebSocket messages and forwarded to Gemini as context events via `notifyGemini()`, keeping Gemini's understanding synchronized with all input modalities.
+
+**Draft cards** have three visual states: `normal`, `clarifying` (pulsing highlight + question), `creating` (fields fill progressively during custom food creation).
+
+**Session exit outcomes:**
 - **Save / Navigate Away**: persist all draft entries and keep custom foods created in the session
 - **Cancel**: discard all draft entries AND delete custom foods created during the session
 
+### Authentication
+
+- **Apple Sign-in**: `POST /api/auth/apple` — identity token verification via `appleAuth.ts`
+- **Email/password**: `POST /api/auth/register`, `POST /api/auth/login`
+- **Token refresh**: `POST /api/auth/refresh` — rotation via `jwt.ts`
+- **Password reset**: `POST /api/auth/forgot-password`, `POST /api/auth/reset-password`
+- **Account deletion**: `DELETE /api/auth/account` (required by Apple for Sign in with Apple)
+- **iOS client**: Tokens stored in Keychain via `KeychainService`. `AuthStore` manages auth state and auto-refresh.
+- **Onboarding**: 9-page flow after first sign-in (welcome, height, weight, DOB, sex, activity level, goal type, aggressiveness, macro review + feature tips).
+
 ## Key Constraints
 
-- **No auth**: Single-user prototype. Default user is hardcoded in `server/src/db/defaultUser.ts`.
 - **Gemini is a parser, not a nutritionist**: Never ask Gemini to generate/estimate nutrition values. The system prompt must include "Never generate, estimate, or approximate nutritional data."
-- **FoodEntry sources**: `DATABASE` (USDA), `CUSTOM` (user-created), and `COMMUNITY` (community foods). No AI-estimate source. Personal and community sources are preferred over USDA when both match.
-- **Styling**: All colors, typography, and spacing must be defined in `mobile/constants/theme.ts`. No inline magic values.
-- **Barcode scanner** (`mobile/features/barcode/`) is a standalone module. Do not integrate into core app flows (Log tab, Kitchen Mode, server, `shared/types`) until the dedicated integration phase described in BUILD_GUIDE.md.
+- **USDA is a last resort**: Community and custom food databases are the preferred data sources. USDA FoodData Central is unreliable (inconsistent serving sizes, nutrient gaps). The strategic direction is to minimize USDA usage by building community/custom food coverage. Never default to USDA when community or custom matches exist.
+- **FoodEntry sources**: `DATABASE` (USDA), `CUSTOM` (user-created), and `COMMUNITY` (community foods). No AI-estimate source. Personal and community sources are always preferred over USDA.
 - **Multi-modal input is a hard constraint**: Every logging action must be reachable via touch alone, without voice, and without camera. No single input modality should be required. Voice, camera, scale, and touch are all first-class — users choose the combination that works for them in any moment.
-- **BLE scale** (`mobile/features/scale/`) is being integrated as a quantity input source. The scale is the accuracy anchor for quantity — prefer scale-provided weight over user-estimated quantities where available.
+- **BLE scale** is the accuracy anchor for quantity — prefer scale-provided weight over user-estimated quantities where available.
+- **Styling**: All colors, typography, and spacing must be defined in `MacroTrackerSwift/MacroTrackerSwift/Theme/`. No inline magic values in views.
 
-## Gemini Intent Format
+## Gemini Function Tools
 
-Every Gemini response must be `{ action, payload }`. Valid actions: `ADD_ITEMS`, `EDIT_ITEM`, `REMOVE_ITEM`, `CLARIFY`, `CREATE_FOOD_RESPONSE`, `SESSION_END`. Context passed with every request: current transcript, draft items array, time of day (for meal label assignment), and current session state.
+The Kitchen Mode handler (`kitchenModeSession.ts`) uses Gemini Live function calling. 13 function declarations in 5 groups:
 
-Meal labels are auto-categorized by `server/src/services/mealCategorizer.ts`. Entries are clustered by time proximity (>1 hour gap = new cluster), then ranked by total calories within broad time gates (morning < 11am, midday 11am–3pm, evening > 3pm). The highest-calorie cluster in each gate gets the primary label (breakfast/lunch/dinner); all others get "snack". Labels are recalculated on every entry create/update/delete. Kitchen Mode session entries are always grouped as one cluster via `voiceSessionId`.
+- **Lookup**: `lookup_food`, `search_usda`
+- **Draft**: `add_to_draft`, `edit_draft_item`, `remove_draft_item`
+- **Creation**: `begin_custom_food_creation`, `report_nutrition_field`, `create_custom_food`, `abandon_creation`
+- **Session**: `undo`, `redo`, `save_session`, `cancel_session`
+- **Device**: `open_barcode_scanner`
+
+Context passed with every function response: current draft summary (items, states, pending creation/choice). System prompt sections are composable: ROLE, HARD RULES, SCOPE GUARDRAIL, CONFIRMATION BEHAVIOR, FOOD LOOKUP WORKFLOW, CUSTOM FOOD CREATION FLOW, TOUCH EDITS, SCALE INPUT, BARCODE INPUT, CAMERA INPUT, DRAFT CONTEXT, OTHER COMMANDS.
+
+**Legacy intent format**: The old `voiceSession.ts` handler uses `{ action, payload }` with actions: `ADD_ITEMS`, `EDIT_ITEM`, `REMOVE_ITEM`, `CLARIFY`, `CREATE_FOOD_RESPONSE`, `SESSION_END`, etc. New work should target `kitchenModeSession.ts`.
+
+Meal labels are auto-categorized by `server/src/services/mealCategorizer.ts`. Entries are clustered by time proximity (>1 hour gap = new cluster), then ranked by total calories within broad time gates (morning < 11am, midday 11am-3pm, evening > 3pm). The highest-calorie cluster in each gate gets the primary label (breakfast/lunch/dinner); all others get "snack". Labels are recalculated on every entry create/update/delete. Kitchen Mode session entries are always grouped as one cluster via `voiceSessionId`.
 
 ## Barcode Scanner
 
-- Public API: `scanWithCamera()` (iOS/Android only), `scanFromImage(uri, options?)` (all platforms)
-- Result: `BarcodeScanResult { gtin: string; raw: string; format: string }` — GTIN normalized to 13 digits
-- Platform strategies: native `launchScanner()` → fallback `CameraView`; web uses client-side @zxing/library; iOS image upload goes to `POST /api/barcode/scan`
-- Tests live in `mobile/features/barcode/__tests__/`; update them when changing barcode logic
+- VisionKit `DataScannerViewController` with AVFoundation fallback for GTIN types (EAN-8, EAN-13, UPC-E)
+- Fully integrated into food search flow and Kitchen Mode (not standalone)
+- Duplicate-scan protection (same GTIN within 2s rejected)
+- GTIN normalized to 13 digits, pre-fills barcode field during custom food creation
+- Server: `POST /api/barcode/lookup` via `barcodeLookup.ts`
 
 ## Database
 
-Prisma schema at `server/src/db/prisma/schema.prisma`. Run `npm run db:generate` after any schema change. Key models: `User`, `DailyGoal`, `FoodEntry`, `CustomFood`, `VoiceSession`, `FoodUnitConversion`, `GoalProfile`, `GoalTimeline`, `CommunityFood`.
+Prisma schema at `server/src/db/prisma/schema.prisma`. Run `npm run db:generate` after any schema change. Key models: `User`, `RefreshToken`, `PasswordReset`, `DailyGoal`, `FoodEntry`, `CustomFood`, `SavedMeal`, `SavedMealItem`, `VoiceSession`, `FoodUnitConversion`, `GoalProfile`, `GoalTimeline`, `CommunityFood`, `CommunityFoodBarcode`, `CommunityFoodReport`, `CommunityFoodAlias`, `USDAFoodMetrics`, `SearchLog`, `WeightEntry`, `UserFoodPreference`, `WaitlistEntry`.
 
 ### Schema Change & Migration Rules
 

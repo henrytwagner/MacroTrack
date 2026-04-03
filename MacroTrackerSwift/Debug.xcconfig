@@ -1,5 +1,7 @@
-//API_HOST = 192.168.1.238:3000
-API_HOST = backend-dev-37a1.up.railway.app
-API_SCHEME = https
+API_HOST = 192.168.1.238:3000                 // Home
+//API_HOST = 192.168.1.63:3000                  // Home EXTND
+//API_HOST = 35.3.112.174
+//API_HOST = 172.20.10.2
+//API_HOST = backend-dev-37a1.up.railway.app    // DEV LIVE
+API_SCHEME = http
 PRODUCT_BUNDLE_IDENTIFIER = com.henrywagner.dialed.debug
-

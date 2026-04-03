@@ -1,0 +1,4273 @@
+{
+  "foods": [
+    {
+      "name": "Apple",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 52,
+      "proteinG": 0.3,
+      "fatG": 0.2,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 13.8,
+      "fiberG": 2.4,
+      "sugarG": 10.4,
+      "cholesterolMg": 0,
+      "sodiumMg": 1,
+      "potassiumMg": 107,
+      "commonName": null,
+      "aliases": [
+        "red apple",
+        "green apple"
+      ]
+    },
+    {
+      "name": "Banana",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 89,
+      "proteinG": 1.1,
+      "fatG": 0.3,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 22.8,
+      "fiberG": 2.6,
+      "sugarG": 12.2,
+      "cholesterolMg": 0,
+      "sodiumMg": 1,
+      "potassiumMg": 358,
+      "commonName": null,
+      "aliases": [
+        "plantain"
+      ]
+    },
+    {
+      "name": "Strawberry",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 32,
+      "proteinG": 0.7,
+      "fatG": 0.3,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 7.7,
+      "fiberG": 2,
+      "sugarG": 4.9,
+      "cholesterolMg": 0,
+      "sodiumMg": 1,
+      "potassiumMg": 153,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Blueberry",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 57,
+      "proteinG": 0.7,
+      "fatG": 0.3,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 14.5,
+      "fiberG": 2.4,
+      "sugarG": 10,
+      "cholesterolMg": 0,
+      "sodiumMg": 1,
+      "potassiumMg": 77,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Raspberry",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 52,
+      "proteinG": 1.2,
+      "fatG": 0.7,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 11.9,
+      "fiberG": 6.5,
+      "sugarG": 4.4,
+      "cholesterolMg": 0,
+      "sodiumMg": 1,
+      "potassiumMg": 151,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Orange",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 47,
+      "proteinG": 0.9,
+      "fatG": 0.1,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 11.8,
+      "fiberG": 2.4,
+      "sugarG": 9.4,
+      "cholesterolMg": 0,
+      "sodiumMg": 0,
+      "potassiumMg": 181,
+      "commonName": null,
+      "aliases": [
+        "navel orange"
+      ]
+    },
+    {
+      "name": "Lemon",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 29,
+      "proteinG": 1.1,
+      "fatG": 0.3,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 9.3,
+      "fiberG": 2.8,
+      "sugarG": 2.5,
+      "cholesterolMg": 0,
+      "sodiumMg": 2,
+      "potassiumMg": 138,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Lime",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 30,
+      "proteinG": 0.7,
+      "fatG": 0.2,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 10.5,
+      "fiberG": 2.8,
+      "sugarG": 1.7,
+      "cholesterolMg": 0,
+      "sodiumMg": 2,
+      "potassiumMg": 102,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Grapes",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 69,
+      "proteinG": 0.7,
+      "fatG": 0.2,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 18.1,
+      "fiberG": 0.9,
+      "sugarG": 15.5,
+      "cholesterolMg": 0,
+      "sodiumMg": 2,
+      "potassiumMg": 191,
+      "commonName": null,
+      "aliases": [
+        "red grapes",
+        "green grapes",
+        "table grapes"
+      ]
+    },
+    {
+      "name": "Watermelon",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 30,
+      "proteinG": 0.6,
+      "fatG": 0.2,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 7.6,
+      "fiberG": 0.4,
+      "sugarG": 6.2,
+      "cholesterolMg": 0,
+      "sodiumMg": 1,
+      "potassiumMg": 112,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Cantaloupe",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 34,
+      "proteinG": 0.8,
+      "fatG": 0.2,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 8.2,
+      "fiberG": 0.9,
+      "sugarG": 7.9,
+      "cholesterolMg": 0,
+      "sodiumMg": 16,
+      "potassiumMg": 267,
+      "commonName": "Rockmelon",
+      "aliases": [
+        "muskmelon",
+        "rockmelon"
+      ]
+    },
+    {
+      "name": "Pineapple",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 50,
+      "proteinG": 0.5,
+      "fatG": 0.1,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 13.1,
+      "fiberG": 1.4,
+      "sugarG": 9.9,
+      "cholesterolMg": 0,
+      "sodiumMg": 1,
+      "potassiumMg": 109,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Mango",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 60,
+      "proteinG": 0.8,
+      "fatG": 0.4,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 15,
+      "fiberG": 1.6,
+      "sugarG": 13.7,
+      "cholesterolMg": 0,
+      "sodiumMg": 1,
+      "potassiumMg": 168,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Peach",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 39,
+      "proteinG": 0.9,
+      "fatG": 0.3,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 9.5,
+      "fiberG": 1.5,
+      "sugarG": 8.4,
+      "cholesterolMg": 0,
+      "sodiumMg": 0,
+      "potassiumMg": 190,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Pear",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 57,
+      "proteinG": 0.4,
+      "fatG": 0.1,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 15.2,
+      "fiberG": 3.1,
+      "sugarG": 9.8,
+      "cholesterolMg": 0,
+      "sodiumMg": 1,
+      "potassiumMg": 116,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Avocado",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 160,
+      "proteinG": 2,
+      "fatG": 14.7,
+      "saturatedFatG": 2.1,
+      "transFatG": 0,
+      "carbsG": 8.5,
+      "fiberG": 6.7,
+      "sugarG": 0.7,
+      "cholesterolMg": 0,
+      "sodiumMg": 7,
+      "potassiumMg": 485,
+      "commonName": null,
+      "aliases": [
+        "hass avocado"
+      ]
+    },
+    {
+      "name": "Cherry, Sweet",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 63,
+      "proteinG": 1.1,
+      "fatG": 0.2,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 16,
+      "fiberG": 2.1,
+      "sugarG": 12.8,
+      "cholesterolMg": 0,
+      "sodiumMg": 0,
+      "potassiumMg": 222,
+      "commonName": null,
+      "aliases": [
+        "bing cherry"
+      ]
+    },
+    {
+      "name": "Kiwi",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 61,
+      "proteinG": 1.1,
+      "fatG": 0.5,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 14.7,
+      "fiberG": 3,
+      "sugarG": 9,
+      "cholesterolMg": 0,
+      "sodiumMg": 3,
+      "potassiumMg": 312,
+      "commonName": "Kiwifruit",
+      "aliases": [
+        "kiwifruit",
+        "chinese gooseberry"
+      ]
+    },
+    {
+      "name": "Grapefruit, Pink",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 42,
+      "proteinG": 0.8,
+      "fatG": 0.1,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 10.7,
+      "fiberG": 1.6,
+      "sugarG": 6.9,
+      "cholesterolMg": 0,
+      "sodiumMg": 0,
+      "potassiumMg": 135,
+      "commonName": null,
+      "aliases": [
+        "ruby red grapefruit"
+      ]
+    },
+    {
+      "name": "Plum",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 46,
+      "proteinG": 0.7,
+      "fatG": 0.3,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 11.4,
+      "fiberG": 1.4,
+      "sugarG": 9.9,
+      "cholesterolMg": 0,
+      "sodiumMg": 0,
+      "potassiumMg": 157,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Raisins",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 299,
+      "proteinG": 3.1,
+      "fatG": 0.5,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 79.2,
+      "fiberG": 3.7,
+      "sugarG": 59.2,
+      "cholesterolMg": 0,
+      "sodiumMg": 11,
+      "potassiumMg": 749,
+      "commonName": null,
+      "aliases": [
+        "dried grapes"
+      ]
+    },
+    {
+      "name": "Dried Cranberries, Sweetened",
+      "category": "FRUIT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 308,
+      "proteinG": 0.1,
+      "fatG": 1.4,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 82.4,
+      "fiberG": 5.7,
+      "sugarG": 72.6,
+      "cholesterolMg": 0,
+      "sodiumMg": 3,
+      "potassiumMg": 40,
+      "commonName": null,
+      "aliases": [
+        "craisins"
+      ]
+    },
+    {
+      "name": "Broccoli",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 34,
+      "proteinG": 2.8,
+      "fatG": 0.4,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 6.6,
+      "fiberG": 2.6,
+      "sugarG": 1.7,
+      "cholesterolMg": 0,
+      "sodiumMg": 33,
+      "potassiumMg": 316,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Spinach",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 23,
+      "proteinG": 2.9,
+      "fatG": 0.4,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 3.6,
+      "fiberG": 2.2,
+      "sugarG": 0.4,
+      "cholesterolMg": 0,
+      "sodiumMg": 79,
+      "potassiumMg": 558,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Kale",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 49,
+      "proteinG": 4.3,
+      "fatG": 0.9,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 8.8,
+      "fiberG": 3.6,
+      "sugarG": 2.3,
+      "cholesterolMg": 0,
+      "sodiumMg": 38,
+      "potassiumMg": 491,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Carrot",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 41,
+      "proteinG": 0.9,
+      "fatG": 0.2,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 9.6,
+      "fiberG": 2.8,
+      "sugarG": 4.7,
+      "cholesterolMg": 0,
+      "sodiumMg": 69,
+      "potassiumMg": 320,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Bell Pepper, Red",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 31,
+      "proteinG": 1,
+      "fatG": 0.3,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 6,
+      "fiberG": 2.1,
+      "sugarG": 4.2,
+      "cholesterolMg": 0,
+      "sodiumMg": 4,
+      "potassiumMg": 211,
+      "commonName": null,
+      "aliases": [
+        "red capsicum",
+        "sweet pepper"
+      ]
+    },
+    {
+      "name": "Bell Pepper, Green",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 20,
+      "proteinG": 0.9,
+      "fatG": 0.2,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 4.6,
+      "fiberG": 1.7,
+      "sugarG": 2.4,
+      "cholesterolMg": 0,
+      "sodiumMg": 3,
+      "potassiumMg": 175,
+      "commonName": null,
+      "aliases": [
+        "green capsicum",
+        "sweet pepper"
+      ]
+    },
+    {
+      "name": "Tomato",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 18,
+      "proteinG": 0.9,
+      "fatG": 0.2,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 3.9,
+      "fiberG": 1.2,
+      "sugarG": 2.6,
+      "cholesterolMg": 0,
+      "sodiumMg": 5,
+      "potassiumMg": 237,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Cucumber",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 15,
+      "proteinG": 0.7,
+      "fatG": 0.1,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 3.6,
+      "fiberG": 0.5,
+      "sugarG": 1.7,
+      "cholesterolMg": 0,
+      "sodiumMg": 2,
+      "potassiumMg": 147,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Celery",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 14,
+      "proteinG": 0.7,
+      "fatG": 0.2,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 3,
+      "fiberG": 1.6,
+      "sugarG": 1.3,
+      "cholesterolMg": 0,
+      "sodiumMg": 80,
+      "potassiumMg": 260,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Zucchini",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 17,
+      "proteinG": 1.2,
+      "fatG": 0.3,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 3.1,
+      "fiberG": 1,
+      "sugarG": 2.5,
+      "cholesterolMg": 0,
+      "sodiumMg": 8,
+      "potassiumMg": 261,
+      "commonName": "Courgette",
+      "aliases": [
+        "courgette",
+        "summer squash"
+      ]
+    },
+    {
+      "name": "Cauliflower",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 25,
+      "proteinG": 1.9,
+      "fatG": 0.3,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 5,
+      "fiberG": 2,
+      "sugarG": 1.9,
+      "cholesterolMg": 0,
+      "sodiumMg": 30,
+      "potassiumMg": 299,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Sweet Potato",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 86,
+      "proteinG": 1.6,
+      "fatG": 0.1,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 20.1,
+      "fiberG": 3,
+      "sugarG": 4.2,
+      "cholesterolMg": 0,
+      "sodiumMg": 55,
+      "potassiumMg": 337,
+      "commonName": null,
+      "aliases": [
+        "yam"
+      ]
+    },
+    {
+      "name": "Potato, Russet",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 79,
+      "proteinG": 2.1,
+      "fatG": 0.1,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 17.5,
+      "fiberG": 1.3,
+      "sugarG": 0.6,
+      "cholesterolMg": 0,
+      "sodiumMg": 5,
+      "potassiumMg": 417,
+      "commonName": null,
+      "aliases": [
+        "baking potato",
+        "idaho potato"
+      ]
+    },
+    {
+      "name": "Onion, Yellow",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 40,
+      "proteinG": 1.1,
+      "fatG": 0.1,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 9.3,
+      "fiberG": 1.7,
+      "sugarG": 4.2,
+      "cholesterolMg": 0,
+      "sodiumMg": 4,
+      "potassiumMg": 146,
+      "commonName": null,
+      "aliases": [
+        "onion"
+      ]
+    },
+    {
+      "name": "Garlic",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 149,
+      "proteinG": 6.4,
+      "fatG": 0.5,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 33.1,
+      "fiberG": 2.1,
+      "sugarG": 1,
+      "cholesterolMg": 0,
+      "sodiumMg": 17,
+      "potassiumMg": 401,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Mushroom, White",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 22,
+      "proteinG": 3.1,
+      "fatG": 0.3,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 3.3,
+      "fiberG": 1,
+      "sugarG": 2,
+      "cholesterolMg": 0,
+      "sodiumMg": 5,
+      "potassiumMg": 318,
+      "commonName": null,
+      "aliases": [
+        "button mushroom",
+        "white button mushroom"
+      ]
+    },
+    {
+      "name": "Lettuce, Romaine",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 17,
+      "proteinG": 1.2,
+      "fatG": 0.3,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 3.3,
+      "fiberG": 2.1,
+      "sugarG": 1.2,
+      "cholesterolMg": 0,
+      "sodiumMg": 8,
+      "potassiumMg": 247,
+      "commonName": null,
+      "aliases": [
+        "romaine",
+        "cos lettuce"
+      ]
+    },
+    {
+      "name": "Green Bean",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 31,
+      "proteinG": 1.8,
+      "fatG": 0.2,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 7,
+      "fiberG": 2.7,
+      "sugarG": 3.3,
+      "cholesterolMg": 0,
+      "sodiumMg": 6,
+      "potassiumMg": 211,
+      "commonName": null,
+      "aliases": [
+        "string bean",
+        "snap bean"
+      ]
+    },
+    {
+      "name": "Asparagus",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 20,
+      "proteinG": 2.2,
+      "fatG": 0.1,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 3.9,
+      "fiberG": 2.1,
+      "sugarG": 1.9,
+      "cholesterolMg": 0,
+      "sodiumMg": 2,
+      "potassiumMg": 202,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Brussels Sprout",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 43,
+      "proteinG": 3.4,
+      "fatG": 0.3,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 9,
+      "fiberG": 3.8,
+      "sugarG": 2.2,
+      "cholesterolMg": 0,
+      "sodiumMg": 25,
+      "potassiumMg": 389,
+      "commonName": null,
+      "aliases": [
+        "brussels sprouts"
+      ]
+    },
+    {
+      "name": "Cabbage, Green",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 25,
+      "proteinG": 1.3,
+      "fatG": 0.1,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 5.8,
+      "fiberG": 2.5,
+      "sugarG": 3.2,
+      "cholesterolMg": 0,
+      "sodiumMg": 18,
+      "potassiumMg": 170,
+      "commonName": null,
+      "aliases": [
+        "cabbage"
+      ]
+    },
+    {
+      "name": "Corn, Sweet Yellow",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 86,
+      "proteinG": 3.3,
+      "fatG": 1.4,
+      "saturatedFatG": 0.2,
+      "transFatG": 0,
+      "carbsG": 19,
+      "fiberG": 2.7,
+      "sugarG": 6.3,
+      "cholesterolMg": 0,
+      "sodiumMg": 15,
+      "potassiumMg": 270,
+      "commonName": null,
+      "aliases": [
+        "corn on the cob",
+        "sweet corn",
+        "maize"
+      ]
+    },
+    {
+      "name": "Eggplant",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 25,
+      "proteinG": 1,
+      "fatG": 0.2,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 5.9,
+      "fiberG": 3,
+      "sugarG": 3.5,
+      "cholesterolMg": 0,
+      "sodiumMg": 2,
+      "potassiumMg": 229,
+      "commonName": "Aubergine",
+      "aliases": [
+        "aubergine"
+      ]
+    },
+    {
+      "name": "Beet",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 43,
+      "proteinG": 1.6,
+      "fatG": 0.2,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 9.6,
+      "fiberG": 2.8,
+      "sugarG": 6.8,
+      "cholesterolMg": 0,
+      "sodiumMg": 78,
+      "potassiumMg": 325,
+      "commonName": "Beetroot",
+      "aliases": [
+        "beetroot"
+      ]
+    },
+    {
+      "name": "Radish",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 16,
+      "proteinG": 0.7,
+      "fatG": 0.1,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 3.4,
+      "fiberG": 1.6,
+      "sugarG": 1.9,
+      "cholesterolMg": 0,
+      "sodiumMg": 39,
+      "potassiumMg": 233,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Jalape\u00f1o Pepper",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 29,
+      "proteinG": 0.9,
+      "fatG": 0.4,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 6.5,
+      "fiberG": 2.8,
+      "sugarG": 4.1,
+      "cholesterolMg": 0,
+      "sodiumMg": 3,
+      "potassiumMg": 248,
+      "commonName": null,
+      "aliases": [
+        "jalapeno"
+      ]
+    },
+    {
+      "name": "Tomato Paste",
+      "category": "VEGETABLE",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 82,
+      "proteinG": 4.3,
+      "fatG": 0.5,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 18.9,
+      "fiberG": 4.1,
+      "sugarG": 12.2,
+      "cholesterolMg": 0,
+      "sodiumMg": 59,
+      "potassiumMg": 1014,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Chicken Breast, Skinless",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 120,
+      "proteinG": 22.5,
+      "fatG": 2.6,
+      "saturatedFatG": 0.7,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 64,
+      "sodiumMg": 74,
+      "potassiumMg": 370,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Chicken Thigh, Skinless",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 119,
+      "proteinG": 19.7,
+      "fatG": 3.9,
+      "saturatedFatG": 1,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 94,
+      "sodiumMg": 84,
+      "potassiumMg": 222,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Ground Beef, 90/10",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 176,
+      "proteinG": 20,
+      "fatG": 10,
+      "saturatedFatG": 3.8,
+      "transFatG": 0.5,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 65,
+      "sodiumMg": 66,
+      "potassiumMg": 318,
+      "commonName": null,
+      "aliases": [
+        "lean ground beef"
+      ]
+    },
+    {
+      "name": "Ground Beef, 80/20",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 254,
+      "proteinG": 17.2,
+      "fatG": 20,
+      "saturatedFatG": 7.7,
+      "transFatG": 1.1,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 72,
+      "sodiumMg": 66,
+      "potassiumMg": 270,
+      "commonName": null,
+      "aliases": [
+        "ground beef"
+      ]
+    },
+    {
+      "name": "Ground Turkey, 93/7",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 150,
+      "proteinG": 19.7,
+      "fatG": 7.7,
+      "saturatedFatG": 2,
+      "transFatG": 0.1,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 69,
+      "sodiumMg": 67,
+      "potassiumMg": 258,
+      "commonName": null,
+      "aliases": [
+        "lean ground turkey"
+      ]
+    },
+    {
+      "name": "Pork Loin",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 143,
+      "proteinG": 21.4,
+      "fatG": 5.9,
+      "saturatedFatG": 2,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 56,
+      "sodiumMg": 48,
+      "potassiumMg": 375,
+      "commonName": null,
+      "aliases": [
+        "pork chop"
+      ]
+    },
+    {
+      "name": "Pork Tenderloin",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 109,
+      "proteinG": 20.6,
+      "fatG": 2.4,
+      "saturatedFatG": 0.8,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 55,
+      "sodiumMg": 48,
+      "potassiumMg": 389,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Salmon, Atlantic",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 208,
+      "proteinG": 20.4,
+      "fatG": 13.4,
+      "saturatedFatG": 3.1,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 55,
+      "sodiumMg": 59,
+      "potassiumMg": 363,
+      "commonName": null,
+      "aliases": [
+        "atlantic salmon",
+        "salmon fillet"
+      ]
+    },
+    {
+      "name": "Tilapia",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 96,
+      "proteinG": 20.1,
+      "fatG": 1.7,
+      "saturatedFatG": 0.6,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 50,
+      "sodiumMg": 52,
+      "potassiumMg": 302,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Shrimp",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 85,
+      "proteinG": 20.1,
+      "fatG": 0.5,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 0.2,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 161,
+      "sodiumMg": 119,
+      "potassiumMg": 113,
+      "commonName": null,
+      "aliases": [
+        "prawns"
+      ]
+    },
+    {
+      "name": "Tuna, Yellowfin",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 109,
+      "proteinG": 24.4,
+      "fatG": 0.5,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 39,
+      "sodiumMg": 37,
+      "potassiumMg": 444,
+      "commonName": null,
+      "aliases": [
+        "ahi tuna",
+        "yellowfin"
+      ]
+    },
+    {
+      "name": "Cod, Atlantic",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 82,
+      "proteinG": 17.8,
+      "fatG": 0.7,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 43,
+      "sodiumMg": 54,
+      "potassiumMg": 413,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Egg, Whole",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 143,
+      "proteinG": 12.6,
+      "fatG": 9.5,
+      "saturatedFatG": 3.1,
+      "transFatG": 0,
+      "carbsG": 0.7,
+      "fiberG": 0,
+      "sugarG": 0.4,
+      "cholesterolMg": 372,
+      "sodiumMg": 142,
+      "potassiumMg": 138,
+      "commonName": null,
+      "aliases": [
+        "chicken egg"
+      ]
+    },
+    {
+      "name": "Egg White",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 52,
+      "proteinG": 10.9,
+      "fatG": 0.2,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 0.7,
+      "fiberG": 0,
+      "sugarG": 0.7,
+      "cholesterolMg": 0,
+      "sodiumMg": 166,
+      "potassiumMg": 163,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Egg Yolk",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 322,
+      "proteinG": 15.9,
+      "fatG": 26.5,
+      "saturatedFatG": 9.6,
+      "transFatG": 0,
+      "carbsG": 3.6,
+      "fiberG": 0,
+      "sugarG": 0.6,
+      "cholesterolMg": 1085,
+      "sodiumMg": 48,
+      "potassiumMg": 109,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Steak, Top Sirloin",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 150,
+      "proteinG": 21,
+      "fatG": 7.1,
+      "saturatedFatG": 2.7,
+      "transFatG": 0.3,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 55,
+      "sodiumMg": 54,
+      "potassiumMg": 340,
+      "commonName": null,
+      "aliases": [
+        "sirloin steak",
+        "sirloin"
+      ]
+    },
+    {
+      "name": "Lamb Leg",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 162,
+      "proteinG": 18,
+      "fatG": 9.5,
+      "saturatedFatG": 4,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 66,
+      "sodiumMg": 56,
+      "potassiumMg": 290,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Tofu, Firm",
+      "category": "PROTEIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 76,
+      "proteinG": 8.2,
+      "fatG": 4.8,
+      "saturatedFatG": 0.7,
+      "transFatG": 0,
+      "carbsG": 1.9,
+      "fiberG": 0.3,
+      "sugarG": 0.5,
+      "cholesterolMg": 0,
+      "sodiumMg": 7,
+      "potassiumMg": 121,
+      "commonName": null,
+      "aliases": [
+        "bean curd"
+      ]
+    },
+    {
+      "name": "Whole Milk",
+      "category": "DAIRY",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 61,
+      "proteinG": 3.2,
+      "fatG": 3.3,
+      "saturatedFatG": 1.9,
+      "transFatG": 0,
+      "carbsG": 4.8,
+      "fiberG": 0,
+      "sugarG": 5.1,
+      "cholesterolMg": 10,
+      "sodiumMg": 43,
+      "potassiumMg": 132,
+      "commonName": null,
+      "aliases": [
+        "full fat milk",
+        "vitamin D milk"
+      ]
+    },
+    {
+      "name": "2% Milk",
+      "category": "DAIRY",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 50,
+      "proteinG": 3.3,
+      "fatG": 2,
+      "saturatedFatG": 1.2,
+      "transFatG": 0,
+      "carbsG": 4.8,
+      "fiberG": 0,
+      "sugarG": 5.1,
+      "cholesterolMg": 8,
+      "sodiumMg": 47,
+      "potassiumMg": 150,
+      "commonName": null,
+      "aliases": [
+        "reduced fat milk"
+      ]
+    },
+    {
+      "name": "Skim Milk",
+      "category": "DAIRY",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 34,
+      "proteinG": 3.4,
+      "fatG": 0.1,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 5,
+      "fiberG": 0,
+      "sugarG": 5.1,
+      "cholesterolMg": 2,
+      "sodiumMg": 42,
+      "potassiumMg": 156,
+      "commonName": "Nonfat Milk",
+      "aliases": [
+        "nonfat milk",
+        "fat free milk"
+      ]
+    },
+    {
+      "name": "Heavy Cream",
+      "category": "DAIRY",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 340,
+      "proteinG": 2.1,
+      "fatG": 36.1,
+      "saturatedFatG": 22.5,
+      "transFatG": 1.1,
+      "carbsG": 2.8,
+      "fiberG": 0,
+      "sugarG": 2.9,
+      "cholesterolMg": 113,
+      "sodiumMg": 38,
+      "potassiumMg": 75,
+      "commonName": null,
+      "aliases": [
+        "heavy whipping cream",
+        "whipping cream"
+      ]
+    },
+    {
+      "name": "Butter, Unsalted",
+      "category": "DAIRY",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 717,
+      "proteinG": 0.9,
+      "fatG": 81.1,
+      "saturatedFatG": 51.4,
+      "transFatG": 3.3,
+      "carbsG": 0.1,
+      "fiberG": 0,
+      "sugarG": 0.1,
+      "cholesterolMg": 215,
+      "sodiumMg": 11,
+      "potassiumMg": 24,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Butter, Salted",
+      "category": "DAIRY",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 717,
+      "proteinG": 0.9,
+      "fatG": 81.1,
+      "saturatedFatG": 51.4,
+      "transFatG": 3.3,
+      "carbsG": 0.1,
+      "fiberG": 0,
+      "sugarG": 0.1,
+      "cholesterolMg": 215,
+      "sodiumMg": 643,
+      "potassiumMg": 24,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Cheddar Cheese",
+      "category": "DAIRY",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 403,
+      "proteinG": 24.9,
+      "fatG": 33.1,
+      "saturatedFatG": 21.1,
+      "transFatG": 1,
+      "carbsG": 1.3,
+      "fiberG": 0,
+      "sugarG": 0.5,
+      "cholesterolMg": 105,
+      "sodiumMg": 621,
+      "potassiumMg": 98,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Mozzarella Cheese",
+      "category": "DAIRY",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 300,
+      "proteinG": 22.2,
+      "fatG": 22.4,
+      "saturatedFatG": 13.2,
+      "transFatG": 0,
+      "carbsG": 2.2,
+      "fiberG": 0,
+      "sugarG": 1,
+      "cholesterolMg": 79,
+      "sodiumMg": 627,
+      "potassiumMg": 95,
+      "commonName": null,
+      "aliases": [
+        "fresh mozzarella"
+      ]
+    },
+    {
+      "name": "Parmesan Cheese, Grated",
+      "category": "DAIRY",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 431,
+      "proteinG": 38.5,
+      "fatG": 28.6,
+      "saturatedFatG": 18.5,
+      "transFatG": 0,
+      "carbsG": 4.1,
+      "fiberG": 0,
+      "sugarG": 0.9,
+      "cholesterolMg": 68,
+      "sodiumMg": 1529,
+      "potassiumMg": 92,
+      "commonName": null,
+      "aliases": [
+        "parmigiano-reggiano"
+      ]
+    },
+    {
+      "name": "Cream Cheese",
+      "category": "DAIRY",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 342,
+      "proteinG": 5.9,
+      "fatG": 34.2,
+      "saturatedFatG": 19.3,
+      "transFatG": 0,
+      "carbsG": 4.1,
+      "fiberG": 0,
+      "sugarG": 3.8,
+      "cholesterolMg": 110,
+      "sodiumMg": 321,
+      "potassiumMg": 138,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Greek Yogurt, Plain Nonfat",
+      "category": "DAIRY",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 59,
+      "proteinG": 10.2,
+      "fatG": 0.4,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 3.6,
+      "fiberG": 0,
+      "sugarG": 3.2,
+      "cholesterolMg": 5,
+      "sodiumMg": 36,
+      "potassiumMg": 141,
+      "commonName": null,
+      "aliases": [
+        "nonfat greek yogurt"
+      ]
+    },
+    {
+      "name": "Greek Yogurt, Plain Whole Milk",
+      "category": "DAIRY",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 97,
+      "proteinG": 9,
+      "fatG": 5,
+      "saturatedFatG": 3.5,
+      "transFatG": 0,
+      "carbsG": 3.9,
+      "fiberG": 0,
+      "sugarG": 3.5,
+      "cholesterolMg": 13,
+      "sodiumMg": 35,
+      "potassiumMg": 141,
+      "commonName": null,
+      "aliases": [
+        "full fat greek yogurt"
+      ]
+    },
+    {
+      "name": "Sour Cream",
+      "category": "DAIRY",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 198,
+      "proteinG": 2.4,
+      "fatG": 19.4,
+      "saturatedFatG": 11.5,
+      "transFatG": 0,
+      "carbsG": 4.6,
+      "fiberG": 0,
+      "sugarG": 3.4,
+      "cholesterolMg": 52,
+      "sodiumMg": 53,
+      "potassiumMg": 125,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Cottage Cheese, 2%",
+      "category": "DAIRY",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 81,
+      "proteinG": 11.8,
+      "fatG": 2.3,
+      "saturatedFatG": 1.5,
+      "transFatG": 0,
+      "carbsG": 3.4,
+      "fiberG": 0,
+      "sugarG": 2.7,
+      "cholesterolMg": 9,
+      "sodiumMg": 364,
+      "potassiumMg": 104,
+      "commonName": null,
+      "aliases": [
+        "low fat cottage cheese"
+      ]
+    },
+    {
+      "name": "Ricotta Cheese, Whole Milk",
+      "category": "DAIRY",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 174,
+      "proteinG": 11.3,
+      "fatG": 12.4,
+      "saturatedFatG": 8.3,
+      "transFatG": 0,
+      "carbsG": 3,
+      "fiberG": 0,
+      "sugarG": 0.3,
+      "cholesterolMg": 51,
+      "sodiumMg": 84,
+      "potassiumMg": 105,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Coconut Milk, Canned",
+      "category": "DAIRY",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 197,
+      "proteinG": 2,
+      "fatG": 21.3,
+      "saturatedFatG": 18.9,
+      "transFatG": 0,
+      "carbsG": 2.8,
+      "fiberG": 0,
+      "sugarG": 1.3,
+      "cholesterolMg": 0,
+      "sodiumMg": 13,
+      "potassiumMg": 220,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "White Rice, Long Grain",
+      "category": "GRAIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 365,
+      "proteinG": 7.1,
+      "fatG": 0.7,
+      "saturatedFatG": 0.2,
+      "transFatG": 0,
+      "carbsG": 80,
+      "fiberG": 1.3,
+      "sugarG": 0.1,
+      "cholesterolMg": 0,
+      "sodiumMg": 5,
+      "potassiumMg": 115,
+      "commonName": null,
+      "aliases": [
+        "white rice",
+        "long grain rice"
+      ]
+    },
+    {
+      "name": "Brown Rice, Long Grain",
+      "category": "GRAIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 370,
+      "proteinG": 7.9,
+      "fatG": 2.9,
+      "saturatedFatG": 0.6,
+      "transFatG": 0,
+      "carbsG": 77.2,
+      "fiberG": 3.5,
+      "sugarG": 0.7,
+      "cholesterolMg": 0,
+      "sodiumMg": 7,
+      "potassiumMg": 223,
+      "commonName": null,
+      "aliases": [
+        "brown rice"
+      ]
+    },
+    {
+      "name": "Quinoa",
+      "category": "GRAIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 368,
+      "proteinG": 14.1,
+      "fatG": 6.1,
+      "saturatedFatG": 0.7,
+      "transFatG": 0,
+      "carbsG": 64.2,
+      "fiberG": 7,
+      "sugarG": 0,
+      "cholesterolMg": 0,
+      "sodiumMg": 5,
+      "potassiumMg": 563,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Oats, Rolled",
+      "category": "GRAIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 379,
+      "proteinG": 13.2,
+      "fatG": 6.5,
+      "saturatedFatG": 1.1,
+      "transFatG": 0,
+      "carbsG": 67.7,
+      "fiberG": 10.1,
+      "sugarG": 1,
+      "cholesterolMg": 0,
+      "sodiumMg": 6,
+      "potassiumMg": 362,
+      "commonName": null,
+      "aliases": [
+        "oatmeal",
+        "rolled oats",
+        "old fashioned oats"
+      ]
+    },
+    {
+      "name": "Pasta, Spaghetti",
+      "category": "GRAIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 371,
+      "proteinG": 13,
+      "fatG": 1.5,
+      "saturatedFatG": 0.3,
+      "transFatG": 0,
+      "carbsG": 74.7,
+      "fiberG": 3.2,
+      "sugarG": 2.7,
+      "cholesterolMg": 0,
+      "sodiumMg": 6,
+      "potassiumMg": 223,
+      "commonName": null,
+      "aliases": [
+        "spaghetti",
+        "dry pasta",
+        "noodles"
+      ]
+    },
+    {
+      "name": "Bread, Whole Wheat",
+      "category": "GRAIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 247,
+      "proteinG": 13,
+      "fatG": 3.4,
+      "saturatedFatG": 0.7,
+      "transFatG": 0,
+      "carbsG": 41.3,
+      "fiberG": 6,
+      "sugarG": 5.6,
+      "cholesterolMg": 0,
+      "sodiumMg": 400,
+      "potassiumMg": 254,
+      "commonName": null,
+      "aliases": [
+        "wheat bread",
+        "whole grain bread"
+      ]
+    },
+    {
+      "name": "All-Purpose Flour",
+      "category": "GRAIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 364,
+      "proteinG": 10.3,
+      "fatG": 1,
+      "saturatedFatG": 0.2,
+      "transFatG": 0,
+      "carbsG": 76.3,
+      "fiberG": 2.7,
+      "sugarG": 0.3,
+      "cholesterolMg": 0,
+      "sodiumMg": 2,
+      "potassiumMg": 107,
+      "commonName": null,
+      "aliases": [
+        "white flour",
+        "AP flour",
+        "plain flour"
+      ]
+    },
+    {
+      "name": "Whole Wheat Flour",
+      "category": "GRAIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 340,
+      "proteinG": 13.2,
+      "fatG": 2.5,
+      "saturatedFatG": 0.4,
+      "transFatG": 0,
+      "carbsG": 71.9,
+      "fiberG": 10.7,
+      "sugarG": 0.4,
+      "cholesterolMg": 0,
+      "sodiumMg": 2,
+      "potassiumMg": 363,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Cornmeal, Yellow",
+      "category": "GRAIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 362,
+      "proteinG": 8.1,
+      "fatG": 3.6,
+      "saturatedFatG": 0.5,
+      "transFatG": 0,
+      "carbsG": 76.9,
+      "fiberG": 7.3,
+      "sugarG": 0.6,
+      "cholesterolMg": 0,
+      "sodiumMg": 7,
+      "potassiumMg": 315,
+      "commonName": null,
+      "aliases": [
+        "polenta",
+        "corn meal"
+      ]
+    },
+    {
+      "name": "Couscous",
+      "category": "GRAIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 376,
+      "proteinG": 12.8,
+      "fatG": 0.6,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 77.4,
+      "fiberG": 5,
+      "sugarG": 0,
+      "cholesterolMg": 0,
+      "sodiumMg": 10,
+      "potassiumMg": 166,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Tortilla, Corn",
+      "category": "GRAIN",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 218,
+      "proteinG": 5.7,
+      "fatG": 2.9,
+      "saturatedFatG": 0.4,
+      "transFatG": 0,
+      "carbsG": 44.6,
+      "fiberG": 5.3,
+      "sugarG": 1,
+      "cholesterolMg": 0,
+      "sodiumMg": 396,
+      "potassiumMg": 146,
+      "commonName": null,
+      "aliases": [
+        "corn tortilla"
+      ]
+    },
+    {
+      "name": "Black Beans",
+      "category": "LEGUME",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 341,
+      "proteinG": 21.6,
+      "fatG": 1.4,
+      "saturatedFatG": 0.4,
+      "transFatG": 0,
+      "carbsG": 62.4,
+      "fiberG": 15.5,
+      "sugarG": 2.1,
+      "cholesterolMg": 0,
+      "sodiumMg": 5,
+      "potassiumMg": 1483,
+      "commonName": null,
+      "aliases": [
+        "black turtle beans"
+      ]
+    },
+    {
+      "name": "Chickpeas",
+      "category": "LEGUME",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 364,
+      "proteinG": 19.3,
+      "fatG": 6,
+      "saturatedFatG": 0.6,
+      "transFatG": 0,
+      "carbsG": 60.6,
+      "fiberG": 17.4,
+      "sugarG": 10.7,
+      "cholesterolMg": 0,
+      "sodiumMg": 24,
+      "potassiumMg": 875,
+      "commonName": "Garbanzo Beans",
+      "aliases": [
+        "garbanzo beans",
+        "garbanzo",
+        "ceci beans"
+      ]
+    },
+    {
+      "name": "Lentils, Green",
+      "category": "LEGUME",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 352,
+      "proteinG": 24.6,
+      "fatG": 1.1,
+      "saturatedFatG": 0.2,
+      "transFatG": 0,
+      "carbsG": 63.4,
+      "fiberG": 10.7,
+      "sugarG": 2,
+      "cholesterolMg": 0,
+      "sodiumMg": 6,
+      "potassiumMg": 677,
+      "commonName": null,
+      "aliases": [
+        "lentils",
+        "brown lentils"
+      ]
+    },
+    {
+      "name": "Kidney Beans",
+      "category": "LEGUME",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 333,
+      "proteinG": 23.6,
+      "fatG": 0.8,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 60,
+      "fiberG": 24.9,
+      "sugarG": 2.2,
+      "cholesterolMg": 0,
+      "sodiumMg": 12,
+      "potassiumMg": 1406,
+      "commonName": null,
+      "aliases": [
+        "red kidney beans"
+      ]
+    },
+    {
+      "name": "Pinto Beans",
+      "category": "LEGUME",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 347,
+      "proteinG": 21.4,
+      "fatG": 1.2,
+      "saturatedFatG": 0.2,
+      "transFatG": 0,
+      "carbsG": 62.6,
+      "fiberG": 15.5,
+      "sugarG": 2.1,
+      "cholesterolMg": 0,
+      "sodiumMg": 12,
+      "potassiumMg": 1393,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Peanut",
+      "category": "LEGUME",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 567,
+      "proteinG": 25.8,
+      "fatG": 49.2,
+      "saturatedFatG": 6.8,
+      "transFatG": 0,
+      "carbsG": 16.1,
+      "fiberG": 8.5,
+      "sugarG": 4.7,
+      "cholesterolMg": 0,
+      "sodiumMg": 18,
+      "potassiumMg": 705,
+      "commonName": null,
+      "aliases": [
+        "groundnut"
+      ]
+    },
+    {
+      "name": "Edamame, Shelled",
+      "category": "LEGUME",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 121,
+      "proteinG": 11.9,
+      "fatG": 5.2,
+      "saturatedFatG": 0.6,
+      "transFatG": 0,
+      "carbsG": 8.9,
+      "fiberG": 5.2,
+      "sugarG": 2.2,
+      "cholesterolMg": 0,
+      "sodiumMg": 6,
+      "potassiumMg": 436,
+      "commonName": null,
+      "aliases": [
+        "soybeans",
+        "young soybeans"
+      ]
+    },
+    {
+      "name": "Almond",
+      "category": "OTHER",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 579,
+      "proteinG": 21.2,
+      "fatG": 49.9,
+      "saturatedFatG": 3.8,
+      "transFatG": 0,
+      "carbsG": 21.6,
+      "fiberG": 12.5,
+      "sugarG": 4.4,
+      "cholesterolMg": 0,
+      "sodiumMg": 1,
+      "potassiumMg": 733,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Walnut",
+      "category": "OTHER",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 654,
+      "proteinG": 15.2,
+      "fatG": 65.2,
+      "saturatedFatG": 6.1,
+      "transFatG": 0,
+      "carbsG": 13.7,
+      "fiberG": 6.7,
+      "sugarG": 2.6,
+      "cholesterolMg": 0,
+      "sodiumMg": 2,
+      "potassiumMg": 441,
+      "commonName": null,
+      "aliases": [
+        "english walnut"
+      ]
+    },
+    {
+      "name": "Cashew",
+      "category": "OTHER",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 553,
+      "proteinG": 18.2,
+      "fatG": 43.9,
+      "saturatedFatG": 7.8,
+      "transFatG": 0,
+      "carbsG": 30.2,
+      "fiberG": 3.3,
+      "sugarG": 5.9,
+      "cholesterolMg": 0,
+      "sodiumMg": 12,
+      "potassiumMg": 660,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Pecan",
+      "category": "OTHER",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 691,
+      "proteinG": 9.2,
+      "fatG": 72,
+      "saturatedFatG": 6.2,
+      "transFatG": 0,
+      "carbsG": 13.9,
+      "fiberG": 9.6,
+      "sugarG": 4,
+      "cholesterolMg": 0,
+      "sodiumMg": 0,
+      "potassiumMg": 410,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Chia Seed",
+      "category": "OTHER",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 486,
+      "proteinG": 16.5,
+      "fatG": 30.7,
+      "saturatedFatG": 3.3,
+      "transFatG": 0,
+      "carbsG": 42.1,
+      "fiberG": 34.4,
+      "sugarG": 0,
+      "cholesterolMg": 0,
+      "sodiumMg": 16,
+      "potassiumMg": 407,
+      "commonName": null,
+      "aliases": [
+        "chia seeds"
+      ]
+    },
+    {
+      "name": "Flaxseed, Ground",
+      "category": "OTHER",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 534,
+      "proteinG": 18.3,
+      "fatG": 42.2,
+      "saturatedFatG": 3.7,
+      "transFatG": 0,
+      "carbsG": 28.9,
+      "fiberG": 27.3,
+      "sugarG": 1.6,
+      "cholesterolMg": 0,
+      "sodiumMg": 30,
+      "potassiumMg": 813,
+      "commonName": null,
+      "aliases": [
+        "ground flax",
+        "flax meal",
+        "linseed"
+      ]
+    },
+    {
+      "name": "Sunflower Seed, Hulled",
+      "category": "OTHER",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 584,
+      "proteinG": 20.8,
+      "fatG": 51.5,
+      "saturatedFatG": 4.5,
+      "transFatG": 0,
+      "carbsG": 20,
+      "fiberG": 8.6,
+      "sugarG": 2.6,
+      "cholesterolMg": 0,
+      "sodiumMg": 9,
+      "potassiumMg": 645,
+      "commonName": null,
+      "aliases": [
+        "sunflower seeds",
+        "sunflower kernels"
+      ]
+    },
+    {
+      "name": "Pumpkin Seed, Hulled",
+      "category": "OTHER",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 559,
+      "proteinG": 30.2,
+      "fatG": 49.1,
+      "saturatedFatG": 8.7,
+      "transFatG": 0,
+      "carbsG": 10.7,
+      "fiberG": 6,
+      "sugarG": 1.4,
+      "cholesterolMg": 0,
+      "sodiumMg": 7,
+      "potassiumMg": 809,
+      "commonName": null,
+      "aliases": [
+        "pepitas"
+      ]
+    },
+    {
+      "name": "Coconut, Dried Unsweetened",
+      "category": "OTHER",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 660,
+      "proteinG": 6.9,
+      "fatG": 64.5,
+      "saturatedFatG": 57.2,
+      "transFatG": 0,
+      "carbsG": 23.7,
+      "fiberG": 16.3,
+      "sugarG": 7.4,
+      "cholesterolMg": 0,
+      "sodiumMg": 37,
+      "potassiumMg": 543,
+      "commonName": null,
+      "aliases": [
+        "desiccated coconut",
+        "shredded coconut"
+      ]
+    },
+    {
+      "name": "Dark Chocolate, 70-85%",
+      "category": "OTHER",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 598,
+      "proteinG": 7.8,
+      "fatG": 42.6,
+      "saturatedFatG": 24.5,
+      "transFatG": 0,
+      "carbsG": 45.9,
+      "fiberG": 10.9,
+      "sugarG": 24,
+      "cholesterolMg": 0,
+      "sodiumMg": 20,
+      "potassiumMg": 715,
+      "commonName": null,
+      "aliases": [
+        "dark chocolate",
+        "bittersweet chocolate"
+      ]
+    },
+    {
+      "name": "Olive Oil, Extra Virgin",
+      "category": "FAT_OIL",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 884,
+      "proteinG": 0,
+      "fatG": 100,
+      "saturatedFatG": 13.8,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 0,
+      "sodiumMg": 2,
+      "potassiumMg": 1,
+      "commonName": null,
+      "aliases": [
+        "olive oil",
+        "EVOO"
+      ]
+    },
+    {
+      "name": "Coconut Oil",
+      "category": "FAT_OIL",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 862,
+      "proteinG": 0,
+      "fatG": 100,
+      "saturatedFatG": 82.5,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 0,
+      "sodiumMg": 0,
+      "potassiumMg": 0,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Vegetable Oil",
+      "category": "FAT_OIL",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 884,
+      "proteinG": 0,
+      "fatG": 100,
+      "saturatedFatG": 15.7,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 0,
+      "sodiumMg": 0,
+      "potassiumMg": 0,
+      "commonName": null,
+      "aliases": [
+        "soybean oil"
+      ]
+    },
+    {
+      "name": "Canola Oil",
+      "category": "FAT_OIL",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 884,
+      "proteinG": 0,
+      "fatG": 100,
+      "saturatedFatG": 7.4,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 0,
+      "sodiumMg": 0,
+      "potassiumMg": 0,
+      "commonName": null,
+      "aliases": [
+        "rapeseed oil"
+      ]
+    },
+    {
+      "name": "Sesame Oil",
+      "category": "FAT_OIL",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 884,
+      "proteinG": 0,
+      "fatG": 100,
+      "saturatedFatG": 14.2,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 0,
+      "sodiumMg": 0,
+      "potassiumMg": 0,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Avocado Oil",
+      "category": "FAT_OIL",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 884,
+      "proteinG": 0,
+      "fatG": 100,
+      "saturatedFatG": 11.6,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 0,
+      "sodiumMg": 0,
+      "potassiumMg": 0,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Granulated Sugar",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 387,
+      "proteinG": 0,
+      "fatG": 0,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 100,
+      "fiberG": 0,
+      "sugarG": 100,
+      "cholesterolMg": 0,
+      "sodiumMg": 1,
+      "potassiumMg": 2,
+      "commonName": null,
+      "aliases": [
+        "white sugar",
+        "table sugar",
+        "cane sugar"
+      ]
+    },
+    {
+      "name": "Brown Sugar",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 380,
+      "proteinG": 0,
+      "fatG": 0,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 98.1,
+      "fiberG": 0,
+      "sugarG": 97,
+      "cholesterolMg": 0,
+      "sodiumMg": 28,
+      "potassiumMg": 133,
+      "commonName": null,
+      "aliases": [
+        "light brown sugar",
+        "dark brown sugar"
+      ]
+    },
+    {
+      "name": "Honey",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 304,
+      "proteinG": 0.3,
+      "fatG": 0,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 82.4,
+      "fiberG": 0.2,
+      "sugarG": 82.1,
+      "cholesterolMg": 0,
+      "sodiumMg": 4,
+      "potassiumMg": 52,
+      "commonName": null,
+      "aliases": [
+        "raw honey"
+      ]
+    },
+    {
+      "name": "Maple Syrup, Pure",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 260,
+      "proteinG": 0,
+      "fatG": 0.1,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 67,
+      "fiberG": 0,
+      "sugarG": 60.5,
+      "cholesterolMg": 0,
+      "sodiumMg": 12,
+      "potassiumMg": 204,
+      "commonName": null,
+      "aliases": [
+        "maple syrup",
+        "real maple syrup"
+      ]
+    },
+    {
+      "name": "Agave Nectar",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 310,
+      "proteinG": 0,
+      "fatG": 0.5,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 76.4,
+      "fiberG": 0.2,
+      "sugarG": 68,
+      "cholesterolMg": 0,
+      "sodiumMg": 4,
+      "potassiumMg": 4,
+      "commonName": null,
+      "aliases": [
+        "agave syrup"
+      ]
+    },
+    {
+      "name": "Powdered Sugar",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 389,
+      "proteinG": 0,
+      "fatG": 0,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 99.8,
+      "fiberG": 0,
+      "sugarG": 97.8,
+      "cholesterolMg": 0,
+      "sodiumMg": 1,
+      "potassiumMg": 2,
+      "commonName": null,
+      "aliases": [
+        "confectioners sugar",
+        "icing sugar"
+      ]
+    },
+    {
+      "name": "Soy Sauce",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 53,
+      "proteinG": 8.1,
+      "fatG": 0.6,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 4.9,
+      "fiberG": 0.8,
+      "sugarG": 0.4,
+      "cholesterolMg": 0,
+      "sodiumMg": 5493,
+      "potassiumMg": 212,
+      "commonName": null,
+      "aliases": [
+        "shoyu"
+      ]
+    },
+    {
+      "name": "Apple Cider Vinegar",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 21,
+      "proteinG": 0,
+      "fatG": 0,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 0.9,
+      "fiberG": 0,
+      "sugarG": 0.4,
+      "cholesterolMg": 0,
+      "sodiumMg": 5,
+      "potassiumMg": 73,
+      "commonName": null,
+      "aliases": [
+        "ACV"
+      ]
+    },
+    {
+      "name": "White Vinegar",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 18,
+      "proteinG": 0,
+      "fatG": 0,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 0,
+      "sodiumMg": 2,
+      "potassiumMg": 2,
+      "commonName": null,
+      "aliases": [
+        "distilled white vinegar"
+      ]
+    },
+    {
+      "name": "Peanut Butter, Natural",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 588,
+      "proteinG": 25.1,
+      "fatG": 50.4,
+      "saturatedFatG": 7.6,
+      "transFatG": 0,
+      "carbsG": 19.6,
+      "fiberG": 6,
+      "sugarG": 9.2,
+      "cholesterolMg": 0,
+      "sodiumMg": 17,
+      "potassiumMg": 649,
+      "commonName": null,
+      "aliases": [
+        "natural peanut butter",
+        "PB"
+      ]
+    },
+    {
+      "name": "Almond Butter",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 614,
+      "proteinG": 21,
+      "fatG": 55.5,
+      "saturatedFatG": 4.4,
+      "transFatG": 0,
+      "carbsG": 18.8,
+      "fiberG": 10.5,
+      "sugarG": 6.3,
+      "cholesterolMg": 0,
+      "sodiumMg": 7,
+      "potassiumMg": 748,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Vanilla Extract",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 288,
+      "proteinG": 0.1,
+      "fatG": 0.1,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 12.7,
+      "fiberG": 0,
+      "sugarG": 12.7,
+      "cholesterolMg": 0,
+      "sodiumMg": 9,
+      "potassiumMg": 148,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Basil, Fresh",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 23,
+      "proteinG": 3.2,
+      "fatG": 0.6,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 2.7,
+      "fiberG": 1.6,
+      "sugarG": 0.3,
+      "cholesterolMg": 0,
+      "sodiumMg": 4,
+      "potassiumMg": 295,
+      "commonName": null,
+      "aliases": [
+        "sweet basil"
+      ]
+    },
+    {
+      "name": "Cilantro, Fresh",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 23,
+      "proteinG": 2.1,
+      "fatG": 0.5,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 3.7,
+      "fiberG": 2.8,
+      "sugarG": 0.9,
+      "cholesterolMg": 0,
+      "sodiumMg": 46,
+      "potassiumMg": 521,
+      "commonName": "Coriander Leaf",
+      "aliases": [
+        "coriander leaf",
+        "coriander",
+        "fresh coriander"
+      ]
+    },
+    {
+      "name": "Parsley, Fresh",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 36,
+      "proteinG": 3,
+      "fatG": 0.8,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 6.3,
+      "fiberG": 3.3,
+      "sugarG": 0.9,
+      "cholesterolMg": 0,
+      "sodiumMg": 56,
+      "potassiumMg": 554,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Ginger Root",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 80,
+      "proteinG": 1.8,
+      "fatG": 0.8,
+      "saturatedFatG": 0.2,
+      "transFatG": 0,
+      "carbsG": 17.8,
+      "fiberG": 2,
+      "sugarG": 1.7,
+      "cholesterolMg": 0,
+      "sodiumMg": 13,
+      "potassiumMg": 415,
+      "commonName": null,
+      "aliases": [
+        "fresh ginger"
+      ]
+    },
+    {
+      "name": "Cinnamon, Ground",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 247,
+      "proteinG": 4,
+      "fatG": 1.2,
+      "saturatedFatG": 0.3,
+      "transFatG": 0,
+      "carbsG": 80.6,
+      "fiberG": 53.1,
+      "sugarG": 2.2,
+      "cholesterolMg": 0,
+      "sodiumMg": 10,
+      "potassiumMg": 431,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Cumin, Ground",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 375,
+      "proteinG": 17.8,
+      "fatG": 22.3,
+      "saturatedFatG": 1.5,
+      "transFatG": 0,
+      "carbsG": 44.2,
+      "fiberG": 10.5,
+      "sugarG": 2.3,
+      "cholesterolMg": 0,
+      "sodiumMg": 168,
+      "potassiumMg": 1788,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Turmeric, Ground",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 354,
+      "proteinG": 7.8,
+      "fatG": 9.9,
+      "saturatedFatG": 3.1,
+      "transFatG": 0,
+      "carbsG": 64.9,
+      "fiberG": 21.1,
+      "sugarG": 3.2,
+      "cholesterolMg": 0,
+      "sodiumMg": 38,
+      "potassiumMg": 2525,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Black Pepper, Ground",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 251,
+      "proteinG": 10.4,
+      "fatG": 3.3,
+      "saturatedFatG": 1.4,
+      "transFatG": 0,
+      "carbsG": 63.9,
+      "fiberG": 25.3,
+      "sugarG": 0.6,
+      "cholesterolMg": 0,
+      "sodiumMg": 20,
+      "potassiumMg": 1329,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Paprika, Ground",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 282,
+      "proteinG": 14.1,
+      "fatG": 12.9,
+      "saturatedFatG": 2.1,
+      "transFatG": 0,
+      "carbsG": 53.9,
+      "fiberG": 34.9,
+      "sugarG": 10.3,
+      "cholesterolMg": 0,
+      "sodiumMg": 68,
+      "potassiumMg": 2280,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Oregano, Dried",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 265,
+      "proteinG": 9,
+      "fatG": 4.3,
+      "saturatedFatG": 1.6,
+      "transFatG": 0,
+      "carbsG": 68.9,
+      "fiberG": 42.5,
+      "sugarG": 4.1,
+      "cholesterolMg": 0,
+      "sodiumMg": 25,
+      "potassiumMg": 1260,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Chili Powder",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 282,
+      "proteinG": 12.3,
+      "fatG": 14.3,
+      "saturatedFatG": 2.5,
+      "transFatG": 0,
+      "carbsG": 49.7,
+      "fiberG": 34.8,
+      "sugarG": 7.2,
+      "cholesterolMg": 0,
+      "sodiumMg": 1010,
+      "potassiumMg": 1916,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Garlic Powder",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 331,
+      "proteinG": 16.6,
+      "fatG": 0.7,
+      "saturatedFatG": 0.1,
+      "transFatG": 0,
+      "carbsG": 72.7,
+      "fiberG": 9,
+      "sugarG": 2.4,
+      "cholesterolMg": 0,
+      "sodiumMg": 60,
+      "potassiumMg": 1193,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Onion Powder",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 341,
+      "proteinG": 10.4,
+      "fatG": 1,
+      "saturatedFatG": 0.2,
+      "transFatG": 0,
+      "carbsG": 79.1,
+      "fiberG": 15.2,
+      "sugarG": 6.6,
+      "cholesterolMg": 0,
+      "sodiumMg": 73,
+      "potassiumMg": 985,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Rosemary, Dried",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 331,
+      "proteinG": 4.9,
+      "fatG": 15.2,
+      "saturatedFatG": 7.4,
+      "transFatG": 0,
+      "carbsG": 64.1,
+      "fiberG": 42.6,
+      "sugarG": 0,
+      "cholesterolMg": 0,
+      "sodiumMg": 50,
+      "potassiumMg": 955,
+      "commonName": null,
+      "aliases": []
+    },
+    {
+      "name": "Cocoa Powder, Unsweetened",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 228,
+      "proteinG": 19.6,
+      "fatG": 13.7,
+      "saturatedFatG": 8.1,
+      "transFatG": 0,
+      "carbsG": 57.9,
+      "fiberG": 33.2,
+      "sugarG": 1.8,
+      "cholesterolMg": 0,
+      "sodiumMg": 21,
+      "potassiumMg": 1524,
+      "commonName": null,
+      "aliases": [
+        "cacao powder"
+      ]
+    },
+    {
+      "name": "Salt, Table",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 0,
+      "proteinG": 0,
+      "fatG": 0,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 0,
+      "sodiumMg": 38758,
+      "potassiumMg": 8,
+      "commonName": null,
+      "aliases": [
+        "sodium chloride",
+        "NaCl",
+        "sea salt"
+      ]
+    },
+    {
+      "name": "Baking Soda",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 0,
+      "proteinG": 0,
+      "fatG": 0,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 0,
+      "fiberG": 0,
+      "sugarG": 0,
+      "cholesterolMg": 0,
+      "sodiumMg": 27360,
+      "potassiumMg": 0,
+      "commonName": null,
+      "aliases": [
+        "sodium bicarbonate",
+        "bicarbonate of soda"
+      ]
+    },
+    {
+      "name": "Baking Powder",
+      "category": "CONDIMENT",
+      "defaultServingSize": 100,
+      "defaultServingUnit": "g",
+      "calories": 53,
+      "proteinG": 0,
+      "fatG": 0,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbsG": 27.7,
+      "fiberG": 0.2,
+      "sugarG": 0,
+      "cholesterolMg": 0,
+      "sodiumMg": 10600,
+      "potassiumMg": 20,
+      "commonName": null,
+      "aliases": []
+    }
+  ],
+  "conversions": [
+    {
+      "foodName": "Apple",
+      "unitName": "small apple",
+      "quantityInBaseServings": 1.49,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Apple",
+      "unitName": "medium apple",
+      "quantityInBaseServings": 1.82,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Apple",
+      "unitName": "large apple",
+      "quantityInBaseServings": 2.23,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Apple",
+      "unitName": "cup, sliced",
+      "quantityInBaseServings": 1.09,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Banana",
+      "unitName": "small banana",
+      "quantityInBaseServings": 1.01,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Banana",
+      "unitName": "medium banana",
+      "quantityInBaseServings": 1.18,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Banana",
+      "unitName": "large banana",
+      "quantityInBaseServings": 1.36,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Strawberry",
+      "unitName": "cup, whole",
+      "quantityInBaseServings": 1.5,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Strawberry",
+      "unitName": "cup, halved",
+      "quantityInBaseServings": 1.52,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Strawberry",
+      "unitName": "medium berry",
+      "quantityInBaseServings": 0.12,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Blueberry",
+      "unitName": "cup",
+      "quantityInBaseServings": 1.48,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Raspberry",
+      "unitName": "cup",
+      "quantityInBaseServings": 1.23,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Orange",
+      "unitName": "medium orange",
+      "quantityInBaseServings": 1.31,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Orange",
+      "unitName": "large orange",
+      "quantityInBaseServings": 1.84,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Lemon",
+      "unitName": "medium lemon",
+      "quantityInBaseServings": 0.58,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Lemon",
+      "unitName": "juice of 1 lemon",
+      "quantityInBaseServings": 0.47,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Lime",
+      "unitName": "medium lime",
+      "quantityInBaseServings": 0.67,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Lime",
+      "unitName": "juice of 1 lime",
+      "quantityInBaseServings": 0.3,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Grapes",
+      "unitName": "cup",
+      "quantityInBaseServings": 1.5,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Watermelon",
+      "unitName": "cup, diced",
+      "quantityInBaseServings": 1.52,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Watermelon",
+      "unitName": "wedge (1/16 melon)",
+      "quantityInBaseServings": 2.8,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Cantaloupe",
+      "unitName": "cup, diced",
+      "quantityInBaseServings": 1.56,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Pineapple",
+      "unitName": "cup, chunks",
+      "quantityInBaseServings": 1.65,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Mango",
+      "unitName": "medium mango (flesh)",
+      "quantityInBaseServings": 2.07,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Mango",
+      "unitName": "cup, sliced",
+      "quantityInBaseServings": 1.65,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Peach",
+      "unitName": "medium peach",
+      "quantityInBaseServings": 1.5,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Peach",
+      "unitName": "large peach",
+      "quantityInBaseServings": 1.75,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Pear",
+      "unitName": "medium pear",
+      "quantityInBaseServings": 1.78,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Avocado",
+      "unitName": "medium avocado (flesh)",
+      "quantityInBaseServings": 1.36,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Avocado",
+      "unitName": "half",
+      "quantityInBaseServings": 0.68,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Avocado",
+      "unitName": "cup, sliced",
+      "quantityInBaseServings": 1.46,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Cherry, Sweet",
+      "unitName": "cup, with pits",
+      "quantityInBaseServings": 1.38,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Kiwi",
+      "unitName": "medium kiwi",
+      "quantityInBaseServings": 0.69,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Grapefruit, Pink",
+      "unitName": "half, medium",
+      "quantityInBaseServings": 1.28,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Plum",
+      "unitName": "medium plum",
+      "quantityInBaseServings": 0.66,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Raisins",
+      "unitName": "small box (1.5 oz)",
+      "quantityInBaseServings": 0.43,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Raisins",
+      "unitName": "cup, packed",
+      "quantityInBaseServings": 1.65,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Broccoli",
+      "unitName": "cup, chopped",
+      "quantityInBaseServings": 0.91,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Broccoli",
+      "unitName": "medium stalk",
+      "quantityInBaseServings": 1.48,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Spinach",
+      "unitName": "cup, raw",
+      "quantityInBaseServings": 0.3,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Spinach",
+      "unitName": "cup, cooked",
+      "quantityInBaseServings": 1.8,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Kale",
+      "unitName": "cup, chopped",
+      "quantityInBaseServings": 0.67,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Carrot",
+      "unitName": "medium carrot",
+      "quantityInBaseServings": 0.61,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Carrot",
+      "unitName": "large carrot",
+      "quantityInBaseServings": 0.72,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Carrot",
+      "unitName": "cup, chopped",
+      "quantityInBaseServings": 1.28,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Bell Pepper, Red",
+      "unitName": "medium pepper",
+      "quantityInBaseServings": 1.19,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Bell Pepper, Red",
+      "unitName": "cup, chopped",
+      "quantityInBaseServings": 1.49,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Bell Pepper, Green",
+      "unitName": "medium pepper",
+      "quantityInBaseServings": 1.19,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Bell Pepper, Green",
+      "unitName": "cup, chopped",
+      "quantityInBaseServings": 1.49,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Tomato",
+      "unitName": "medium tomato",
+      "quantityInBaseServings": 1.23,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Tomato",
+      "unitName": "large tomato",
+      "quantityInBaseServings": 1.82,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Tomato",
+      "unitName": "cup, chopped",
+      "quantityInBaseServings": 1.8,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Cucumber",
+      "unitName": "medium cucumber",
+      "quantityInBaseServings": 3.01,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Cucumber",
+      "unitName": "cup, sliced",
+      "quantityInBaseServings": 1.19,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Celery",
+      "unitName": "medium stalk",
+      "quantityInBaseServings": 0.4,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Celery",
+      "unitName": "large stalk",
+      "quantityInBaseServings": 0.64,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Zucchini",
+      "unitName": "medium zucchini",
+      "quantityInBaseServings": 1.96,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Zucchini",
+      "unitName": "cup, chopped",
+      "quantityInBaseServings": 1.24,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Cauliflower",
+      "unitName": "cup, chopped",
+      "quantityInBaseServings": 1.07,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Sweet Potato",
+      "unitName": "medium sweet potato",
+      "quantityInBaseServings": 1.14,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Sweet Potato",
+      "unitName": "large sweet potato",
+      "quantityInBaseServings": 1.8,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Potato, Russet",
+      "unitName": "medium potato",
+      "quantityInBaseServings": 2.13,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Potato, Russet",
+      "unitName": "large potato",
+      "quantityInBaseServings": 2.99,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Onion, Yellow",
+      "unitName": "medium onion",
+      "quantityInBaseServings": 1.1,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Onion, Yellow",
+      "unitName": "large onion",
+      "quantityInBaseServings": 1.5,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Onion, Yellow",
+      "unitName": "cup, chopped",
+      "quantityInBaseServings": 1.6,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Garlic",
+      "unitName": "clove",
+      "quantityInBaseServings": 0.03,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Mushroom, White",
+      "unitName": "cup, sliced",
+      "quantityInBaseServings": 0.7,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Mushroom, White",
+      "unitName": "cup, whole",
+      "quantityInBaseServings": 0.96,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Lettuce, Romaine",
+      "unitName": "cup, shredded",
+      "quantityInBaseServings": 0.47,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Lettuce, Romaine",
+      "unitName": "leaf, inner",
+      "quantityInBaseServings": 0.06,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Green Bean",
+      "unitName": "cup",
+      "quantityInBaseServings": 1.1,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Asparagus",
+      "unitName": "spear, medium",
+      "quantityInBaseServings": 0.16,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Brussels Sprout",
+      "unitName": "sprout",
+      "quantityInBaseServings": 0.21,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Brussels Sprout",
+      "unitName": "cup",
+      "quantityInBaseServings": 0.88,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Cabbage, Green",
+      "unitName": "cup, shredded",
+      "quantityInBaseServings": 0.89,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Corn, Sweet Yellow",
+      "unitName": "medium ear (kernels)",
+      "quantityInBaseServings": 0.9,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Corn, Sweet Yellow",
+      "unitName": "large ear (kernels)",
+      "quantityInBaseServings": 1.18,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Eggplant",
+      "unitName": "cup, cubed",
+      "quantityInBaseServings": 0.82,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Beet",
+      "unitName": "medium beet",
+      "quantityInBaseServings": 0.82,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Radish",
+      "unitName": "medium radish",
+      "quantityInBaseServings": 0.045,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Jalape\u00f1o Pepper",
+      "unitName": "pepper",
+      "quantityInBaseServings": 0.14,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Tomato Paste",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.16,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Chicken Breast, Skinless",
+      "unitName": "breast",
+      "quantityInBaseServings": 1.74,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Chicken Thigh, Skinless",
+      "unitName": "thigh",
+      "quantityInBaseServings": 1.16,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Ground Beef, 90/10",
+      "unitName": "1/4 lb patty",
+      "quantityInBaseServings": 1.13,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Ground Beef, 80/20",
+      "unitName": "1/4 lb patty",
+      "quantityInBaseServings": 1.13,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Ground Turkey, 93/7",
+      "unitName": "1/4 lb patty",
+      "quantityInBaseServings": 1.13,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Pork Loin",
+      "unitName": "chop, boneless",
+      "quantityInBaseServings": 1.13,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Pork Tenderloin",
+      "unitName": "4 oz portion",
+      "quantityInBaseServings": 1.13,
+      "measurementSystem": "weight"
+    },
+    {
+      "foodName": "Salmon, Atlantic",
+      "unitName": "fillet",
+      "quantityInBaseServings": 1.7,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Tilapia",
+      "unitName": "fillet",
+      "quantityInBaseServings": 1.13,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Shrimp",
+      "unitName": "large shrimp",
+      "quantityInBaseServings": 0.07,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Tuna, Yellowfin",
+      "unitName": "4 oz steak",
+      "quantityInBaseServings": 1.13,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Cod, Atlantic",
+      "unitName": "fillet",
+      "quantityInBaseServings": 1.13,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Egg, Whole",
+      "unitName": "large egg",
+      "quantityInBaseServings": 0.5,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Egg White",
+      "unitName": "large egg white",
+      "quantityInBaseServings": 0.33,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Egg Yolk",
+      "unitName": "large egg yolk",
+      "quantityInBaseServings": 0.17,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Steak, Top Sirloin",
+      "unitName": "6 oz steak",
+      "quantityInBaseServings": 1.7,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Lamb Leg",
+      "unitName": "4 oz portion",
+      "quantityInBaseServings": 1.13,
+      "measurementSystem": "weight"
+    },
+    {
+      "foodName": "Tofu, Firm",
+      "unitName": "half block",
+      "quantityInBaseServings": 1.26,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Tofu, Firm",
+      "unitName": "cup, cubed",
+      "quantityInBaseServings": 1.26,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Whole Milk",
+      "unitName": "cup",
+      "quantityInBaseServings": 2.44,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Whole Milk",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.15,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "2% Milk",
+      "unitName": "cup",
+      "quantityInBaseServings": 2.44,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Skim Milk",
+      "unitName": "cup",
+      "quantityInBaseServings": 2.45,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Heavy Cream",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.15,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Heavy Cream",
+      "unitName": "cup",
+      "quantityInBaseServings": 2.38,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Butter, Unsalted",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.14,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Butter, Unsalted",
+      "unitName": "stick",
+      "quantityInBaseServings": 1.13,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Butter, Salted",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.14,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Butter, Salted",
+      "unitName": "stick",
+      "quantityInBaseServings": 1.13,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Cheddar Cheese",
+      "unitName": "slice (~1 oz)",
+      "quantityInBaseServings": 0.28,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Cheddar Cheese",
+      "unitName": "cup, shredded",
+      "quantityInBaseServings": 1.13,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Mozzarella Cheese",
+      "unitName": "slice (~1 oz)",
+      "quantityInBaseServings": 0.28,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Mozzarella Cheese",
+      "unitName": "cup, shredded",
+      "quantityInBaseServings": 1.12,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Parmesan Cheese, Grated",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.05,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Cream Cheese",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.14,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Cream Cheese",
+      "unitName": "oz",
+      "quantityInBaseServings": 0.28,
+      "measurementSystem": "weight"
+    },
+    {
+      "foodName": "Greek Yogurt, Plain Nonfat",
+      "unitName": "container (5.3 oz)",
+      "quantityInBaseServings": 1.5,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Greek Yogurt, Plain Whole Milk",
+      "unitName": "container (5.3 oz)",
+      "quantityInBaseServings": 1.5,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Sour Cream",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.15,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Cottage Cheese, 2%",
+      "unitName": "cup",
+      "quantityInBaseServings": 2.26,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Cottage Cheese, 2%",
+      "unitName": "half cup",
+      "quantityInBaseServings": 1.13,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Ricotta Cheese, Whole Milk",
+      "unitName": "cup",
+      "quantityInBaseServings": 2.46,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Ricotta Cheese, Whole Milk",
+      "unitName": "half cup",
+      "quantityInBaseServings": 1.24,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Coconut Milk, Canned",
+      "unitName": "cup",
+      "quantityInBaseServings": 2.4,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Coconut Milk, Canned",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.15,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "White Rice, Long Grain",
+      "unitName": "cup, dry",
+      "quantityInBaseServings": 1.85,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "White Rice, Long Grain",
+      "unitName": "cup, cooked",
+      "quantityInBaseServings": 1.58,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Brown Rice, Long Grain",
+      "unitName": "cup, dry",
+      "quantityInBaseServings": 1.85,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Brown Rice, Long Grain",
+      "unitName": "cup, cooked",
+      "quantityInBaseServings": 1.95,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Quinoa",
+      "unitName": "cup, dry",
+      "quantityInBaseServings": 1.7,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Quinoa",
+      "unitName": "cup, cooked",
+      "quantityInBaseServings": 1.85,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Oats, Rolled",
+      "unitName": "cup, dry",
+      "quantityInBaseServings": 0.81,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Oats, Rolled",
+      "unitName": "half cup, dry",
+      "quantityInBaseServings": 0.4,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Pasta, Spaghetti",
+      "unitName": "2 oz serving, dry",
+      "quantityInBaseServings": 0.56,
+      "measurementSystem": "weight"
+    },
+    {
+      "foodName": "Bread, Whole Wheat",
+      "unitName": "slice",
+      "quantityInBaseServings": 0.28,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "All-Purpose Flour",
+      "unitName": "cup",
+      "quantityInBaseServings": 1.25,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Whole Wheat Flour",
+      "unitName": "cup",
+      "quantityInBaseServings": 1.2,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Cornmeal, Yellow",
+      "unitName": "cup",
+      "quantityInBaseServings": 1.57,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Couscous",
+      "unitName": "cup, dry",
+      "quantityInBaseServings": 1.73,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Tortilla, Corn",
+      "unitName": "tortilla (6\")",
+      "quantityInBaseServings": 0.26,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Black Beans",
+      "unitName": "cup, dry",
+      "quantityInBaseServings": 1.85,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Chickpeas",
+      "unitName": "cup, dry",
+      "quantityInBaseServings": 2,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Lentils, Green",
+      "unitName": "cup, dry",
+      "quantityInBaseServings": 1.92,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Kidney Beans",
+      "unitName": "cup, dry",
+      "quantityInBaseServings": 1.84,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Pinto Beans",
+      "unitName": "cup, dry",
+      "quantityInBaseServings": 1.93,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Peanut",
+      "unitName": "oz (~28 peanuts)",
+      "quantityInBaseServings": 0.28,
+      "measurementSystem": "weight"
+    },
+    {
+      "foodName": "Peanut",
+      "unitName": "cup",
+      "quantityInBaseServings": 1.46,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Edamame, Shelled",
+      "unitName": "cup",
+      "quantityInBaseServings": 1.55,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Almond",
+      "unitName": "oz (~23 almonds)",
+      "quantityInBaseServings": 0.28,
+      "measurementSystem": "weight"
+    },
+    {
+      "foodName": "Almond",
+      "unitName": "cup, whole",
+      "quantityInBaseServings": 1.43,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Walnut",
+      "unitName": "oz (~14 halves)",
+      "quantityInBaseServings": 0.28,
+      "measurementSystem": "weight"
+    },
+    {
+      "foodName": "Walnut",
+      "unitName": "cup, halves",
+      "quantityInBaseServings": 1,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Cashew",
+      "unitName": "oz (~18 cashews)",
+      "quantityInBaseServings": 0.28,
+      "measurementSystem": "weight"
+    },
+    {
+      "foodName": "Pecan",
+      "unitName": "oz (~19 halves)",
+      "quantityInBaseServings": 0.28,
+      "measurementSystem": "weight"
+    },
+    {
+      "foodName": "Pecan",
+      "unitName": "cup, halves",
+      "quantityInBaseServings": 0.99,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Chia Seed",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.12,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Chia Seed",
+      "unitName": "oz",
+      "quantityInBaseServings": 0.28,
+      "measurementSystem": "weight"
+    },
+    {
+      "foodName": "Flaxseed, Ground",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.07,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Sunflower Seed, Hulled",
+      "unitName": "oz",
+      "quantityInBaseServings": 0.28,
+      "measurementSystem": "weight"
+    },
+    {
+      "foodName": "Sunflower Seed, Hulled",
+      "unitName": "cup",
+      "quantityInBaseServings": 1.4,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Pumpkin Seed, Hulled",
+      "unitName": "oz",
+      "quantityInBaseServings": 0.28,
+      "measurementSystem": "weight"
+    },
+    {
+      "foodName": "Dark Chocolate, 70-85%",
+      "unitName": "oz",
+      "quantityInBaseServings": 0.28,
+      "measurementSystem": "weight"
+    },
+    {
+      "foodName": "Dark Chocolate, 70-85%",
+      "unitName": "square (~10g)",
+      "quantityInBaseServings": 0.1,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Olive Oil, Extra Virgin",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.14,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Olive Oil, Extra Virgin",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.045,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Coconut Oil",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.14,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Vegetable Oil",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.14,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Canola Oil",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.14,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Sesame Oil",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.14,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Sesame Oil",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.045,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Avocado Oil",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.14,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Granulated Sugar",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.125,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Granulated Sugar",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.042,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Brown Sugar",
+      "unitName": "tablespoon, packed",
+      "quantityInBaseServings": 0.14,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Honey",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.21,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Honey",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.07,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Maple Syrup, Pure",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.2,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Agave Nectar",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.21,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Powdered Sugar",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.08,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Powdered Sugar",
+      "unitName": "cup",
+      "quantityInBaseServings": 1.2,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Soy Sauce",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.16,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Soy Sauce",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.06,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Apple Cider Vinegar",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.15,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "White Vinegar",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.15,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Peanut Butter, Natural",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.16,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Peanut Butter, Natural",
+      "unitName": "2 tablespoons",
+      "quantityInBaseServings": 0.32,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Almond Butter",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.16,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Almond Butter",
+      "unitName": "2 tablespoons",
+      "quantityInBaseServings": 0.32,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Vanilla Extract",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.042,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Basil, Fresh",
+      "unitName": "cup, chopped",
+      "quantityInBaseServings": 0.24,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Ginger Root",
+      "unitName": "tablespoon, grated",
+      "quantityInBaseServings": 0.06,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Ginger Root",
+      "unitName": "1-inch piece",
+      "quantityInBaseServings": 0.11,
+      "measurementSystem": "abstract"
+    },
+    {
+      "foodName": "Cinnamon, Ground",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.026,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Cumin, Ground",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.021,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Turmeric, Ground",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.03,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Black Pepper, Ground",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.023,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Paprika, Ground",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.023,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Oregano, Dried",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.01,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Chili Powder",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.027,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Garlic Powder",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.031,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Onion Powder",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.024,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Cocoa Powder, Unsweetened",
+      "unitName": "tablespoon",
+      "quantityInBaseServings": 0.054,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Salt, Table",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.06,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Salt, Table",
+      "unitName": "pinch",
+      "quantityInBaseServings": 0.004,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Baking Soda",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.046,
+      "measurementSystem": "volume"
+    },
+    {
+      "foodName": "Baking Powder",
+      "unitName": "teaspoon",
+      "quantityInBaseServings": 0.046,
+      "measurementSystem": "volume"
+    }
+  ]
+}

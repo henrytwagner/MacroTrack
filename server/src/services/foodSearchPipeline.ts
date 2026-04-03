@@ -19,7 +19,7 @@ interface ScoredCandidate {
   foodRef: string;
   name: string;
   source: FoodSource;
-  tier: 1 | 2 | 3 | 4;
+  tier: 1 | 2 | 2.5 | 3 | 4;
   score: number;
   trigramScore: number;
   servingSize: number;
@@ -81,7 +81,7 @@ const WEIGHT_NAME = 0.35;
 const WEIGHT_QUALITY = 0.20;
 const WEIGHT_USAGE = 0.15;
 
-const TIER_SCORES: Record<number, number> = { 1: 1.0, 2: 0.9, 3: 0.7, 4: 0.5 };
+const TIER_SCORES: Record<number, number> = { 1: 1.0, 2: 0.9, 2.5: 0.8, 3: 0.7, 4: 0.5 };
 
 // USDA timeouts
 const USDA_PREFERRED_TIMEOUT_MS = 3000;
@@ -259,6 +259,57 @@ async function searchCustomFoods(
   }));
 }
 
+async function searchDialedFoods(
+  query: NormalizedQuery,
+): Promise<ScoredCandidate[]> {
+  const { rows } = await pool.query<CommunityFoodRow>(
+    `SELECT cf.id, cf.name, cf."brandName", cf."commonName",
+       cf."defaultServingSize", cf."defaultServingUnit",
+       cf.calories, cf."proteinG", cf."carbsG", cf."fatG", cf."usesCount",
+       GREATEST(
+         similarity(cf.name, $1), word_similarity($1, cf.name),
+         COALESCE(similarity(cf."commonName", $1), 0),
+         COALESCE(word_similarity($1, cf."commonName"), 0),
+         COALESCE(MAX(similarity(a.alias, $1)), 0),
+         COALESCE(MAX(word_similarity($1, a.alias)), 0)
+       ) AS sim
+     FROM "CommunityFood" cf
+     LEFT JOIN "CommunityFoodAlias" a ON a."communityFoodId" = cf.id
+     WHERE cf.status = 'ACTIVE'
+       AND cf."dataSource" = 'DIALED'
+       AND (
+         cf.name % $1
+         OR cf."commonName" % $1
+         OR word_similarity($1, cf.name) > 0.25
+         OR word_similarity($1, cf."commonName") > 0.25
+         OR a.alias % $1
+         OR word_similarity($1, a.alias) > 0.25
+       )
+     GROUP BY cf.id
+     ORDER BY sim DESC, cf."trustScore" DESC
+     LIMIT 5`,
+    [query.canonical],
+  );
+
+  return rows.map((r) => ({
+    foodRef: `dialed:${r.id}`,
+    name: r.brandName ? `${r.brandName} — ${r.name}` : r.name,
+    source: "DIALED" as FoodSource,
+    tier: 2.5 as const,
+    score: 0,
+    trigramScore: parseFloat(String(r.sim)) || 0,
+    servingSize: r.defaultServingSize,
+    servingUnit: r.defaultServingUnit,
+    macros: {
+      calories: r.calories,
+      proteinG: r.proteinG,
+      carbsG: r.carbsG,
+      fatG: r.fatG,
+    },
+    usesCount: r.usesCount,
+  }));
+}
+
 interface CommunityFoodRow {
   id: string;
   name: string;
@@ -293,6 +344,7 @@ async function searchCommunityFoods(
      FROM "CommunityFood" cf
      LEFT JOIN "CommunityFoodAlias" a ON a."communityFoodId" = cf.id
      WHERE cf.status = 'ACTIVE'
+       AND (cf."dataSource" IS DISTINCT FROM 'DIALED')
        AND (
          cf.name % $1
          OR cf."brandName" % $1
@@ -452,10 +504,11 @@ function computeScore(candidate: ScoredCandidate, _query: NormalizedQuery): numb
 // Tier 4 (USDA) requires strong name overlap to auto-select — quality score
 // alone (data completeness) should never be enough.
 const MIN_NAME_SCORE_FOR_AUTO_SELECT: Record<number, number> = {
-  1: 0.25,  // User history — they've logged it before
-  2: 0.25,  // Custom foods — user created it
-  3: 0.35,  // Community foods
-  4: 0.50,  // USDA — majority token overlap required
+  1: 0.25,   // User history — they've logged it before
+  2: 0.25,   // Custom foods — user created it
+  2.5: 0.30, // Dialed foods — curated baseline
+  3: 0.35,   // Community foods
+  4: 0.50,   // USDA — majority token overlap required
 };
 
 function rankAndSelect(
@@ -544,10 +597,11 @@ export async function lookupFoodPipeline(
 ): Promise<KitchenLookupResult> {
   const query = normalizeQuery(rawName, brand);
 
-  const [historyResults, customResults, communityResults, usdaResults] =
+  const [historyResults, customResults, dialedResults, communityResults, usdaResults] =
     await Promise.all([
       searchUserHistory(query, userId),
       searchCustomFoods(query, userId),
+      searchDialedFoods(query),
       searchCommunityFoods(query),
       searchUsdaWithFallback(query),
     ]);
@@ -555,6 +609,7 @@ export async function lookupFoodPipeline(
   const allCandidates = [
     ...historyResults,
     ...customResults,
+    ...dialedResults,
     ...communityResults,
     ...usdaResults,
   ];

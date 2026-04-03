@@ -224,6 +224,8 @@ export async function barcodeRoutes(app: FastifyInstance) {
       switch (result.source) {
         case "custom":
           return reply.send({ food: mapCustomFood(result.food), source: "custom" });
+        case "dialed":
+          return reply.send({ food: mapCommunityFood(result.food as any), source: "dialed" });
         case "community":
           return reply.send({ food: mapCommunityFood(result.food as any), source: "community" });
         case "not_found":

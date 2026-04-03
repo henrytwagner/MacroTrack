@@ -128,6 +128,8 @@ function mapFoodUnitConversion(conv: {
   customFoodId: string | null;
   communityFoodId: string | null;
   usdaFdcId: number | null;
+  userId: string | null;
+  createdByUserId: string | null;
 }): FoodUnitConversion {
   return {
     id: conv.id,
@@ -137,6 +139,8 @@ function mapFoodUnitConversion(conv: {
     customFoodId: conv.customFoodId ?? undefined,
     communityFoodId: conv.communityFoodId ?? undefined,
     usdaFdcId: conv.usdaFdcId ?? undefined,
+    userId: conv.userId ?? undefined,
+    createdByUserId: conv.createdByUserId ?? undefined,
   };
 }
 
@@ -361,13 +365,20 @@ export async function foodRoutes(app: FastifyInstance) {
       const { q } = request.query;
 
       if (!q || q.trim().length < 2) {
-        const response: UnifiedSearchResponse = { myFoods: [], community: [], database: [] };
+        const response: UnifiedSearchResponse = { myFoods: [], dialed: [], community: [], database: [] };
         return reply.send(response);
       }
 
       const query = q.trim();
 
-      const [customFoods, communityFoods, usdaResults] = await Promise.all([
+      const communityNameFilter = [
+        { name: { contains: query, mode: "insensitive" as const } },
+        { brandName: { contains: query, mode: "insensitive" as const } },
+        { commonName: { contains: query, mode: "insensitive" as const } },
+        { aliases: { some: { alias: { contains: query, mode: "insensitive" as const } } } },
+      ];
+
+      const [customFoods, dialedFoods, communityFoods, usdaResults] = await Promise.all([
         prisma.customFood.findMany({
           where: {
             userId,
@@ -379,12 +390,18 @@ export async function foodRoutes(app: FastifyInstance) {
         prisma.communityFood.findMany({
           where: {
             status: "ACTIVE",
-            OR: [
-              { name: { contains: query, mode: "insensitive" } },
-              { brandName: { contains: query, mode: "insensitive" } },
-              { commonName: { contains: query, mode: "insensitive" } },
-              { aliases: { some: { alias: { contains: query, mode: "insensitive" } } } },
-            ],
+            dataSource: "DIALED",
+            OR: communityNameFilter,
+          },
+          take: 10,
+          orderBy: [{ name: "asc" }],
+          include: { barcodes: { select: { barcode: true } }, aliases: { select: { alias: true } } },
+        }),
+        prisma.communityFood.findMany({
+          where: {
+            status: "ACTIVE",
+            NOT: { dataSource: "DIALED" },
+            OR: communityNameFilter,
           },
           take: 10,
           orderBy: [{ trustScore: "desc" }, { usesCount: "desc" }, { name: "asc" }],
@@ -405,6 +422,7 @@ export async function foodRoutes(app: FastifyInstance) {
 
       const response: UnifiedSearchResponse = {
         myFoods: customFoods.map(mapCustomFood),
+        dialed: dialedFoods.map(mapCommunityFood),
         community: communityFoods.map(mapCommunityFood),
         database: annotatedUsda,
       };
@@ -505,6 +523,7 @@ export async function foodRoutes(app: FastifyInstance) {
       const created = await prisma.foodUnitConversion.create({
         data: {
           userId,
+          createdByUserId: userId,
           unitName: body.unitName,
           quantityInBaseServings: body.quantityInBaseServings,
           measurementSystem: body.measurementSystem ?? "abstract",
@@ -533,6 +552,13 @@ export async function foodRoutes(app: FastifyInstance) {
         return reply.code(404).send({ error: "Unit conversion not found" });
       }
 
+      if (existing.userId === null) {
+        return reply.code(403).send({ error: "System-level conversions cannot be modified" });
+      }
+      if (existing.userId !== request.userId) {
+        return reply.code(403).send({ error: "You can only modify your own conversions" });
+      }
+
       const updated = await prisma.foodUnitConversion.update({
         where: { id },
         data: {
@@ -557,6 +583,13 @@ export async function foodRoutes(app: FastifyInstance) {
       });
       if (!existing) {
         return reply.code(404).send({ error: "Unit conversion not found" });
+      }
+
+      if (existing.userId === null) {
+        return reply.code(403).send({ error: "System-level conversions cannot be deleted" });
+      }
+      if (existing.userId !== request.userId) {
+        return reply.code(403).send({ error: "You can only delete your own conversions" });
       }
 
       await prisma.foodUnitConversion.delete({ where: { id } });
@@ -645,7 +678,7 @@ export async function foodRoutes(app: FastifyInstance) {
         return reply.send(result);
       }
 
-      const foodRef = lookup.foodRef; // "custom:UUID" | "usda:FDC_ID" | "community:UUID"
+      const foodRef = lookup.foodRef; // "custom:UUID" | "dialed:UUID" | "community:UUID" | "usda:FDC_ID"
       const [refType, refId] = foodRef.split(":");
 
       if (refType === "custom") {
@@ -670,11 +703,12 @@ export async function foodRoutes(app: FastifyInstance) {
           };
           return reply.send(result);
         }
-      } else if (refType === "community") {
+      } else if (refType === "community" || refType === "dialed") {
         const food = await prisma.communityFood.findUnique({ where: { id: refId } });
         if (food) {
+          const source = food.dataSource === "DIALED" ? "dialed" : "community";
           const result: PhotoIdentificationResult = {
-            source: "community",
+            source,
             food: mapCommunityFood(food),
             estimatedGrams: identified.estimatedGrams,
             foodName: food.name,

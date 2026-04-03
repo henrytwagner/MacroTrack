@@ -1,4 +1,6 @@
-# MacroTrack — Product Specification
+# ARCHIVED: MacroTrack — Original React Native MVP Specification
+
+> **This document is archived.** It describes the original React Native/Expo MVP (February 2026). The app has since migrated to SwiftUI and evolved far beyond this scope. See `CLAUDE.md` for current architecture and `BUILD_PLAN.md` for the long-term vision.
 
 **Version**: 1.0 (MVP)
 **Authors**: Henry Wagner, Ryan Kendra, Lucas Kellar

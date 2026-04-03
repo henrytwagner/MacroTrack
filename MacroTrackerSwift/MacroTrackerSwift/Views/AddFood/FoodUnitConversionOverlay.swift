@@ -25,6 +25,9 @@ struct FoodUnitConversionOverlay: View {
     /// Primary accent for buttons and selection (e.g. community create uses `appSuccess`).
     var accentColor: Color = Color.appTint
 
+    /// IDs of system-level (immutable) conversions — edit/delete disabled for these.
+    var systemConversionIds: Set<String> = []
+
     // MARK: Form state (lives here so it resets when panel closes)
     @State private var pendingToUnit:   String = ""   // locked "to" unit in the form
     @State private var formFromUnit:    String = ""   // selectable "from" unit
@@ -103,15 +106,22 @@ struct FoodUnitConversionOverlay: View {
                             Text("= \(Self.fmt(conv.quantityInBaseServings)) × serving")
                                 .font(.appCaption1)
                                 .foregroundStyle(Color.appTextSecondary)
-                            Button {
-                                Task { try? await onDelete?(conv.id) }
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(Color.appDestructive)
+                            if systemConversionIds.contains(conv.id) {
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.appTextTertiary)
+                                    .padding(.leading, Spacing.sm)
+                            } else {
+                                Button {
+                                    Task { try? await onDelete?(conv.id) }
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(Color.appDestructive)
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.leading, Spacing.sm)
                             }
-                            .buttonStyle(.plain)
-                            .padding(.leading, Spacing.sm)
                         }
                         .padding(.horizontal, Spacing.lg)
                         .padding(.vertical, Spacing.md)
@@ -181,17 +191,25 @@ struct FoodUnitConversionOverlay: View {
                         .foregroundStyle(Color.appTextSecondary)
                 }
                 Spacer()
-                Button {
-                    openEditForm(unitName: unitName)
-                } label: {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 16))
-                        .foregroundStyle(accentColor)
+                if let conv = conversions.first(where: { $0.unitName == unitName }),
+                   systemConversionIds.contains(conv.id) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.appTextTertiary)
                         .frame(width: 36, height: 36)
-                        .background(accentColor.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
+                } else {
+                    Button {
+                        openEditForm(unitName: unitName)
+                    } label: {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 16))
+                            .foregroundStyle(accentColor)
+                            .frame(width: 36, height: 36)
+                            .background(accentColor.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: BorderRadius.sm))
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, Spacing.lg)
             .padding(.bottom, Spacing.xxl)

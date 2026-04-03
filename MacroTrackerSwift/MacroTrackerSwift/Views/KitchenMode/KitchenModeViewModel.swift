@@ -1207,7 +1207,7 @@ final class KitchenModeViewModel {
                 return try await APIClient.shared.getFoodUnitConversionsForCustomFood(f.id)
             case .usda(let f):
                 return try await APIClient.shared.getFoodUnitConversionsForUsdaFood(f.fdcId)
-            case .community(let f):
+            case .dialed(let f), .community(let f):
                 return try await APIClient.shared.getFoodUnitConversionsForCommunityFood(f.id)
             }
         } catch {
@@ -1222,7 +1222,7 @@ final class KitchenModeViewModel {
         do {
             if source == .custom, let id = customFoodId {
                 return try await APIClient.shared.getFoodUnitConversionsForCustomFood(id)
-            } else if source == .community, let id = communityFoodId {
+            } else if source == .dialed || source == .community, let id = communityFoodId {
                 return try await APIClient.shared.getFoodUnitConversionsForCommunityFood(id)
             } else if source == .database, let fdcId = usdaFdcId {
                 return try await APIClient.shared.getFoodUnitConversionsForUsdaFood(fdcId)

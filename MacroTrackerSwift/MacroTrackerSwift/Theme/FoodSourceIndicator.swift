@@ -8,6 +8,7 @@ enum FoodSourceIndicator {
         switch source {
         case .custom:    return "person"
         case .community: return "person.2"
+        case .dialed:    return "checkmark.seal.fill"
         case .database:  return "icloud"
         }
     }
@@ -16,6 +17,7 @@ enum FoodSourceIndicator {
         switch source {
         case .custom:    return Color.appTint
         case .community: return Color.appSuccess
+        case .dialed:    return Color.appDialed
         case .database:  return Color.appWarning
         }
     }

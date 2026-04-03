@@ -1103,7 +1103,7 @@ async function handleBarcodeScan(
     unit = f.servingUnit;
   } else {
     const f = result.food;
-    foodRef = `community:${f.id}`;
+    foodRef = `${result.source}:${f.id}`;
     quantity = 1;
     unit = (f as any).defaultServingUnit ?? "serving";
   }

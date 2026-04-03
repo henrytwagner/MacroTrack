@@ -203,7 +203,7 @@ upvotesCount    Int    @default(0)
 
 ---
 
-## 3. Recipe Sharing & Meal Prep Portioning
+## 3. Recipe Sharing & Meal Prep Portioning (a.k.a. "Community Meals")
 
 ### 3.1 Vision
 
@@ -568,6 +568,9 @@ Specific interactions:
 ## 7. Implementation Priority
 
 ### Immediate (no dependencies, can start now)
+
+> **Seed data priority (April 2026):** Populating the community food and recipe database is an immediate concern. Building community/custom food coverage is the strategic path to minimizing USDA reliance. This unblocks recipe sharing (Feature 3) and strengthens the food lookup chain.
+
 1. **Meal prep portioning** (Feature 3 Phase A) — smallest scope, immediate user value
 2. **Day validation model + quality metrics** (Feature 4 Phase A) — lays data foundation
 3. **Reputation fields + upvote endpoint** (Feature 2 Phase A) — starts tracking
@@ -594,4 +597,4 @@ Specific interactions:
 
 ---
 
-*Last updated: March 2026. This document will be updated as features move from planning to development.*
+*Last updated: April 2026. This document will be updated as features move from planning to development.*
