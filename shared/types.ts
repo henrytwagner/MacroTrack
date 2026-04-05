@@ -25,6 +25,8 @@ export type MealLabel = "breakfast" | "lunch" | "dinner" | "snack";
 
 export type SessionStatus = "active" | "paused" | "completed" | "cancelled";
 
+export type AudioFeedbackMode = "full" | "clarify_only" | "silent";
+
 export type NutritionUnit =
   | "g"
   | "oz"
@@ -215,6 +217,7 @@ export interface FoodEntry extends Macros {
   communityFoodId?: string;
   savedMealId?: string;
   mealInstanceId?: string;
+  voiceSessionId?: string;
   createdAt: string;
   loggedAt: string;
 }
@@ -727,6 +730,11 @@ export interface WSPauseMessage {
   localItems?: DraftItem[];
 }
 
+export interface WSSetAudioFeedbackModeMessage {
+  type: "set_audio_feedback_mode";
+  mode: AudioFeedbackMode;
+}
+
 export type WSClientMessage =
   | WSTranscriptMessage
   | WSAudioChunkMessage
@@ -739,7 +747,8 @@ export type WSClientMessage =
   | WSTouchEditItemMessage
   | WSTouchRemoveItemMessage
   | WSTouchCompleteCreationMessage
-  | WSTouchDismissChoiceMessage;
+  | WSTouchDismissChoiceMessage
+  | WSSetAudioFeedbackModeMessage;
 
 // Server → Client
 
@@ -984,8 +993,6 @@ export interface VoiceSessionSummary {
   date: string;
   status: SessionStatus;
   startedAt: string;
-  confirmedItems: FoodEntry[];
-  draftItems: DraftItem[];
   totalCalories: number;
   totalProteinG: number;
   totalCarbsG: number;

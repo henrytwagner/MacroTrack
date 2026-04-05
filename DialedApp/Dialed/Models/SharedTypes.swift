@@ -53,6 +53,36 @@ enum SessionStatus: String, Codable, Sendable {
     case active, paused, completed, cancelled
 }
 
+enum AudioFeedbackMode: String, Codable, Sendable, CaseIterable {
+    case full
+    case clarifyOnly = "clarify_only"
+    case silent
+
+    var title: String {
+        switch self {
+        case .full: "Full"
+        case .clarifyOnly: "Clarify Only"
+        case .silent: "Silent"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .full: "Speaks confirmations and asks questions"
+        case .clarifyOnly: "Only speaks to ask questions"
+        case .silent: "No audio — visual feedback only"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .full: "speaker.wave.3"
+        case .clarifyOnly: "speaker.wave.1"
+        case .silent: "speaker.slash"
+        }
+    }
+}
+
 enum NutritionUnit: String, Codable, Sendable {
     case g, oz, cups, servings, slices, pieces, ml
     case tbsp, tsp
@@ -254,6 +284,7 @@ struct FoodEntry: Codable, Identifiable, Sendable {
     var communityFoodId: String?
     var savedMealId:     String?
     var mealInstanceId:  String?
+    var voiceSessionId:  String?
     var createdAt:       String
     var loggedAt:        String
 }
@@ -265,8 +296,6 @@ struct VoiceSessionSummary: Codable, Identifiable, Sendable {
     var date:            String
     var status:          SessionStatus
     var startedAt:       String
-    var confirmedItems:  [FoodEntry]
-    var draftItems:      [DraftItem]
     var totalCalories:   Double
     var totalProteinG:   Double
     var totalCarbsG:     Double
@@ -1045,7 +1074,7 @@ nonisolated func mealLabelForTime(_ date: Date) -> MealLabel {
 enum WSClientMessage: Encodable, Sendable {
     case transcript(text: String)
     case audioChunk(data: String, sequence: Int)
-    case save
+    case save(localItems: [DraftItem] = [])
     case cancel
     case pause(localItems: [DraftItem])
     case barcodeScan(gtin: String)
@@ -1057,11 +1086,12 @@ enum WSClientMessage: Encodable, Sendable {
     case touchCompleteCreation(itemId: String, name: String, calories: Double,
                                proteinG: Double, carbsG: Double, fatG: Double,
                                servingSize: Double, servingUnit: String)
+    case setAudioFeedbackMode(mode: AudioFeedbackMode)
 
     private enum CodingKeys: String, CodingKey {
         case type, text, data, sequence, gtin, itemId, quantity, unit
         case name, calories, proteinG, carbsG, fatG, servingSize, servingUnit
-        case imageBase64, depthContext, voiceEnabled, localItems
+        case imageBase64, depthContext, voiceEnabled, localItems, mode
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1074,8 +1104,11 @@ enum WSClientMessage: Encodable, Sendable {
             try c.encode("audio_chunk", forKey: .type)
             try c.encode(data, forKey: .data)
             try c.encode(sequence, forKey: .sequence)
-        case .save:
+        case .save(let localItems):
             try c.encode("save", forKey: .type)
+            if !localItems.isEmpty {
+                try c.encode(localItems, forKey: .localItems)
+            }
         case .cancel:
             try c.encode("cancel", forKey: .type)
         case .pause(let localItems):
@@ -1121,6 +1154,9 @@ enum WSClientMessage: Encodable, Sendable {
             try c.encode(fatG, forKey: .fatG)
             try c.encode(servingSize, forKey: .servingSize)
             try c.encode(servingUnit, forKey: .servingUnit)
+        case .setAudioFeedbackMode(let mode):
+            try c.encode("set_audio_feedback_mode", forKey: .type)
+            try c.encode(mode, forKey: .mode)
         }
     }
 }

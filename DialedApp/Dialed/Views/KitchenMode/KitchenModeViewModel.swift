@@ -52,6 +52,9 @@ final class KitchenModeViewModel {
     /// True while a camera photo is being identified by the server.
     private(set) var isCameraProcessing = false
 
+    /// When true, the next `.itemsAdded` arriving after a cancelled camera capture is discarded.
+    private var cameraCancelled = false
+
     /// Camera permission granted (checked on first barcode mode activation).
     private(set) var cameraPermissionGranted = false
 
@@ -100,6 +103,12 @@ final class KitchenModeViewModel {
     /// Whether the Scale Connection sheet is presented.
     var showScaleConnection: Bool = false
 
+    /// Whether the Camera Settings sheet is presented.
+    var showCameraSettings: Bool = false
+
+    /// Whether the Voice Settings sheet is presented.
+    var showVoiceSettings: Bool = false
+
     /// Pre-fill name for FoodSearchView when bridging from a voice choice card (food not found).
     /// Cleared whenever the search sheet is dismissed.
     var pendingSearchName: String? = nil
@@ -107,6 +116,12 @@ final class KitchenModeViewModel {
     /// GTIN from a barcode scan that triggered a food_choice card.
     /// Used to pre-fill barcode field when creating a food and to open search with empty query.
     var pendingBarcodeGtin: String? = nil
+
+    /// Whether the microphone is unavailable (e.g., in use by FaceTime).
+    var micUnavailable: Bool = false
+
+    /// Inline feedback message shown near the mic icon when tapped while unavailable.
+    var micUnavailableMessage: String? = nil
 
     /// Whether there are unconfirmed items (blocks save).
     var hasUnconfirmedItems: Bool {
@@ -123,6 +138,40 @@ final class KitchenModeViewModel {
 
     @ObservationIgnored
     @AppStorage("kitchenCameraEnabled") var cameraEnabled: Bool = false
+
+    // MARK: - Camera Settings (persisted via UserDefaults)
+    // Plain stored properties (not @AppStorage) so @Observable can track
+    // mutations and drive SwiftUI re-renders in CameraSettingsSheet.
+
+    var cameraForwardEnabled: Bool = UserDefaults.standard.bool(forKey: "kitchenCameraForward") {
+        didSet { UserDefaults.standard.set(cameraForwardEnabled, forKey: "kitchenCameraForward") }
+    }
+
+    var barcodeScanEnabled: Bool = {
+        UserDefaults.standard.object(forKey: "kitchenBarcodeScanEnabled") == nil
+            ? true : UserDefaults.standard.bool(forKey: "kitchenBarcodeScanEnabled")
+    }() {
+        didSet { UserDefaults.standard.set(barcodeScanEnabled, forKey: "kitchenBarcodeScanEnabled") }
+    }
+
+    var foodRecognitionEnabled: Bool = {
+        UserDefaults.standard.object(forKey: "kitchenFoodRecognitionEnabled") == nil
+            ? true : UserDefaults.standard.bool(forKey: "kitchenFoodRecognitionEnabled")
+    }() {
+        didSet { UserDefaults.standard.set(foodRecognitionEnabled, forKey: "kitchenFoodRecognitionEnabled") }
+    }
+
+    // MARK: - Voice Settings (persisted via UserDefaults)
+
+    var audioFeedbackMode: AudioFeedbackMode = {
+        let raw = UserDefaults.standard.string(forKey: "kitchenAudioFeedbackMode") ?? "full"
+        return AudioFeedbackMode(rawValue: raw) ?? .full
+    }() {
+        didSet {
+            UserDefaults.standard.set(audioFeedbackMode.rawValue, forKey: "kitchenAudioFeedbackMode")
+            sendAudioFeedbackMode()
+        }
+    }
 
     // MARK: - Auto-Progression Settings (persisted via UserDefaults)
     // These use plain stored properties (not @AppStorage) so @Observable can track
@@ -186,6 +235,7 @@ final class KitchenModeViewModel {
     private let draft = DraftStore.shared
     private let dailyLog = DailyLogStore.shared
     private let scale = ScaleManager.shared
+    private let connectionMonitor = ConnectionMonitor.shared
     private let dateStore = DateStore.shared
     private let goalStore = GoalStore.shared
 
@@ -311,6 +361,11 @@ final class KitchenModeViewModel {
 
     /// Whether to show the brief "Scale connected" banner (driven by ScaleManager).
     var showScaleConnectedBanner: Bool { scale.showConnectedBanner }
+
+    // MARK: - Connection Quality
+
+    var connectionQuality: ConnectionQuality { connectionMonitor.quality }
+    var connectionSuggestion: String? { connectionMonitor.suggestion }
 
     // MARK: Software Zero
 
@@ -736,11 +791,20 @@ final class KitchenModeViewModel {
         // Connect WebSocket (always — needed for session management and touch actions)
         ws.connect(date: dateStore.selectedDate, sessionId: resumeSessionId)
 
-        // Start voice if enabled
+        // Start connection quality monitoring (uses WS ping RTT + NWPathMonitor)
+        connectionMonitor.start()
+
+        // Start voice if enabled — degrade gracefully if mic is unavailable
         if voiceEnabled {
             let started = await startAudio()
-            if !started { return }
+            if !started {
+                voiceEnabled = false
+                micUnavailable = true
+            }
         }
+
+        // Listen for audio interruption changes (mic becoming available/unavailable)
+        observeAudioInterruptions()
 
         // Auto-connect scale if enabled
         if scaleEnabled {
@@ -752,13 +816,18 @@ final class KitchenModeViewModel {
 
         sessionState = .active
 
+        // Send persisted audio feedback mode to server
+        sendAudioFeedbackMode()
+
         // Auto-activate barcode mode if last enabled
         if cameraEnabled {
             toggleBarcodeMode()
         }
     }
 
-    /// Start audio capture + playback. Returns false on failure (sets error state).
+    /// Start audio capture + playback. Returns false on failure.
+    /// Permission denial sets error state (user must fix in Settings).
+    /// Engine failures return false without error state (mic just unavailable).
     private func startAudio() async -> Bool {
         let micGranted = await capture.requestPermission()
         guard micGranted else {
@@ -769,18 +838,18 @@ final class KitchenModeViewModel {
         do {
             try playback.startEngine()
         } catch {
-            sessionState = .error("Audio playback failed: \(error.localizedDescription)")
             return false
         }
 
         do {
             try capture.start()
         } catch {
-            sessionState = .error("Microphone start failed: \(error.localizedDescription)")
+            playback.stopEngine()
             return false
         }
 
         audioActive = true
+        micUnavailable = false
         return true
     }
 
@@ -794,18 +863,31 @@ final class KitchenModeViewModel {
             isPaused = false
             textDisplayMode = .off
         } else {
-            // Enable voice
-            voiceEnabled = true
+            // Enable voice — also serves as retry when micUnavailable
             Task {
                 let started = await startAudio()
-                if !started {
-                    voiceEnabled = false
+                if started {
+                    voiceEnabled = true
+                    micUnavailable = false
+                } else {
+                    micUnavailable = true
+                    showMicUnavailableFeedback()
                 }
             }
         }
     }
 
-    /// Save the session — local items via REST, server items via WS.
+    private func showMicUnavailableFeedback() {
+        micUnavailableMessage = "Mic in use by another app"
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            if micUnavailableMessage != nil {
+                micUnavailableMessage = nil
+            }
+        }
+    }
+
+    /// Save the session — all items (local + server) saved via WS with voiceSessionId.
     func save() {
         guard !sessionEnded else { return }
 
@@ -817,74 +899,29 @@ final class KitchenModeViewModel {
         camera.stop()
         barcodeModeActive = false
 
-        let localItems = draft.items.filter { $0.isLocalItem && $0.state == .normal && $0.quantityConfirmed }
-        let hasServerItems = draft.items.contains { !$0.isLocalItem && $0.state == .normal }
+        let localItems = draft.items.filter { $0.isLocalItem }
+        let hasItems = draft.items.contains { $0.state == .normal }
 
-        Task {
-            // Save local (touch-added) items via REST
-            for item in localItems {
-                let req = CreateFoodEntryRequest(
-                    date: dateStore.selectedDate,
-                    name: item.name,
-                    calories: item.calories,
-                    proteinG: item.proteinG,
-                    carbsG: item.carbsG,
-                    fatG: item.fatG,
-                    quantity: item.quantity,
-                    unit: item.unit,
-                    source: item.source,
-                    mealLabel: item.mealLabel,
-                    confirmedViaScale: item.confirmedViaScale ? true : nil,
-                    usdaFdcId: item.usdaFdcId,
-                    customFoodId: item.customFoodId,
-                    communityFoodId: item.communityFoodId
-                )
-                _ = try? await dailyLog.createEntry(req)
-            }
-
-            // Save server items via WS (if any)
-            if hasServerItems {
-                ws.send(.save)
-                // sessionState set to .saving after session_saved arrives
-            } else {
-                // No server items — dismiss directly
+        if hasItems {
+            // Send all items (including local) via WS so they get voiceSessionId
+            ws.send(.save(localItems: localItems))
+            // sessionState set to .saving after session_saved arrives
+        } else {
+            // No items — dismiss directly
+            Task {
                 await dailyLog.fetch(date: dateStore.selectedDate)
-                stopAudio()
-                ws.disconnect()
-                scale.disconnect()
-                draft.reset()
-                sessionState = .saving
             }
+            stopAudio()
+            ws.disconnect()
+            scale.disconnect()
+            draft.reset()
+            sessionState = .saving
         }
     }
 
-    /// Pause the session — saves confirmed items, preserves drafts, dismisses.
+    /// Pause is now an alias for save — confirmed items are saved, drafts discarded.
     func pause() {
-        guard !sessionEnded else { return }
-
-        // Auto-progression: confirm the last weighing item before pausing
-        if autoProgressionEnabled { tryChainConfirm() }
-
-        sessionEnded = true
-        capture.stop()
-        camera.stop()
-        barcodeModeActive = false
-
-        // Send local items with the pause message so server saves them with voiceSessionId
-        let localItems = draft.items.filter { $0.isLocalItem }
-        ws.send(.pause(localItems: localItems))
-
-        // Fallback: if session_paused never arrives, clean up after 2s
-        Task {
-            try? await Task.sleep(for: .milliseconds(2000))
-            if sessionState != .paused {
-                stopAudio()
-                ws.disconnect()
-                UIApplication.shared.isIdleTimerDisabled = false
-                draft.reset()
-                sessionState = .paused
-            }
-        }
+        save()
     }
 
     /// Cancel the session — server deletes custom foods, sends session_cancelled.
@@ -1373,12 +1410,20 @@ final class KitchenModeViewModel {
         camera.torchEnabled.toggle()
     }
 
+    /// Cancel an in-progress camera identification request.
+    /// The server may still respond — `cameraCancelled` ensures those items are discarded.
+    func cancelCameraProcessing() {
+        isCameraProcessing = false
+        cameraCancelled = true
+    }
+
     /// Capture a photo and send it to the server for food recognition.
     /// Server forwards the image to Gemini Live, which identifies foods and
     /// adds them to the draft via the existing lookup_food / add_to_draft pipeline.
     func captureAndIdentifyFood() {
-        guard !isCameraProcessing else { return }
+        guard foodRecognitionEnabled, !isCameraProcessing else { return }
         isCameraProcessing = true
+        cameraCancelled = false
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 
         Task {
@@ -1402,7 +1447,7 @@ final class KitchenModeViewModel {
     /// so it flows through the CREATE_FOOD_RESPONSE pipeline (matches RN lines 597–609).
     private func handleBarcodeDetected(_ gtin: String) {
         let digits = gtin.filter(\.isNumber)
-        guard !digits.isEmpty else { return }
+        guard barcodeScanEnabled, !digits.isEmpty else { return }
 
         // Block consecutive scans of the same barcode within 5 seconds to prevent accidental misinput.
         // Reset the timer on each blocked attempt so holding a barcode in view stays blocked.
@@ -1459,6 +1504,7 @@ final class KitchenModeViewModel {
         sessionEnded = true
         stopAudio()
         camera.stop()
+        connectionMonitor.stop()
         ws.disconnect()
         scale.disconnect()
         UIApplication.shared.isIdleTimerDisabled = false
@@ -1469,6 +1515,39 @@ final class KitchenModeViewModel {
     private func stopAudio() {
         capture.stop()
         playback.stopEngine()
+    }
+
+    /// Sends the current audio feedback mode to the server and updates client-side mute.
+    private func sendAudioFeedbackMode() {
+        ws.send(.setAudioFeedbackMode(mode: audioFeedbackMode))
+        playback.muted = (audioFeedbackMode == .silent)
+    }
+
+    // MARK: - Audio Interruption Observation
+
+    private func observeAudioInterruptions() {
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            guard let typeValue = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
+            let type = AVAudioSession.InterruptionType(rawValue: typeValue)
+
+            Task { @MainActor in
+                if type == .began {
+                    // Mic grabbed by another app mid-session
+                    if self.audioActive {
+                        self.stopAudio()
+                        self.audioActive = false
+                    }
+                    self.micUnavailable = true
+                } else if type == .ended {
+                    self.micUnavailable = false
+                }
+            }
+        }
     }
 
     // MARK: - App Lifecycle
@@ -1486,6 +1565,10 @@ final class KitchenModeViewModel {
             // Reconnect WS if it dropped while backgrounded
             if case .active = sessionState, !ws.isConnected {
                 ws.connect(date: dateStore.selectedDate)
+            }
+            // Clear mic unavailable on foreground — the call may have ended
+            if micUnavailable {
+                micUnavailable = false
             }
             // Restart audio if it was active before backgrounding
             if voiceEnabled && !audioActive && sessionState == .active {
@@ -1519,6 +1602,12 @@ final class KitchenModeViewModel {
             default:
                 break
             }
+        }
+
+        // Discard items from a cancelled camera capture
+        if case .itemsAdded = msg, cameraCancelled {
+            cameraCancelled = false
+            return
         }
 
         // Let DraftStore process all draft-related messages
@@ -1609,16 +1698,16 @@ final class KitchenModeViewModel {
             sessionState = .cancelled
 
         case .sessionPaused:
+            // Pause is now equivalent to save — handle identically
             sessionEnded = true
             stopAudio()
             ws.disconnect()
             UIApplication.shared.isIdleTimerDisabled = false
             Task {
                 await dailyLog.fetch(date: dateStore.selectedDate)
-                await SessionStore.shared.fetch(date: dateStore.selectedDate)
             }
             draft.reset()
-            sessionState = .paused
+            sessionState = .saving
 
         case .error(let message):
             // Don't end session on server error — just log it

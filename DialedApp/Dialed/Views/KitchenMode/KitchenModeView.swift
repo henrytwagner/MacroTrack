@@ -12,6 +12,7 @@ struct KitchenModeView: View {
     @Environment(DraftStore.self) private var draftStore
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var colorSchemeValue
 
     @State private var vm = KitchenModeViewModel()
     @State private var showCancelAlert = false
@@ -45,6 +46,9 @@ struct KitchenModeView: View {
             }
         }
         .background(Color.appBackground.ignoresSafeArea())
+        .onTapGesture {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
         .task {
             vm.resumeSessionId = resumeSessionId
             await vm.startSession()
@@ -54,7 +58,7 @@ struct KitchenModeView: View {
         }
         .onChange(of: vm.sessionState) { _, newState in
             switch newState {
-            case .saving, .cancelled, .paused:
+            case .saving, .cancelled:
                 onDismiss()
             default:
                 break
@@ -66,6 +70,15 @@ struct KitchenModeView: View {
         .onChange(of: vm.barcodeModeActive) { _, active in
             // Re-show the camera overlay whenever camera mode is turned on
             if active { cameraControlsVisible = true }
+        }
+        .onChange(of: vm.cameraForwardEnabled) { _, _ in
+            // Remount camera view when expanded mode changes
+            guard vm.barcodeModeActive else { return }
+            vm.toggleBarcodeMode()
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(50))
+                vm.toggleBarcodeMode()
+            }
         }
         .onChange(of: vm.isScaleConnected) { wasConnected, isConnected in
             if wasConnected && !isConnected {
@@ -139,6 +152,12 @@ struct KitchenModeView: View {
             .environment(DraftStore.shared)
             .environment(MealsStore.shared)
         }
+        .sheet(isPresented: $vm.showCameraSettings) {
+            CameraSettingsSheet(vm: vm)
+        }
+        .sheet(isPresented: $vm.showVoiceSettings) {
+            VoiceSettingsSheet(vm: vm)
+        }
         .sheet(isPresented: $vm.showScaleSettings) {
             ScaleSettingsSheet(vm: vm)
         }
@@ -188,6 +207,17 @@ struct KitchenModeView: View {
                 // Bottom bar
                 bottomBar
             }
+            .background {
+                // Camera-forward: full-screen camera behind entire layout
+                if vm.barcodeModeActive && vm.cameraForwardEnabled {
+                    if vm.cameraPermissionGranted {
+                        KitchenCameraPreview(session: KitchenCameraSession.shared.captureSession)
+                            .ignoresSafeArea()
+                    } else {
+                        Color.black.ignoresSafeArea()
+                    }
+                }
+            }
         }
     }
 
@@ -203,13 +233,16 @@ struct KitchenModeView: View {
     private func barcodeModeContent(feedHeight: CGFloat, screenHeight: CGFloat) -> some View {
         ZStack(alignment: .top) {
             // Camera feed — fixed background (parallax: sheet scrolls over it)
-            if vm.cameraPermissionGranted {
-                KitchenCameraPreview(session: KitchenCameraSession.shared.captureSession)
-                    .frame(height: feedHeight)
-                    .clipped()
-            } else {
-                Color.black
-                    .frame(height: feedHeight)
+            // In camera-forward mode, the camera is a background on the parent VStack instead.
+            if !vm.cameraForwardEnabled {
+                if vm.cameraPermissionGranted {
+                    KitchenCameraPreview(session: KitchenCameraSession.shared.captureSession)
+                        .frame(height: feedHeight)
+                        .clipped()
+                } else {
+                    Color.black
+                        .frame(height: feedHeight)
+                }
             }
 
             // Scrollable content: camera controls area + sheet
@@ -295,7 +328,7 @@ struct KitchenModeView: View {
                                 .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                     }
-                    .frame(height: feedHeight)
+                    .frame(height: vm.cameraForwardEnabled ? screenHeight * 0.75 : feedHeight)
                     .contentShape(Rectangle())
                     .onTapGesture(count: 2) {
                         vm.flipCamera()
@@ -306,16 +339,18 @@ struct KitchenModeView: View {
                     }
                     .background(
                         CameraScrollTracker { offsetY in
-                            cameraControlsVisible = offsetY < 1
+                            cameraControlsVisible = vm.cameraForwardEnabled ? true : offsetY < 1
                             cameraScrollOffset = max(0, offsetY)
                         }
                     )
 
-                    // Sheet header — rounded top corners
-                    UnevenRoundedRectangle(topLeadingRadius: BorderRadius.xl,
-                                           topTrailingRadius: BorderRadius.xl)
-                        .fill(Color.appBackground)
-                        .frame(height: 24 + Spacing.sm)
+                    // Sheet header — rounded top corners (hidden in camera-forward mode)
+                    if !vm.cameraForwardEnabled {
+                        UnevenRoundedRectangle(topLeadingRadius: BorderRadius.xl,
+                                               topTrailingRadius: BorderRadius.xl)
+                            .fill(Color.appBackground)
+                            .frame(height: 24 + Spacing.sm)
+                    }
 
                     // Sheet body — cards
                     VStack(spacing: Spacing.md) {
@@ -333,7 +368,9 @@ struct KitchenModeView: View {
                         }
 
                         if vm.items.isEmpty {
-                            barcodeModeEmptyState
+                            if !vm.cameraForwardEnabled {
+                                barcodeModeEmptyState
+                            }
                         } else {
                             ForEach(vm.reversedItems, id: \.id) { item in
                                 draftCard(item: item)
@@ -342,13 +379,17 @@ struct KitchenModeView: View {
                     }
                     .padding(.horizontal, Spacing.lg)
                     .padding(.bottom, Spacing.lg)
-                    .frame(minHeight: screenHeight, alignment: .top)
-                    .background(
-                        // Extend opaque background upward behind the rounded header
-                        // to fill the corner gaps where camera would show through.
-                        Color.appBackground
-                            .padding(.top, -(24 + Spacing.sm))
-                    )
+                    .environment(\.colorScheme, vm.cameraForwardEnabled ? .dark : colorSchemeValue)
+                    .environment(\.cameraForward, vm.cameraForwardEnabled)
+                    .frame(minHeight: vm.cameraForwardEnabled ? 0 : screenHeight, alignment: .top)
+                    .background {
+                        if !vm.cameraForwardEnabled {
+                            // Extend opaque background upward behind the rounded header
+                            // to fill the corner gaps where camera would show through.
+                            Color.appBackground
+                                .padding(.top, -(24 + Spacing.sm))
+                        }
+                    }
                 }
             }
             .scrollIndicators(.hidden)
@@ -422,24 +463,39 @@ struct KitchenModeView: View {
     // MARK: - Camera Processing Indicator
 
     private var cameraProcessingIndicator: some View {
-        Button {
-            showCameraProcessingDebug = true
-        } label: {
-            HStack(spacing: Spacing.sm) {
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .tint(.white)
-                    .scaleEffect(0.85)
-                Text("Identifying food…")
-                    .font(.appSubhead)
-                    .foregroundStyle(.white)
+        HStack(spacing: Spacing.sm) {
+            Button {
+                showCameraProcessingDebug = true
+            } label: {
+                HStack(spacing: Spacing.sm) {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.white)
+                        .scaleEffect(0.85)
+                    Text("Identifying food…")
+                        .font(.appSubhead)
+                        .foregroundStyle(.white)
+                }
             }
-            .padding(.horizontal, Spacing.lg)
-            .padding(.vertical, Spacing.sm)
-            .background(Color.black.opacity(0.6))
-            .clipShape(Capsule())
+            .buttonStyle(.plain)
+
+            Button {
+                vm.cancelCameraProcessing()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .frame(width: 20, height: 20)
+                    .background(Color.white.opacity(0.2))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .padding(.leading, Spacing.lg)
+        .padding(.trailing, Spacing.sm)
+        .padding(.vertical, Spacing.sm)
+        .background(Color.black.opacity(0.6))
+        .clipShape(Capsule())
         .alert("Camera Processing", isPresented: $showCameraProcessingDebug) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -790,6 +846,28 @@ struct KitchenModeView: View {
         .clipShape(RoundedRectangle(cornerRadius: BorderRadius.md))
     }
 
+    // MARK: - Connection Quality Capsule
+
+    @ViewBuilder
+    private var connectionQualityCapsule: some View {
+        let q = vm.connectionQuality
+        if q == .fair || q == .poor {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(q == .poor ? Color.appDestructive : Color.appWarning)
+                    .frame(width: 6, height: 6)
+                Text(vm.connectionSuggestion ?? "Connection issue")
+                    .font(.caption2)
+                    .foregroundStyle(Color.appTextSecondary)
+            }
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, 3)
+            .background(.ultraThinMaterial)
+            .clipShape(Capsule())
+            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+        }
+    }
+
     // MARK: - Caption / Edit Row
 
     @ViewBuilder
@@ -853,16 +931,31 @@ struct KitchenModeView: View {
             // Voice toggle — long press for audio settings
             Image(systemName: vm.audioActive ? "mic.fill" : "mic.slash")
                 .font(.system(size: 22))
-                .foregroundStyle(vm.audioActive ? Color.appTint : Color.appTextSecondary)
+                .foregroundStyle(
+                    vm.audioActive ? Color.appTint :
+                    vm.micUnavailable ? Color.appTextSecondary.opacity(0.35) :
+                    Color.appTextSecondary
+                )
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
                 .onTapGesture { vm.toggleVoice() }
-                .contextMenu {
-                    Button {} label: {
-                        Label("Audio Feedback (Coming Soon)", systemImage: "speaker.wave.2")
+                .onLongPressGesture { vm.showVoiceSettings = true }
+                .overlay(alignment: .top) {
+                    if let msg = vm.micUnavailableMessage {
+                        Text(msg)
+                            .font(.caption2)
+                            .foregroundStyle(Color.appTextSecondary)
+                            .padding(.horizontal, Spacing.xs)
+                            .padding(.vertical, 2)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Capsule())
+                            .fixedSize()
+                            .offset(y: -32)
+                            .transition(.opacity)
+                            .allowsHitTesting(false)
                     }
-                    .disabled(true)
                 }
+                .animation(.easeInOut(duration: 0.2), value: vm.micUnavailableMessage == nil)
 
             // Camera toggle — long press for camera settings
             Image(systemName: "camera")
@@ -871,26 +964,21 @@ struct KitchenModeView: View {
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
                 .onTapGesture { vm.toggleBarcodeMode() }
-                .contextMenu {
-                    Button { vm.toggleBarcodeMode() } label: {
-                        Label("Barcode Scanning",
-                              systemImage: vm.barcodeModeActive ? "checkmark" : "barcode.viewfinder")
-                    }
-                    Button {} label: {
-                        Label("Food Identification (Coming Soon)", systemImage: "sparkles")
-                    }
-                    .disabled(true)
-                }
+                .onLongPressGesture { vm.showCameraSettings = true }
 
             Spacer()
 
-            // Listening indicator — center (only when voice is active)
-            if vm.audioActive {
-                ListeningIndicator(
-                    state: vm.listeningState,
-                    onPress: { vm.togglePause() }
-                )
+            // Listening indicator + connection quality — center
+            VStack(spacing: Spacing.xs) {
+                if vm.audioActive {
+                    ListeningIndicator(
+                        state: vm.listeningState,
+                        onPress: { vm.togglePause() }
+                    )
+                }
+                connectionQualityCapsule
             }
+            .animation(.easeInOut(duration: 0.3), value: vm.connectionQuality)
 
             Spacer()
 
@@ -915,6 +1003,13 @@ struct KitchenModeView: View {
         }
         .padding(.horizontal, Spacing.xl)
         .padding(.vertical, Spacing.lg)
+        .background {
+            if vm.barcodeModeActive && vm.cameraForwardEnabled {
+                Rectangle().fill(.regularMaterial)
+                    .ignoresSafeArea(edges: .bottom)
+                    .environment(\.colorScheme, .dark)
+            }
+        }
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(Color.appBorder)
@@ -1043,6 +1138,58 @@ private struct CameraScrollTracker: UIViewRepresentable {
 // MARK: - Scale Settings Sheet
 
 @MainActor
+// MARK: - Camera Settings Sheet
+
+private struct CameraSettingsSheet: View {
+    @Bindable var vm: KitchenModeViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Toggle("Expanded View", isOn: $vm.cameraForwardEnabled)
+                        .tint(Color.appTint)
+                } footer: {
+                    Text("Shows a larger, full-screen camera feed behind the draft cards.")
+                        .font(.appCaption1)
+                }
+
+                Section {
+                    Toggle("Barcode Scanning", isOn: $vm.barcodeScanEnabled)
+                        .tint(Color.appTint)
+                } footer: {
+                    Text("Automatically detect and look up barcodes visible to the camera.")
+                        .font(.appCaption1)
+                }
+
+                Section {
+                    Toggle("Food Recognition", isOn: $vm.foodRecognitionEnabled)
+                        .tint(Color.appTint)
+                } footer: {
+                    Text("Tap the camera feed to capture a photo and identify foods.")
+                        .font(.appCaption1)
+                }
+            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(Color.appBackground.ignoresSafeArea())
+            .navigationTitle("Camera Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                        .foregroundStyle(Color.appTint)
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+    }
+}
+
+// MARK: - Scale Settings Sheet
+
 private struct ScaleSettingsSheet: View {
     @Bindable var vm: KitchenModeViewModel
     @Environment(\.dismiss) private var dismiss
@@ -1190,6 +1337,66 @@ private struct ScaleSettingsSheet: View {
                 .font(.appSubhead)
                 .foregroundStyle(Color.appDestructive)
         }
+    }
+}
+
+// MARK: - Voice Settings Sheet
+
+private struct VoiceSettingsSheet: View {
+    @Bindable var vm: KitchenModeViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(AudioFeedbackMode.allCases, id: \.self) { mode in
+                        Button {
+                            vm.audioFeedbackMode = mode
+                        } label: {
+                            HStack(spacing: Spacing.md) {
+                                Image(systemName: mode.icon)
+                                    .font(.system(size: 18))
+                                    .foregroundStyle(Color.appTint)
+                                    .frame(width: 24)
+                                VStack(alignment: .leading, spacing: Spacing.xs) {
+                                    Text(mode.title)
+                                        .font(.appBody)
+                                        .foregroundStyle(Color.appText)
+                                    Text(mode.subtitle)
+                                        .font(.appCaption1)
+                                        .foregroundStyle(Color.appTextSecondary)
+                                }
+                                Spacer()
+                                if vm.audioFeedbackMode == mode {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(Color.appTint)
+                                        .font(.appBody.weight(.semibold))
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Audio Feedback")
+                } footer: {
+                    Text("Controls when Gemini speaks during Kitchen Mode.")
+                        .font(.appCaption1)
+                }
+            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(Color.appBackground.ignoresSafeArea())
+            .navigationTitle("Voice Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                        .foregroundStyle(Color.appTint)
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
 }
 

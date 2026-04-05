@@ -53,32 +53,12 @@ import type {
   WSAudioDataMessage,
   WSServerTranscriptMessage,
   WSCameraCaptureMessage,
+  AudioFeedbackMode,
 } from "../../../shared/types.js";
 
 // ---------------------------------------------------------------------------
 // Session state
 // ---------------------------------------------------------------------------
-
-interface SavedSnapshot {
-  confirmedFoodEntries: Array<{
-    id: string;
-    name: string;
-    quantity: number;
-    unit: string;
-    calories: number;
-    proteinG: number;
-    carbsG: number;
-    fatG: number;
-    mealLabel: string;
-    source: string;
-    usdaFdcId?: number | null;
-    customFoodId?: string | null;
-    communityFoodId?: string | null;
-    confirmedViaScale?: boolean;
-  }>;
-  draftItems: DraftItem[];
-  customFoodsCreatedThisSession: string[];
-}
 
 interface KitchenSession {
   userId: string;
@@ -92,6 +72,8 @@ interface KitchenSession {
   socket: WebSocket;
   completed: boolean;
   isResuming: boolean;
+  /** Entry IDs that existed when a session was resumed (for cancel-revert) */
+  preExistingEntryIds: Set<string>;
   /** Tracks a food_choice card awaiting user decision (create vs USDA) */
   pendingChoiceId: string | null;
   pendingChoiceName: string | null;
@@ -101,6 +83,10 @@ interface KitchenSession {
   pendingCreationId: string | null;
   pendingCreationName: string | null;
   pendingCreationValues: Partial<CreatingFoodProgress>;
+  /** Audio feedback mode: full (default), clarify_only, or silent */
+  audioFeedbackMode: AudioFeedbackMode;
+  /** When true in clarify_only mode, suppress audio after a successful action */
+  suppressingPostActionAudio: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -715,6 +701,7 @@ async function handleSaveSession(session: KitchenSession): Promise<unknown> {
           communityFoodId: item.communityFoodId ?? null,
           confirmedViaScale: item.confirmedViaScale ?? false,
           voiceSessionId: session.voiceSessionId,
+          loggedAt: new Date(),
         })),
       });
     }
@@ -766,70 +753,42 @@ async function handleCancelSession(session: KitchenSession): Promise<unknown> {
   session.completed = true;
 
   if (session.isResuming) {
-    // Revert to saved snapshot — restore pre-resume state
-    const vsRecord = await prisma.voiceSession.findUnique({
-      where: { id: session.voiceSessionId },
-      select: { savedSnapshot: true },
-    });
-
-    const snapshot = vsRecord?.savedSnapshot as SavedSnapshot | null;
-    if (snapshot) {
-      await prisma.$transaction(async (tx) => {
-        // Delete all current FoodEntries for this session
-        await tx.foodEntry.deleteMany({
-          where: { voiceSessionId: session.voiceSessionId },
-        });
-
-        // Re-create from snapshot
-        if (snapshot.confirmedFoodEntries.length > 0) {
-          const entryDate = new Date(session.date);
-          await tx.foodEntry.createMany({
-            data: snapshot.confirmedFoodEntries.map((e) => ({
-              userId: session.userId,
-              date: entryDate,
-              name: e.name,
-              calories: e.calories,
-              proteinG: e.proteinG,
-              carbsG: e.carbsG,
-              fatG: e.fatG,
-              quantity: e.quantity,
-              unit: e.unit,
-              source: e.source as any,
-              mealLabel: e.mealLabel as any,
-              usdaFdcId: e.usdaFdcId ?? null,
-              customFoodId: e.customFoodId ?? null,
-              communityFoodId: e.communityFoodId ?? null,
-              confirmedViaScale: e.confirmedViaScale ?? false,
-              voiceSessionId: session.voiceSessionId,
-            })),
-          });
-        }
-
-        // Delete custom foods created after the snapshot
-        const snapshotFoodIds = new Set(snapshot.customFoodsCreatedThisSession);
-        const newCustomFoods = session.customFoodsCreatedThisSession.filter(
-          (id) => !snapshotFoodIds.has(id),
-        );
-        if (newCustomFoods.length > 0) {
-          await tx.customFood.deleteMany({
-            where: { id: { in: newCustomFoods }, userId: session.userId },
-          });
-        }
-
-        // Restore draft items from snapshot
-        await tx.voiceSession.update({
-          where: { id: session.voiceSessionId },
-          data: {
-            status: "paused",
-            draftItems: snapshot.draftItems.length > 0
-              ? JSON.parse(JSON.stringify(snapshot.draftItems))
-              : null,
-          },
-        });
+    // Revert to pre-resume state: delete entries added during this visit,
+    // keep pre-existing entries, delete custom foods created this visit
+    await prisma.$transaction(async (tx) => {
+      // Delete entries that didn't exist before resume
+      const allEntries = await tx.foodEntry.findMany({
+        where: { voiceSessionId: session.voiceSessionId },
+        select: { id: true },
       });
-    }
+      const toDelete = allEntries
+        .filter((e) => !session.preExistingEntryIds.has(e.id))
+        .map((e) => e.id);
+      if (toDelete.length > 0) {
+        await tx.foodEntry.deleteMany({
+          where: { id: { in: toDelete } },
+        });
+      }
+
+      // Delete custom foods created during this visit
+      if (session.customFoodsCreatedThisSession.length > 0) {
+        await tx.customFood.deleteMany({
+          where: { id: { in: session.customFoodsCreatedThisSession }, userId: session.userId },
+        });
+      }
+
+      // Set session back to completed (entries are preserved from before resume)
+      await tx.voiceSession.update({
+        where: { id: session.voiceSessionId },
+        data: {
+          status: "completed",
+          draftItems: Prisma.DbNull,
+          savedSnapshot: Prisma.DbNull,
+        },
+      });
+    });
   } else {
-    // New session — original cancel behavior
+    // New session — delete custom foods and cancel
     if (session.customFoodsCreatedThisSession.length > 0) {
       await prisma.customFood.deleteMany({
         where: {
@@ -853,129 +812,12 @@ async function handleCancelSession(session: KitchenSession): Promise<unknown> {
 }
 
 /**
- * Pause session — save confirmed items as FoodEntries, persist incomplete items as draft JSON.
- * Used for explicit pause (user taps save-for-now) and implicit pause (disconnect).
+ * Pause is now an alias for save — confirmed items are saved, drafts are discarded.
+ * Kept as a separate entry point so the "pause" WS message and implicit-pause-on-disconnect
+ * continue to work without client changes.
  */
 async function handlePauseSession(session: KitchenSession): Promise<unknown> {
-  if (session.completed) return { error: "Session already completed." };
-  session.completed = true;
-
-  const confirmedItems = session.items.filter((i) => i.state === "normal" || i.state === "pending");
-  const incompleteItems = session.items.filter((i) => i.state !== "normal" && i.state !== "pending");
-  const entryDate = new Date(session.date);
-
-  // Build snapshot of current confirmed FoodEntries (pre-existing from earlier pauses)
-  const existingEntries = await prisma.foodEntry.findMany({
-    where: { voiceSessionId: session.voiceSessionId },
-  });
-
-  let newEntryCount = 0;
-
-  const existingEntryIds = new Set(existingEntries.map((e) => e.id));
-
-  await prisma.$transaction(async (tx) => {
-    // Split items into new (not yet in DB) vs already-persisted
-    const newItems = confirmedItems.filter((i) => !existingEntryIds.has(i.id));
-    const existingItems = confirmedItems.filter((i) => existingEntryIds.has(i.id));
-
-    if (newItems.length > 0) {
-      await tx.foodEntry.createMany({
-        data: newItems.map((item) => ({
-          userId: session.userId,
-          date: entryDate,
-          name: item.name,
-          calories: item.calories,
-          proteinG: item.proteinG,
-          carbsG: item.carbsG,
-          fatG: item.fatG,
-          quantity: item.quantity,
-          unit: item.unit,
-          source: item.source,
-          mealLabel: item.mealLabel,
-          usdaFdcId: item.usdaFdcId ?? null,
-          customFoodId: item.customFoodId ?? null,
-          communityFoodId: item.communityFoodId ?? null,
-          confirmedViaScale: item.confirmedViaScale ?? false,
-          voiceSessionId: session.voiceSessionId,
-        })),
-      });
-      newEntryCount = newItems.length;
-    }
-
-    // Update entries that were already persisted but may have been edited
-    for (const item of existingItems) {
-      await tx.foodEntry.update({
-        where: { id: item.id },
-        data: {
-          name: item.name,
-          calories: item.calories,
-          proteinG: item.proteinG,
-          carbsG: item.carbsG,
-          fatG: item.fatG,
-          quantity: item.quantity,
-          unit: item.unit,
-        },
-      });
-    }
-
-    // Delete entries that were removed during this session visit
-    const currentItemIds = new Set(confirmedItems.map((i) => i.id));
-    const deletedEntryIds = existingEntries
-      .filter((e) => !currentItemIds.has(e.id) && !confirmedItems.some((c) => c.id.startsWith("tmp-") && c.name === e.name))
-      .map((e) => e.id);
-    if (deletedEntryIds.length > 0) {
-      await tx.foodEntry.deleteMany({
-        where: { id: { in: deletedEntryIds } },
-      });
-    }
-
-    // Build and save snapshot for cancel-revert
-    const allEntries = await tx.foodEntry.findMany({
-      where: { voiceSessionId: session.voiceSessionId },
-    });
-    const snapshot: SavedSnapshot = {
-      confirmedFoodEntries: allEntries.map((e) => ({
-        id: e.id,
-        name: e.name,
-        quantity: e.quantity,
-        unit: e.unit,
-        calories: e.calories,
-        proteinG: e.proteinG,
-        carbsG: e.carbsG,
-        fatG: e.fatG,
-        mealLabel: e.mealLabel,
-        source: e.source,
-        usdaFdcId: e.usdaFdcId,
-        customFoodId: e.customFoodId,
-        communityFoodId: e.communityFoodId,
-        confirmedViaScale: e.confirmedViaScale,
-      })),
-      draftItems: incompleteItems,
-      customFoodsCreatedThisSession: session.customFoodsCreatedThisSession,
-    };
-
-    await tx.voiceSession.update({
-      where: { id: session.voiceSessionId },
-      data: {
-        status: "paused",
-        date: entryDate,
-        draftItems: incompleteItems.length > 0 ? JSON.parse(JSON.stringify(incompleteItems)) : null,
-        savedSnapshot: JSON.parse(JSON.stringify(snapshot)),
-      },
-    });
-  });
-
-  if (confirmedItems.length > 0) {
-    await recategorizeMealsForDay(session.userId, entryDate);
-  }
-
-  send(session.socket, {
-    type: "session_paused",
-    entriesCount: confirmedItems.length,
-    draftItemsCount: incompleteItems.length,
-  } satisfies WSSessionPausedMessage);
-
-  return { success: true, entries_saved: confirmedItems.length, drafts_preserved: incompleteItems.length };
+  return handleSaveSession(session);
 }
 
 // ---------------------------------------------------------------------------
@@ -1037,6 +879,13 @@ async function dispatchFunctionCall(
     default:
       console.warn(`[KitchenMode] unknown function call: ${name}`);
       result = { error: `Unknown function: ${name}` };
+  }
+
+  // In clarify_only mode, suppress audio after successful add/edit/remove
+  if (session.audioFeedbackMode === "clarify_only") {
+    const successActions = new Set(["add_to_draft", "edit_draft_item", "remove_draft_item"]);
+    session.suppressingPostActionAudio =
+      successActions.has(name) && result != null && typeof result === "object" && (result as any).success === true;
   }
 
   // Append draft summary to every response so Gemini always knows the current state
@@ -1196,20 +1045,27 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
       let voiceSessionId: string;
       let resumedItems: DraftItem[] = [];
 
+      // Track pre-existing entry IDs for cancel-revert on resumed sessions
+      let preExistingEntryIds = new Set<string>();
+
       if (resumeSessionId) {
-        // Resume an existing paused session
+        // Resume an existing session (paused or completed)
         const existing = await prisma.voiceSession.findUnique({
           where: { id: resumeSessionId },
           include: { foodEntries: true },
         });
 
-        if (!existing || existing.userId !== userId || existing.status !== "paused") {
+        if (!existing || existing.userId !== userId ||
+            (existing.status !== "paused" && existing.status !== "completed")) {
           socket.close(4002, "Session not found or not resumable");
           return;
         }
 
         isResuming = true;
         voiceSessionId = existing.id;
+
+        // Track which entries exist before resume (for cancel-revert)
+        preExistingEntryIds = new Set(existing.foodEntries.map((e) => e.id));
 
         // Convert persisted FoodEntries back to DraftItem format
         for (const entry of existing.foodEntries) {
@@ -1232,40 +1088,9 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
           });
         }
 
-        // Append stored incomplete draft items
-        const storedDrafts = existing.draftItems as DraftItem[] | null;
-        if (storedDrafts && Array.isArray(storedDrafts)) {
-          resumedItems.push(...storedDrafts);
-        }
-
-        // Build fresh snapshot for cancel-revert (current state = revert target)
-        const snapshot: SavedSnapshot = {
-          confirmedFoodEntries: existing.foodEntries.map((e) => ({
-            id: e.id,
-            name: e.name,
-            quantity: e.quantity,
-            unit: e.unit,
-            calories: e.calories,
-            proteinG: e.proteinG,
-            carbsG: e.carbsG,
-            fatG: e.fatG,
-            mealLabel: e.mealLabel,
-            source: e.source,
-            usdaFdcId: e.usdaFdcId,
-            customFoodId: e.customFoodId,
-            communityFoodId: e.communityFoodId,
-            confirmedViaScale: e.confirmedViaScale,
-          })),
-          draftItems: storedDrafts ?? [],
-          customFoodsCreatedThisSession: [],
-        };
-
         await prisma.voiceSession.update({
           where: { id: voiceSessionId },
-          data: {
-            status: "active",
-            savedSnapshot: JSON.parse(JSON.stringify(snapshot)),
-          },
+          data: { status: "active" },
         });
 
         console.log(`[KitchenMode] resuming session ${voiceSessionId} — ${resumedItems.length} items, date: ${date}`);
@@ -1288,6 +1113,7 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
         redoStack: [],
         completed: false,
         isResuming,
+        preExistingEntryIds,
         socket,
         gemini: null as unknown as GeminiLiveService, // set below
         pendingChoiceId: null,
@@ -1296,6 +1122,8 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
         pendingCreationId: null,
         pendingCreationName: null,
         pendingCreationValues: {},
+        audioFeedbackMode: "full",
+        suppressingPostActionAudio: false,
       };
 
       // Create Gemini Live service
@@ -1303,6 +1131,8 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
       try {
         gemini = new GeminiLiveService({
           onAudioOut: (data, mimeType) => {
+            if (session.audioFeedbackMode === "silent") return;
+            if (session.audioFeedbackMode === "clarify_only" && session.suppressingPostActionAudio) return;
             send(socket, {
               type: "audio_data",
               data,
@@ -1435,6 +1265,7 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
           case "audio_chunk":
             audioChunkCount++;
             chunksAfterLastEnd++;
+            session.suppressingPostActionAudio = false;
             if (audioChunkCount <= 10 || audioChunkCount % 50 === 0) {
               const byteEst = Math.floor(msg.data.length * 0.75);
               console.log(`[KitchenMode] → audio_chunk #${audioChunkCount}, ~${byteEst} bytes`);
@@ -1489,6 +1320,14 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
             break;
 
           case "save":
+            // Merge local items (added via touch/search, not on server) into session
+            if ((msg as any).localItems && Array.isArray((msg as any).localItems)) {
+              for (const item of (msg as any).localItems as DraftItem[]) {
+                if (!session.items.some((i) => i.id === item.id)) {
+                  session.items.push(item);
+                }
+              }
+            }
             void handleSaveSession(session);
             break;
 
@@ -1573,6 +1412,21 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
             break;
           }
 
+          case "set_audio_feedback_mode": {
+            session.audioFeedbackMode = (msg as any).mode ?? "full";
+            session.suppressingPostActionAudio = false;
+            notifyGemini(session, {
+              source: "settings",
+              action: "audio_mode_changed",
+              details: session.audioFeedbackMode === "silent"
+                ? "Audio is SILENT. User cannot hear you. Do not speak confirmations or ask questions — only use function calls."
+                : session.audioFeedbackMode === "clarify_only"
+                ? "Audio is CLARIFY ONLY. Do NOT speak confirmations. Only speak when you need to ask a clarifying question or report an error."
+                : "Audio is FULL. Speak brief confirmations after actions and ask clarifying questions as needed.",
+            });
+            break;
+          }
+
           case "touch_complete_creation":
             void (async () => {
               // Clear pending creation state if this item was mid-creation via voice
@@ -1652,13 +1506,11 @@ export async function kitchenModeSessionRoutes(fastify: FastifyInstance): Promis
         if (pongTimer) { clearTimeout(pongTimer); pongTimer = null; }
         if (audioEndTimer) { clearTimeout(audioEndTimer); audioEndTimer = null; }
         gemini.close();
-        // Implicit pause on unexpected disconnect (network drop, app backgrounded)
+        // Auto-save on unexpected disconnect (network drop, app backgrounded)
         if (!session.completed && session.items.length > 0) {
           try {
-            // Reuse handlePauseSession logic — it handles FoodEntry creation,
-            // snapshot persistence, and VoiceSession status update
-            await handlePauseSession(session);
-            console.log(`[KitchenMode] Implicit pause on disconnect — session ${session.voiceSessionId}`);
+            await handleSaveSession(session);
+            console.log(`[KitchenMode] Auto-save on disconnect — session ${session.voiceSessionId}`);
           } catch (err) {
             console.error("[KitchenMode] Implicit pause on disconnect failed:", err);
           }
